@@ -20,6 +20,10 @@ public interface UserMapper {
 
     List<UserListItemVO> queryPageByUserId(@Param("userId") Long userId, @Param("request") UserQueryRequest request);
 
+    long countPageByTreePath(@Param("treePathPrefix") String treePathPrefix, @Param("request") UserQueryRequest request);
+
+    List<UserListItemVO> queryPageByTreePath(@Param("treePathPrefix") String treePathPrefix, @Param("request") UserQueryRequest request);
+
     int insertUser(UserEntity entity);
 
     long countPage(UserQueryRequest request);
@@ -27,6 +31,8 @@ public interface UserMapper {
     List<UserListItemVO> queryPage(UserQueryRequest request);
 
     UserDetailVO detailById(@Param("id") Long id);
+
+    UserDetailVO detailByIdAndTreePath(@Param("id") Long id, @Param("treePathPrefix") String treePathPrefix);
 
     int updateUser(UserEntity entity);
 

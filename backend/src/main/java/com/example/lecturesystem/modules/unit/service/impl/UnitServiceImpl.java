@@ -3,8 +3,10 @@ package com.example.lecturesystem.modules.unit.service.impl;
 import com.example.lecturesystem.modules.auth.security.LoginUser;
 import com.example.lecturesystem.modules.permission.service.PermissionService;
 import com.example.lecturesystem.modules.unit.dto.CreateUnitRequest;
+import com.example.lecturesystem.modules.unit.dto.SaveAttendanceLocationRequest;
 import com.example.lecturesystem.modules.unit.dto.ToggleUnitStatusRequest;
 import com.example.lecturesystem.modules.unit.dto.UpdateUnitRequest;
+import com.example.lecturesystem.modules.unit.entity.AttendanceLocationEntity;
 import com.example.lecturesystem.modules.unit.entity.UnitEntity;
 import com.example.lecturesystem.modules.unit.mapper.UnitMapper;
 import com.example.lecturesystem.modules.unit.service.UnitService;
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
@@ -49,6 +52,16 @@ public class UnitServiceImpl implements UnitService {
             }
 
             @Override
+            public long countPageByTreePath(String treePathPrefix, com.example.lecturesystem.modules.user.dto.UserQueryRequest request) {
+                return 0;
+            }
+
+            @Override
+            public java.util.List<com.example.lecturesystem.modules.user.vo.UserListItemVO> queryPageByTreePath(String treePathPrefix, com.example.lecturesystem.modules.user.dto.UserQueryRequest request) {
+                return java.util.List.of();
+            }
+
+            @Override
             public int insertUser(com.example.lecturesystem.modules.user.entity.UserEntity entity) {
                 return 0;
             }
@@ -69,6 +82,11 @@ public class UnitServiceImpl implements UnitService {
             }
 
             @Override
+            public com.example.lecturesystem.modules.user.vo.UserDetailVO detailByIdAndTreePath(Long id, String treePathPrefix) {
+                return null;
+            }
+
+            @Override
             public int updateUser(com.example.lecturesystem.modules.user.entity.UserEntity entity) {
                 return 0;
             }
@@ -82,6 +100,7 @@ public class UnitServiceImpl implements UnitService {
             public int updatePassword(Long id, String passwordHash, String updateUser, java.time.LocalDateTime updateTime) {
                 return 0;
             }
+
         });
     }
 
@@ -181,6 +200,49 @@ public class UnitServiceImpl implements UnitService {
         unitMapper.updateLegacyUnit(existing);
     }
 
+    @Override
+    public Object queryAttendanceLocation(Long unitId) {
+        LoginUser loginUser = currentLoginUser();
+        validateReadableUnit(loginUser.getUserId(), unitId);
+        requireUnit(unitId);
+        return unitMapper.findAttendanceLocationByUnitId(unitId);
+    }
+
+    @Override
+    @Transactional
+    public Long saveAttendanceLocation(SaveAttendanceLocationRequest request) {
+        LoginUser loginUser = currentLoginUser();
+        validateSuperAdmin(loginUser.getUserId());
+        requireUnit(request.getUnitId());
+
+        String locationName = request.getLocationName() == null ? "" : request.getLocationName().trim();
+        if (locationName.isEmpty()) {
+            throw new IllegalArgumentException("打卡点名称不能为空");
+        }
+        if (request.getLatitude() == null || request.getLongitude() == null) {
+            throw new IllegalArgumentException("请先选择打卡点坐标");
+        }
+
+        com.example.lecturesystem.modules.unit.vo.AttendanceLocationVO existing = unitMapper.findAttendanceLocationByUnitId(request.getUnitId());
+        AttendanceLocationEntity entity = new AttendanceLocationEntity();
+        entity.setUnitId(request.getUnitId());
+        entity.setLocationName(locationName);
+        entity.setLatitude(request.getLatitude());
+        entity.setLongitude(request.getLongitude());
+        entity.setRadiusMeters(request.getRadiusMeters() == null ? 100 : request.getRadiusMeters());
+        entity.setAddress(request.getAddress() == null ? null : request.getAddress().trim());
+        entity.setStatus(request.getStatus() == null ? 1 : request.getStatus());
+        entity.setUpdateTime(LocalDateTime.now());
+        if (existing == null) {
+            entity.setCreateTime(entity.getUpdateTime());
+            unitMapper.insertAttendanceLocation(entity);
+            return entity.getId();
+        }
+        entity.setId(existing.getId());
+        unitMapper.updateAttendanceLocation(entity);
+        return existing.getId();
+    }
+
     private void validateSuperAdmin(Long userId) {
         if (!permissionService.isSuperAdmin(userId)) {
             throw new IllegalArgumentException("仅管理员可执行该操作");
@@ -193,6 +255,16 @@ public class UnitServiceImpl implements UnitService {
             throw new IllegalArgumentException("单位不存在");
         }
         return unit;
+    }
+
+    private void validateReadableUnit(Long currentUserId, Long unitId) {
+        if (permissionService.isSuperAdmin(currentUserId)) {
+            return;
+        }
+        UserEntity currentUser = userMapper.findById(currentUserId);
+        if (currentUser == null || !Objects.equals(currentUser.getUnitId(), unitId)) {
+            throw new IllegalArgumentException("无权查看该单位打卡点");
+        }
     }
 
     private LoginUser currentLoginUser() {

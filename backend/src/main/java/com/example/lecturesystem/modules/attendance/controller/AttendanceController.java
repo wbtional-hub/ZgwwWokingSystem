@@ -17,6 +17,11 @@ public class AttendanceController {
         this.attendanceService = attendanceService;
     }
 
+    @GetMapping("/current-location")
+    public ApiResponse<?> queryCurrentAttendanceLocation() {
+        return ApiResponse.success(attendanceService.queryCurrentAttendanceLocation());
+    }
+
     @PostMapping("/check-in")
     public ApiResponse<?> checkIn(@RequestBody CheckInRequest request) {
         return ApiResponse.success(attendanceService.checkIn(request));
@@ -25,6 +30,26 @@ public class AttendanceController {
     @PostMapping("/query")
     public ApiResponse<?> query(@RequestBody AttendanceQueryRequest request) {
         return ApiResponse.success(attendanceService.query(request));
+    }
+
+    @PostMapping("/summary")
+    public ApiResponse<?> querySummary(@RequestBody AttendanceQueryRequest request) {
+        return ApiResponse.success(attendanceService.querySummary(request));
+    }
+
+    @PostMapping("/abnormal-monitor")
+    public ApiResponse<?> queryAbnormalMonitor(@RequestBody AttendanceQueryRequest request) {
+        return ApiResponse.success(attendanceService.queryAbnormalMonitor(request));
+    }
+
+    @PostMapping("/abnormal-trend")
+    public ApiResponse<?> queryAbnormalTrend(@RequestBody AttendanceQueryRequest request) {
+        return ApiResponse.success(attendanceService.queryAbnormalTrend(request));
+    }
+
+    @PostMapping("/abnormal-user-summary")
+    public ApiResponse<?> queryAbnormalUserSummary(@RequestBody AttendanceQueryRequest request) {
+        return ApiResponse.success(attendanceService.queryAbnormalUserSummary(request));
     }
 
     @PostMapping("/save")

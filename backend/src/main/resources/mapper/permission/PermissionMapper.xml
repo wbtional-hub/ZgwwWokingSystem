@@ -11,18 +11,10 @@
           AND role_code = #{roleCode}
     </select>
 
-    <select id="queryUserIdsByUnitId" resultType="long">
-        SELECT id
-        FROM sys_user
-        WHERE unit_id = #{unitId}
-          AND is_deleted = FALSE
-    </select>
-
     <select id="queryUserIdsByTreePathPrefix" resultType="long">
         SELECT u.id
         FROM sys_user u
-        WHERE u.unit_id = #{unitId}
-          AND u.tree_path LIKE #{treePathPrefix}
+        WHERE u.tree_path LIKE #{treePathPrefix}
           AND u.is_deleted = FALSE
     </select>
 

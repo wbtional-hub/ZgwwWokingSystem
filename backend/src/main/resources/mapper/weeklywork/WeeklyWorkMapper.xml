@@ -76,9 +76,11 @@
     <select id="countDistinctSubmittedUsers" resultType="long">
         SELECT COUNT(DISTINCT w.user_id)
         FROM weekly_work w
+        INNER JOIN sys_user u ON u.id = w.user_id
         <where>
-            <if test="unitId != null">
-                w.unit_id = #{unitId}
+            u.is_deleted = FALSE
+            <if test="treePathPrefix != null">
+                AND u.tree_path LIKE CONCAT(#{treePathPrefix}, '%')
             </if>
             <if test="weekNo != null and weekNo != ''">
                 AND w.week_no = #{weekNo}
@@ -105,9 +107,6 @@
         FROM weekly_work w
         INNER JOIN sys_user u ON u.id = w.user_id
         <where>
-            <if test="request.unitId != null">
-                w.unit_id = #{request.unitId}
-            </if>
             <if test="request.weekNo != null and request.weekNo != ''">
                 AND w.week_no = #{request.weekNo}
             </if>
@@ -116,6 +115,9 @@
             </if>
             <if test="request.userId != null">
                 AND w.user_id = #{request.userId}
+            </if>
+            <if test="request.treePathPrefix != null">
+                AND u.tree_path LIKE CONCAT(#{request.treePathPrefix}, '%')
             </if>
         </where>
         ORDER BY w.week_no DESC, w.create_time DESC, w.id DESC

@@ -1,22 +1,22 @@
 package com.example.lecturesystem.modules.operationlog.dto;
 
-import com.example.lecturesystem.modules.permission.support.UnitScopedRequest;
+import com.example.lecturesystem.modules.permission.support.TreePathScopedRequest;
 
-public class OperationLogQueryRequest implements UnitScopedRequest {
-    private Long unitId;
+public class OperationLogQueryRequest implements TreePathScopedRequest {
+    private String treePathPrefix;
     private String moduleName;
     private String operatorName;
     private String startTime;
     private String endTime;
 
     @Override
-    public Long getUnitId() {
-        return unitId;
+    public String getTreePathPrefix() {
+        return treePathPrefix;
     }
 
     @Override
-    public void setUnitId(Long unitId) {
-        this.unitId = unitId;
+    public void setTreePathPrefix(String treePathPrefix) {
+        this.treePathPrefix = treePathPrefix;
     }
 
     public String getModuleName() {

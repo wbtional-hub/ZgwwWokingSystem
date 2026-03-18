@@ -1,6 +1,7 @@
 package com.example.lecturesystem.modules.permission.service.impl;
 
 import com.example.lecturesystem.modules.permission.service.PermissionService;
+import com.example.lecturesystem.modules.permission.support.DataScopeService;
 import com.example.lecturesystem.modules.user.entity.UserEntity;
 import com.example.lecturesystem.modules.permission.mapper.PermissionMapper;
 import com.example.lecturesystem.modules.user.mapper.UserMapper;
@@ -14,13 +15,14 @@ public class PermissionServiceImpl implements PermissionService {
     private static final String ROLE_ADMIN = "ADMIN";
 
     private final UserMapper userMapper;
-    private final PermissionMapper permissionMapper;
+    private final DataScopeService dataScopeService;
 
     public PermissionServiceImpl(PermissionMapper permissionMapper,
                                  UserMapper userMapper,
-                                 com.example.lecturesystem.modules.orgtree.mapper.OrgTreeMapper orgTreeMapper) {
+                                 com.example.lecturesystem.modules.orgtree.mapper.OrgTreeMapper orgTreeMapper,
+                                 DataScopeService dataScopeService) {
         this.userMapper = userMapper;
-        this.permissionMapper = permissionMapper;
+        this.dataScopeService = dataScopeService;
     }
 
     @Override
@@ -45,10 +47,9 @@ public class PermissionServiceImpl implements PermissionService {
         if (currentUser == null) {
             throw new IllegalArgumentException("当前用户不存在");
         }
-        if (currentUser.getUnitId() == null) {
-            throw new IllegalArgumentException("当前用户未绑定单位");
+        if (currentUser.getTreePath() == null || currentUser.getTreePath().isBlank()) {
+            throw new IllegalArgumentException("当前用户缺少 treePath 权限信息");
         }
-
-        return new HashSet<>(permissionMapper.queryUserIdsByUnitId(currentUser.getUnitId()));
+        return new HashSet<>(dataScopeService.queryScopedUserIds(currentUser));
     }
 }

@@ -2,6 +2,7 @@ package com.example.lecturesystem.modules.unit.controller;
 
 import com.example.lecturesystem.common.ApiResponse;
 import com.example.lecturesystem.modules.unit.dto.CreateUnitRequest;
+import com.example.lecturesystem.modules.unit.dto.SaveAttendanceLocationRequest;
 import com.example.lecturesystem.modules.unit.dto.ToggleUnitStatusRequest;
 import com.example.lecturesystem.modules.unit.dto.UpdateUnitRequest;
 import com.example.lecturesystem.modules.unit.service.UnitService;
@@ -40,8 +41,18 @@ public class UnitController {
     }
 
     @DeleteMapping("/{id}")
-    public ApiResponse<?> delete(@PathVariable Long id) {
+    public ApiResponse<?> delete(@PathVariable("id") Long id) {
         unitService.deleteUnit(id);
         return ApiResponse.success(null);
+    }
+
+    @GetMapping("/{id}/attendance-location")
+    public ApiResponse<?> queryAttendanceLocation(@PathVariable("id") Long id) {
+        return ApiResponse.success(unitService.queryAttendanceLocation(id));
+    }
+
+    @PostMapping("/attendance-location/save")
+    public ApiResponse<?> saveAttendanceLocation(@Validated @RequestBody SaveAttendanceLocationRequest request) {
+        return ApiResponse.success(unitService.saveAttendanceLocation(request));
     }
 }

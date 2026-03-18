@@ -6,7 +6,7 @@ import com.example.lecturesystem.modules.operationlog.entity.OperationLogEntity;
 import com.example.lecturesystem.modules.operationlog.mapper.OperationLogMapper;
 import com.example.lecturesystem.modules.operationlog.service.OperationLogService;
 import com.example.lecturesystem.modules.permission.support.CurrentUserFacade;
-import com.example.lecturesystem.modules.permission.support.DataScopeHelper;
+import com.example.lecturesystem.modules.permission.support.DataScopeService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -17,25 +17,25 @@ import java.time.LocalDateTime;
 @Service
 public class OperationLogServiceImpl implements OperationLogService {
     private final OperationLogMapper operationLogMapper;
-    private final DataScopeHelper dataScopeHelper;
     private final CurrentUserFacade currentUserFacade;
+    private final DataScopeService dataScopeService;
 
     public OperationLogServiceImpl(OperationLogMapper operationLogMapper) {
         this(operationLogMapper, null, null);
     }
 
     public OperationLogServiceImpl(OperationLogMapper operationLogMapper,
-                                   DataScopeHelper dataScopeHelper) {
-        this(operationLogMapper, dataScopeHelper, null);
+                                   DataScopeService dataScopeService) {
+        this(operationLogMapper, dataScopeService, null);
     }
 
     @Autowired
     public OperationLogServiceImpl(OperationLogMapper operationLogMapper,
-                                   DataScopeHelper dataScopeHelper,
+                                   DataScopeService dataScopeService,
                                    CurrentUserFacade currentUserFacade) {
         this.operationLogMapper = operationLogMapper;
-        this.dataScopeHelper = dataScopeHelper;
         this.currentUserFacade = currentUserFacade;
+        this.dataScopeService = dataScopeService;
     }
 
     @Override
@@ -60,8 +60,8 @@ public class OperationLogServiceImpl implements OperationLogService {
     @Override
     public Object query(OperationLogQueryRequest request) {
         OperationLogQueryRequest normalizedRequest = request == null ? new OperationLogQueryRequest() : request;
-        if (dataScopeHelper != null) {
-            dataScopeHelper.injectUnitScope(normalizedRequest);
+        if (currentUserFacade != null && dataScopeService != null) {
+            dataScopeService.injectTreePathScope(normalizedRequest, currentUserFacade.currentUserEntity());
         }
         normalizedRequest.setModuleName(normalizeText(normalizedRequest.getModuleName()));
         normalizedRequest.setOperatorName(normalizeText(normalizedRequest.getOperatorName()));

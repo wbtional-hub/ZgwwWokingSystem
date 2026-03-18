@@ -62,8 +62,8 @@
         INNER JOIN sys_user u ON u.id = s.user_id
         LEFT JOIN sys_org_unit su ON su.id = s.unit_id
         WHERE s.id = #{id}
-        <if test="unitId != null">
-            AND s.unit_id = #{unitId}
+        <if test="treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{treePathPrefix}, '%')
         </if>
     </select>
 
@@ -84,8 +84,8 @@
         <if test="request.status != null and request.status != ''">
             AND s.status = #{request.status}
         </if>
-        <if test="request.unitId != null">
-            AND s.unit_id = #{request.unitId}
+        <if test="request.treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{request.treePathPrefix}, '%')
         </if>
         ORDER BY
         <choose>
@@ -114,8 +114,8 @@
                ON w.user_id = u.id
               AND w.week_no = #{weekNo}
         WHERE u.is_deleted = FALSE
-        <if test="unitId != null">
-            AND u.unit_id = #{unitId}
+        <if test="treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{treePathPrefix}, '%')
         </if>
         GROUP BY u.unit_id, u.id
         ORDER BY u.unit_id, u.id

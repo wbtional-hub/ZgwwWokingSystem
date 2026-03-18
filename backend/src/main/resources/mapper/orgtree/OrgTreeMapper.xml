@@ -45,8 +45,7 @@
                u.mobile,
                u.status
         FROM sys_user u
-        WHERE u.unit_id = #{unitId}
-          AND u.is_deleted = FALSE
+        WHERE u.is_deleted = FALSE
           AND u.tree_path LIKE #{treePathPrefix}
         ORDER BY u.level_no, u.id
     </select>
@@ -63,8 +62,7 @@
                u.mobile,
                u.status
         FROM sys_user u
-        WHERE u.unit_id = #{unitId}
-          AND u.parent_user_id = #{parentUserId}
+        WHERE u.parent_user_id = #{parentUserId}
           AND u.is_deleted = FALSE
         ORDER BY u.level_no, u.id
     </select>
@@ -81,8 +79,7 @@
                u.mobile,
                u.status
         FROM sys_user u
-        WHERE u.unit_id = #{unitId}
-          AND u.is_deleted = FALSE
+        WHERE u.is_deleted = FALSE
           AND #{treePath} LIKE u.tree_path || '%'
         ORDER BY u.level_no, u.id
     </select>

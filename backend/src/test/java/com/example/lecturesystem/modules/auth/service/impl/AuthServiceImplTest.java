@@ -161,6 +161,16 @@ public class AuthServiceImplTest {
         }
 
         @Override
+        public long countPageByTreePath(String treePathPrefix, UserQueryRequest request) {
+            return 0;
+        }
+
+        @Override
+        public List<UserListItemVO> queryPageByTreePath(String treePathPrefix, UserQueryRequest request) {
+            return List.of();
+        }
+
+        @Override
         public long countPage(UserQueryRequest request) {
             return 0;
         }
@@ -172,6 +182,11 @@ public class AuthServiceImplTest {
 
         @Override
         public UserDetailVO detailById(Long id) {
+            return null;
+        }
+
+        @Override
+        public UserDetailVO detailByIdAndTreePath(Long id, String treePathPrefix) {
             return null;
         }
 
@@ -208,12 +223,7 @@ public class AuthServiceImplTest {
         }
 
         @Override
-        public List<Long> queryUserIdsByUnitId(Long unitId) {
-            return List.of();
-        }
-
-        @Override
-        public List<Long> queryUserIdsByTreePathPrefix(Long unitId, String treePathPrefix) {
+        public List<Long> queryUserIdsByTreePathPrefix(String treePathPrefix) {
             return List.of();
         }
 

@@ -1,6 +1,8 @@
 package com.example.lecturesystem.modules.unit.mapper;
 
+import com.example.lecturesystem.modules.unit.entity.AttendanceLocationEntity;
 import com.example.lecturesystem.modules.unit.entity.UnitEntity;
+import com.example.lecturesystem.modules.unit.vo.AttendanceLocationVO;
 import com.example.lecturesystem.modules.unit.vo.UnitListItemVO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -33,4 +35,10 @@ public interface UnitMapper {
     int countOrgNodesByUnitId(@Param("id") Long id);
 
     int countUsersByUnitId(@Param("id") Long id);
+
+    AttendanceLocationVO findAttendanceLocationByUnitId(@Param("unitId") Long unitId);
+
+    int insertAttendanceLocation(AttendanceLocationEntity entity);
+
+    int updateAttendanceLocation(AttendanceLocationEntity entity);
 }

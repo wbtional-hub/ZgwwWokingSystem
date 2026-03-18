@@ -24,6 +24,20 @@
 
 前端默认通过 Vite 启动，接口前缀走 `/api` 代理。
 
+前端环境示例见 [frontend/.env.example](/mnt/d/20.develop64/ZgwwWokingSystem/frontend/.env.example)：
+
+- `VITE_API_BASE_URL`
+- `VITE_API_PROXY_TARGET`
+- `VITE_AMAP_KEY`
+- `VITE_AMAP_SECURITY_JS_CODE`
+
+单位管理里的“打卡点设置”支持两种模式：
+
+- 配置 `VITE_AMAP_KEY` 后，进入正式地图 SDK 选点模式
+- 未配置 `VITE_AMAP_KEY` 时，页面会自动回退到轻量选点模式，仍可正常保存打卡点
+
+联调说明见 [docs/unit-attendance-location.md](/mnt/d/20.develop64/ZgwwWokingSystem/docs/unit-attendance-location.md)。
+
 ## 数据初始化
 
 推荐使用：

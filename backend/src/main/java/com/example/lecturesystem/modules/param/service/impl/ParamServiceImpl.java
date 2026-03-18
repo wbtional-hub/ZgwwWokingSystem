@@ -1,6 +1,7 @@
 package com.example.lecturesystem.modules.param.service.impl;
 
 import com.example.lecturesystem.modules.auth.security.LoginUser;
+import com.example.lecturesystem.modules.config.vo.AmapConfigVO;
 import com.example.lecturesystem.modules.param.dto.ParamQueryRequest;
 import com.example.lecturesystem.modules.param.dto.SaveParamRequest;
 import com.example.lecturesystem.modules.param.dto.ToggleParamStatusRequest;
@@ -35,6 +36,15 @@ public class ParamServiceImpl implements ParamService {
     public String getByCode(String code) {
         ParamEntity entity = paramMapper.findByCode(code);
         return entity == null ? null : entity.getParamValue();
+    }
+
+    @Override
+    public AmapConfigVO queryAmapConfig() {
+        requireAdmin();
+        AmapConfigVO response = new AmapConfigVO();
+        response.setKey(requireEnabledParamValue("Key", "高德地图 Key 未配置或未启用"));
+        response.setSecurityJsCode(requireEnabledParamValue("securityJsCode", "高德地图安全密钥未配置或未启用"));
+        return response;
     }
 
     @Override
@@ -102,6 +112,18 @@ public class ParamServiceImpl implements ParamService {
             throw new IllegalArgumentException("参数不存在");
         }
         return entity;
+    }
+
+    private String requireEnabledParamValue(String code, String message) {
+        ParamEntity entity = paramMapper.findByCode(code);
+        if (entity == null || entity.getIsDeleted() == Boolean.TRUE || entity.getStatus() == null || entity.getStatus() != 1) {
+            throw new IllegalArgumentException(message);
+        }
+        String value = trimToNull(entity.getParamValue());
+        if (value == null) {
+            throw new IllegalArgumentException(message);
+        }
+        return value;
     }
 
     private String trimToNull(String value) {

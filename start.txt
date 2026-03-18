@@ -12,7 +12,8 @@ cd D:\20.develop64\ZgwwWokingSystem\backend
 mvn spring-boot:run
 
 前端
-cd /mnt/d/20.develop64/ZgwwWokingSystem/frontend
+cd D:\20.develop64\ZgwwWokingSystem\frontend
+npm install
 npm run dev
 
 

@@ -122,6 +122,13 @@ const pageBusy = computed(() => {
   return state.loading || state.submitting || state.deletingId !== null || state.togglingId !== null
 })
 
+function ensureSuccess(response, fallback = '请求失败') {
+  if (!response || response.code !== 0) {
+    throw new Error(response?.message || fallback)
+  }
+  return response.data
+}
+
 function createEmptyForm() {
   return {
     id: null,
@@ -143,11 +150,11 @@ function formatDateTime(value) {
 async function fetchList() {
   state.loading = true
   try {
-    const response = await queryParamList({
+    const data = ensureSuccess(await queryParamList({
       keywords: state.queryForm.keywords || undefined,
       status: state.queryForm.status === '' ? undefined : Number(state.queryForm.status)
-    })
-    state.list = Array.isArray(response.data) ? response.data : []
+    }), '参数列表加载失败')
+    state.list = Array.isArray(data) ? data : []
   } catch (error) {
     showToast(error.message || '参数列表加载失败')
   } finally {
@@ -197,14 +204,14 @@ async function handleSave() {
 
   state.submitting = true
   try {
-    await saveParam({
+    ensureSuccess(await saveParam({
       id: state.form.id || undefined,
       paramCode: state.form.paramCode.trim(),
       paramName: state.form.paramName.trim(),
       paramValue: state.form.paramValue,
       status: Number(state.form.status),
       remark: state.form.remark
-    })
+    }), '参数保存失败')
     showToast(state.form.id ? '参数编辑成功' : '参数新增成功')
     resetForm()
     await fetchList()
@@ -222,7 +229,7 @@ async function handleDelete(item) {
       title: '确认删除',
       message: `确认删除参数 ${item.paramName} 吗？`
     })
-    await deleteParam(item.id)
+    ensureSuccess(await deleteParam(item.id), '参数删除失败')
     showToast('参数删除成功')
     if (state.form.id === item.id) {
       resetForm()
@@ -245,10 +252,10 @@ async function handleToggleStatus(item) {
       title: nextStatus === 1 ? '确认启用' : '确认停用',
       message: `${nextStatus === 1 ? '启用' : '停用'}参数 ${item.paramName} 吗？`
     })
-    await toggleParamStatus({
+    ensureSuccess(await toggleParamStatus({
       id: item.id,
       status: nextStatus
-    })
+    }), '参数状态修改失败')
     showToast(nextStatus === 1 ? '参数已启用' : '参数已停用')
     await fetchList()
   } catch (error) {

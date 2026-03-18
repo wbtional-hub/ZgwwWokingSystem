@@ -19,6 +19,9 @@ export const useUserManagementStore = defineStore('userManagement', {
   state: () => ({
     list: [],
     total: 0,
+    scopeUserCount: 0,
+    scopeType: '',
+    scopeDescription: '',
     pageNo: 1,
     pageSize: 10,
     keywords: '',
@@ -63,6 +66,9 @@ export const useUserManagementStore = defineStore('userManagement', {
         }
         this.list = data.list || []
         this.total = data.total || 0
+        this.scopeUserCount = data.scopeUserCount || 0
+        this.scopeType = data.scopeType || ''
+        this.scopeDescription = data.scopeDescription || ''
       } finally {
         this.loading = false
       }

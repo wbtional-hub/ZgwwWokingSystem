@@ -1,21 +1,19 @@
 package com.example.lecturesystem.modules.weeklywork.dto;
 
-import com.example.lecturesystem.modules.permission.support.UnitScopedRequest;
+import com.example.lecturesystem.modules.permission.support.TreePathScopedRequest;
 
-public class WeeklyWorkQueryRequest implements UnitScopedRequest {
-    private Long unitId;
+public class WeeklyWorkQueryRequest implements TreePathScopedRequest {
+    private String treePathPrefix;
     private String weekNo;
     private String status;
     private Long userId;
 
-    @Override
-    public Long getUnitId() {
-        return unitId;
+    public String getTreePathPrefix() {
+        return treePathPrefix;
     }
 
-    @Override
-    public void setUnitId(Long unitId) {
-        this.unitId = unitId;
+    public void setTreePathPrefix(String treePathPrefix) {
+        this.treePathPrefix = treePathPrefix;
     }
 
     public String getWeekNo() {

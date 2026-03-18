@@ -23,7 +23,7 @@ public interface WeeklyWorkMapper {
 
     int updateStatus(@Param("id") Long id, @Param("status") String status);
 
-    long countDistinctSubmittedUsers(@Param("unitId") Long unitId,
+    long countDistinctSubmittedUsers(@Param("treePathPrefix") String treePathPrefix,
                                      @Param("weekNo") String weekNo,
                                      @Param("status") String status);
 

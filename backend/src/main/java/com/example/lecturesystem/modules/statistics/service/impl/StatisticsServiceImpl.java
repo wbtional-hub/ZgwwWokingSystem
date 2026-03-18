@@ -2,11 +2,11 @@ package com.example.lecturesystem.modules.statistics.service.impl;
 
 import com.example.lecturesystem.modules.attendance.mapper.AttendanceMapper;
 import com.example.lecturesystem.modules.permission.support.CurrentUserFacade;
-import com.example.lecturesystem.modules.permission.support.DataScopeContext;
-import com.example.lecturesystem.modules.permission.service.PermissionService;
+import com.example.lecturesystem.modules.permission.support.DataScopeService;
 import com.example.lecturesystem.modules.statistics.mapper.StatisticsMapper;
 import com.example.lecturesystem.modules.statistics.service.StatisticsService;
 import com.example.lecturesystem.modules.statistics.vo.StatisticsOverviewVO;
+import com.example.lecturesystem.modules.user.entity.UserEntity;
 import com.example.lecturesystem.modules.weeklywork.mapper.WeeklyWorkMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -25,27 +25,20 @@ public class StatisticsServiceImpl implements StatisticsService {
     private final StatisticsMapper statisticsMapper;
     private final AttendanceMapper attendanceMapper;
     private final WeeklyWorkMapper weeklyWorkMapper;
-    private final PermissionService permissionService;
     private final CurrentUserFacade currentUserFacade;
+    private final DataScopeService dataScopeService;
 
     @Autowired
     public StatisticsServiceImpl(StatisticsMapper statisticsMapper,
                                  AttendanceMapper attendanceMapper,
                                  WeeklyWorkMapper weeklyWorkMapper,
-                                 PermissionService permissionService,
-                                 CurrentUserFacade currentUserFacade) {
+                                 CurrentUserFacade currentUserFacade,
+                                 DataScopeService dataScopeService) {
         this.statisticsMapper = statisticsMapper;
         this.attendanceMapper = attendanceMapper;
         this.weeklyWorkMapper = weeklyWorkMapper;
-        this.permissionService = permissionService;
         this.currentUserFacade = currentUserFacade;
-    }
-
-    public StatisticsServiceImpl(StatisticsMapper statisticsMapper,
-                                 AttendanceMapper attendanceMapper,
-                                 WeeklyWorkMapper weeklyWorkMapper,
-                                 PermissionService permissionService) {
-        this(statisticsMapper, attendanceMapper, weeklyWorkMapper, permissionService, null);
+        this.dataScopeService = dataScopeService;
     }
 
     @Override
@@ -55,13 +48,14 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     @Override
     public Object overview(String weekNo, String unitName) {
-        DataScopeContext scope = currentScope();
         String resolvedWeekNo = normalizeWeekNo(weekNo);
         String normalizedUnitName = normalizeText(unitName);
-        Long scopedUnitId = scope.isSuperAdmin() ? null : scope.getUnitId();
+        String treePathPrefix = currentTreePathPrefix();
 
-        StatisticsOverviewVO overview = statisticsMapper.queryOverview(resolvedWeekNo, normalizedUnitName, scopedUnitId);
-        long totalUserCount = statisticsMapper.countUsersByUnitName(normalizedUnitName, scopedUnitId);
+        StatisticsOverviewVO overview = statisticsMapper.queryOverview(resolvedWeekNo, normalizedUnitName, treePathPrefix);
+        long totalUserCount = treePathPrefix == null
+                ? statisticsMapper.countAllUsers()
+                : statisticsMapper.countUsersByUnitName(normalizedUnitName, treePathPrefix);
 
         Map<String, Object> map = new HashMap<>();
         map.put("weekNo", resolvedWeekNo);
@@ -80,35 +74,30 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     @Override
     public Object orgRank(String weekNo, String unitName) {
-        DataScopeContext scope = currentScope();
-        return statisticsMapper.queryOrgRank(normalizeWeekNo(weekNo), normalizeText(unitName), scope.isSuperAdmin() ? null : scope.getUnitId());
+        return statisticsMapper.queryOrgRank(normalizeWeekNo(weekNo), normalizeText(unitName), currentTreePathPrefix());
     }
 
     @Override
     public Object redList(String weekNo, String unitName) {
-        DataScopeContext scope = currentScope();
-        return statisticsMapper.queryStatusList(normalizeWeekNo(weekNo), normalizeText(unitName), "RED", scope.isSuperAdmin() ? null : scope.getUnitId());
+        return statisticsMapper.queryStatusList(normalizeWeekNo(weekNo), normalizeText(unitName), "RED", currentTreePathPrefix());
     }
 
     @Override
     public Object yellowList(String weekNo, String unitName) {
-        DataScopeContext scope = currentScope();
-        return statisticsMapper.queryStatusList(normalizeWeekNo(weekNo), normalizeText(unitName), "YELLOW", scope.isSuperAdmin() ? null : scope.getUnitId());
+        return statisticsMapper.queryStatusList(normalizeWeekNo(weekNo), normalizeText(unitName), "YELLOW", currentTreePathPrefix());
     }
 
     @Override
     public Object trend(String unitName) {
-        DataScopeContext scope = currentScope();
-        return statisticsMapper.queryTrend(normalizeText(unitName), scope.isSuperAdmin() ? null : scope.getUnitId());
+        return statisticsMapper.queryTrend(normalizeText(unitName), currentTreePathPrefix());
     }
 
     private Object legacyOverview() {
-        DataScopeContext scope = currentScope();
-        Long scopedUnitId = scope.isSuperAdmin() ? null : scope.getUnitId();
-        long userCount = scopedUnitId == null ? statisticsMapper.countAllUsers() : statisticsMapper.countUsersByUnitName(null, scopedUnitId);
+        String treePathPrefix = currentTreePathPrefix();
+        long userCount = treePathPrefix == null ? statisticsMapper.countAllUsers() : statisticsMapper.countUsersByUnitName(null, treePathPrefix);
         LocalDate today = LocalDate.now();
         long attendanceUserCount = attendanceMapper.countDistinctUsersByRange(
-                scopedUnitId,
+                treePathPrefix,
                 today,
                 today,
                 1
@@ -116,7 +105,7 @@ public class StatisticsServiceImpl implements StatisticsService {
 
         String currentWeekNo = buildCurrentWeekNo(today);
         long weeklySubmittedUserCount = weeklyWorkMapper.countDistinctSubmittedUsers(
-                scopedUnitId,
+                treePathPrefix,
                 currentWeekNo,
                 STATUS_SUBMITTED
         );
@@ -161,11 +150,12 @@ public class StatisticsServiceImpl implements StatisticsService {
                 .doubleValue();
     }
 
-    private DataScopeContext currentScope() {
-        if (currentUserFacade != null) {
-            return currentUserFacade.currentDataScope();
+    private String currentTreePathPrefix() {
+        if (currentUserFacade != null && dataScopeService != null) {
+            UserEntity currentUser = currentUserFacade.currentUserEntity();
+            return dataScopeService.buildTreePathPrefix(currentUser);
         }
-        return new DataScopeContext(0L, null, true);
+        return null;
     }
 
 }

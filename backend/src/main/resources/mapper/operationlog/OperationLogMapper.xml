@@ -46,11 +46,8 @@
         <if test="request.operatorName != null and request.operatorName != ''">
             AND o.operator_name LIKE CONCAT('%', #{request.operatorName}, '%')
         </if>
-        <if test="request.unitId != null">
-            AND (
-                o.unit_id = #{request.unitId}
-                OR (o.unit_id IS NULL AND u.unit_id = #{request.unitId})
-            )
+        <if test="request.treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{request.treePathPrefix}, '%')
         </if>
         <if test="startTime != null">
             AND o.create_time <![CDATA[>=]]> #{startTime}

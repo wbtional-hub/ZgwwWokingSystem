@@ -3,6 +3,7 @@ package com.example.lecturesystem.modules.orgtree.service.impl;
 import com.example.lecturesystem.modules.auth.security.LoginUser;
 import com.example.lecturesystem.modules.orgtree.dto.CreateChildUserRequest;
 import com.example.lecturesystem.modules.orgtree.dto.MoveNodeRequest;
+import com.example.lecturesystem.modules.orgtree.dto.UpdateOrgNodeRequest;
 import com.example.lecturesystem.modules.orgtree.entity.OrgNodeEntity;
 import com.example.lecturesystem.modules.orgtree.mapper.OrgTreeMapper;
 import com.example.lecturesystem.modules.orgtree.vo.OrgTreeNodeVO;
@@ -96,6 +97,32 @@ public class OrgTreeServiceImplTest {
         Assert.assertEquals(Long.valueOf(6L), userId);
         verify(orgTreeMapper).updateUserNodeInfo(2L, null, 2L, 1, "/2/");
         verify(orgTreeMapper).updateUserNodeInfo(6L, 2L, 2L, 2, "/2/6/");
+    }
+
+    @Test
+    public void createChildShouldRejectDifferentUnitIdFromParent() {
+        OrgTreeMapper orgTreeMapper = mock(OrgTreeMapper.class);
+        UserMapper userMapper = mock(UserMapper.class);
+        PermissionService permissionService = mock(PermissionService.class);
+        PermissionMapper permissionMapper = mock(PermissionMapper.class);
+        OrgTreeServiceImpl service = new OrgTreeServiceImpl(orgTreeMapper, userMapper, permissionService, permissionMapper);
+
+        mockLoginUser(2L, false);
+        when(orgTreeMapper.findByUserId(2L)).thenReturn(node(2L, 2L, null, 1, "/2/"));
+        when(userMapper.findById(2L)).thenReturn(user(2L, 2L, null, 1, "/2/"));
+        when(userMapper.findByUsername("child1")).thenReturn(null);
+
+        CreateChildUserRequest request = new CreateChildUserRequest();
+        request.setParentUserId(2L);
+        request.setUsername("child1");
+        request.setPassword("123456");
+        request.setRealName("下级用户");
+        request.setUnitId(9L);
+        request.setStatus(1);
+
+        IllegalArgumentException error = Assert.assertThrows(IllegalArgumentException.class, () -> service.createChild(request));
+
+        Assert.assertEquals("新增下级必须继承上级节点所属单位", error.getMessage());
     }
 
     @Test
@@ -199,6 +226,31 @@ public class OrgTreeServiceImplTest {
         service.moveNode(request);
 
         verify(orgTreeMapper).updateSubtreeAfterMove(3L, "/2/3/", "/2/5/3/", 1, 5L);
+    }
+
+    @Test
+    public void updateNodeShouldRejectUnitChange() {
+        OrgTreeMapper orgTreeMapper = mock(OrgTreeMapper.class);
+        UserMapper userMapper = mock(UserMapper.class);
+        PermissionService permissionService = mock(PermissionService.class);
+        PermissionMapper permissionMapper = mock(PermissionMapper.class);
+        OrgTreeServiceImpl service = new OrgTreeServiceImpl(orgTreeMapper, userMapper, permissionService, permissionMapper);
+
+        mockLoginUser(2L, false);
+        when(userMapper.findById(2L)).thenReturn(user(2L, 2L, null, 1, "/2/"));
+        when(userMapper.findById(3L)).thenReturn(user(3L, 2L, 2L, 2, "/2/3/"));
+        when(orgTreeMapper.findByUserId(3L)).thenReturn(node(3L, 2L, 2L, 2, "/2/3/"));
+        when(permissionService.isSuperAdmin(2L)).thenReturn(false);
+        when(permissionService.queryDataScopeUserIds(2L)).thenReturn(Set.of(2L, 3L));
+
+        UpdateOrgNodeRequest request = new UpdateOrgNodeRequest();
+        request.setUserId(3L);
+        request.setRealName("已改名");
+        request.setUnitId(8L);
+
+        IllegalArgumentException error = Assert.assertThrows(IllegalArgumentException.class, () -> service.updateNode(request));
+
+        Assert.assertEquals("组织树节点单位不可在当前页面直接修改", error.getMessage());
     }
 
     private void mockLoginUser(Long userId, boolean superAdmin) {

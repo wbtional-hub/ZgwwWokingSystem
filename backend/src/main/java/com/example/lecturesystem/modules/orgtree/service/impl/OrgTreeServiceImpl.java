@@ -60,8 +60,12 @@ public class OrgTreeServiceImpl implements OrgTreeService {
             throw new IllegalArgumentException("账号已存在");
         }
 
+        if (request.getUnitId() != null && !Objects.equals(request.getUnitId(), parentNode.getUnitId())) {
+            throw new IllegalArgumentException("新增下级必须继承上级节点所属单位");
+        }
+
         UserEntity newUser = new UserEntity();
-        Long targetUnitId = request.getUnitId() != null ? request.getUnitId() : parentNode.getUnitId();
+        Long targetUnitId = parentNode.getUnitId();
         newUser.setUnitId(targetUnitId);
         newUser.setUsername(request.getUsername());
         newUser.setPasswordHash(passwordEncoder.encode(request.getPassword()));
@@ -180,8 +184,8 @@ public class OrgTreeServiceImpl implements OrgTreeService {
         targetUser.setRealName(request.getRealName().trim());
         targetUser.setJobTitle(trimToNull(request.getJobTitle()));
         targetUser.setMobile(trimToNull(request.getMobile()));
-        if (request.getUnitId() != null) {
-            targetUser.setUnitId(request.getUnitId());
+        if (request.getUnitId() != null && !Objects.equals(request.getUnitId(), targetNode.getUnitId())) {
+            throw new IllegalArgumentException("组织树节点单位不可在当前页面直接修改");
         }
         targetUser.setUpdateTime(LocalDateTime.now());
         targetUser.setUpdateUser(loginUser.getUsername());

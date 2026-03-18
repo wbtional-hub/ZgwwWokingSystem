@@ -15,14 +15,14 @@ public interface WorkScoreMapper {
     int upsert(WorkScoreEntity entity);
 
     WorkScoreListItemVO findDetailById(@Param("id") Long id,
-                                       @Param("unitId") Long unitId);
+                                       @Param("treePathPrefix") String treePathPrefix);
 
     List<WorkScoreListItemVO> queryList(@Param("request") WorkScoreQueryRequest request);
 
     List<WorkScoreCandidateVO> queryCandidates(@Param("weekNo") String weekNo,
                                                @Param("weekStart") LocalDate weekStart,
                                                @Param("weekEnd") LocalDate weekEnd,
-                                               @Param("unitId") Long unitId);
+                                               @Param("treePathPrefix") String treePathPrefix);
 
     List<WorkScoreEntity> queryWeekRanking(@Param("weekNo") String weekNo);
 }

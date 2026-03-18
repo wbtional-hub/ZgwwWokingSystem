@@ -34,7 +34,7 @@ public class WeeklyWorkServiceImplTest {
         InMemoryWeeklyWorkMapper weeklyWorkMapper = new InMemoryWeeklyWorkMapper();
         StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
         StubUserMapper userMapper = new StubUserMapper();
-        userMapper.users.put(3L, user(3L, 2L));
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
         WeeklyWorkServiceImpl service = new WeeklyWorkServiceImpl(weeklyWorkMapper, permissionService, userMapper);
 
         mockLoginUser(3L, false);
@@ -58,7 +58,7 @@ public class WeeklyWorkServiceImplTest {
         InMemoryWeeklyWorkMapper weeklyWorkMapper = new InMemoryWeeklyWorkMapper();
         StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
         StubUserMapper userMapper = new StubUserMapper();
-        userMapper.users.put(3L, user(3L, 2L));
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
         weeklyWorkMapper.insert(seedWeekly(2L, 3L, "2026-W11", "SUBMITTED"));
         WeeklyWorkServiceImpl service = new WeeklyWorkServiceImpl(weeklyWorkMapper, permissionService, userMapper);
 
@@ -79,7 +79,7 @@ public class WeeklyWorkServiceImplTest {
         InMemoryWeeklyWorkMapper weeklyWorkMapper = new InMemoryWeeklyWorkMapper();
         StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
         StubUserMapper userMapper = new StubUserMapper();
-        userMapper.users.put(3L, user(3L, 2L));
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
         WeeklyWorkEntity entity = seedWeekly(2L, 3L, "2026-W11", "DRAFT");
         weeklyWorkMapper.insert(entity);
         WeeklyWorkServiceImpl service = new WeeklyWorkServiceImpl(weeklyWorkMapper, permissionService, userMapper);
@@ -100,7 +100,12 @@ public class WeeklyWorkServiceImplTest {
         InMemoryWeeklyWorkMapper weeklyWorkMapper = new InMemoryWeeklyWorkMapper();
         StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L, 4L));
         StubUserMapper userMapper = new StubUserMapper();
-        userMapper.users.put(3L, user(3L, 2L));
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        userMapper.users.put(4L, user(4L, 2L, "/3/4/"));
+        userMapper.users.put(5L, user(5L, 2L, "/5/"));
+        weeklyWorkMapper.userTreePaths.put(3L, "/3/");
+        weeklyWorkMapper.userTreePaths.put(4L, "/3/4/");
+        weeklyWorkMapper.userTreePaths.put(5L, "/5/");
         weeklyWorkMapper.insert(seedWeekly(2L, 3L, "2026-W11", "DRAFT"));
         weeklyWorkMapper.insert(seedWeekly(2L, 4L, "2026-W11", "SUBMITTED"));
         weeklyWorkMapper.insert(seedWeekly(2L, 5L, "2026-W11", "SUBMITTED"));
@@ -113,6 +118,25 @@ public class WeeklyWorkServiceImplTest {
         Assert.assertEquals(2, result.size());
     }
 
+    @Test
+    public void detailShouldRejectWeeklyWorkOutsideTreePathScope() {
+        InMemoryWeeklyWorkMapper weeklyWorkMapper = new InMemoryWeeklyWorkMapper();
+        StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L, 4L, 9L));
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        userMapper.users.put(4L, user(4L, 2L, "/3/4/"));
+        userMapper.users.put(9L, user(9L, 2L, "/9/"));
+        WeeklyWorkEntity other = seedWeekly(2L, 9L, "2026-W11", "SUBMITTED");
+        weeklyWorkMapper.insert(other);
+        WeeklyWorkServiceImpl service = new WeeklyWorkServiceImpl(weeklyWorkMapper, permissionService, userMapper);
+
+        mockLoginUser(3L, false);
+
+        IllegalArgumentException error = Assert.assertThrows(IllegalArgumentException.class, () -> service.detail(other.getId()));
+
+        Assert.assertEquals("无权查看该周报", error.getMessage());
+    }
+
     private void mockLoginUser(Long userId, boolean superAdmin) {
         LoginUser loginUser = new LoginUser(userId, "tester", "测试用户", superAdmin);
         SecurityContextHolder.getContext().setAuthentication(
@@ -120,10 +144,11 @@ public class WeeklyWorkServiceImplTest {
         );
     }
 
-    private UserEntity user(Long id, Long unitId) {
+    private UserEntity user(Long id, Long unitId, String treePath) {
         UserEntity user = new UserEntity();
         user.setId(id);
         user.setUnitId(unitId);
+        user.setTreePath(treePath);
         return user;
     }
 
@@ -199,6 +224,16 @@ public class WeeklyWorkServiceImplTest {
         }
 
         @Override
+        public long countPageByTreePath(String treePathPrefix, com.example.lecturesystem.modules.user.dto.UserQueryRequest request) {
+            return 0;
+        }
+
+        @Override
+        public List<com.example.lecturesystem.modules.user.vo.UserListItemVO> queryPageByTreePath(String treePathPrefix, com.example.lecturesystem.modules.user.dto.UserQueryRequest request) {
+            return List.of();
+        }
+
+        @Override
         public long countPage(com.example.lecturesystem.modules.user.dto.UserQueryRequest request) {
             return 0;
         }
@@ -210,6 +245,11 @@ public class WeeklyWorkServiceImplTest {
 
         @Override
         public com.example.lecturesystem.modules.user.vo.UserDetailVO detailById(Long id) {
+            return null;
+        }
+
+        @Override
+        public com.example.lecturesystem.modules.user.vo.UserDetailVO detailByIdAndTreePath(Long id, String treePathPrefix) {
             return null;
         }
 
@@ -237,6 +277,7 @@ public class WeeklyWorkServiceImplTest {
 
     private static class InMemoryWeeklyWorkMapper implements WeeklyWorkMapper {
         private final Map<Long, WeeklyWorkEntity> data = new LinkedHashMap<>();
+        private final Map<Long, String> userTreePaths = new LinkedHashMap<>();
         private long sequence = 1L;
 
         @Override
@@ -294,12 +335,9 @@ public class WeeklyWorkServiceImplTest {
         }
 
         @Override
-        public long countDistinctSubmittedUsers(Long unitId, String weekNo, String status) {
+        public long countDistinctSubmittedUsers(String treePathPrefix, String weekNo, String status) {
             Set<Long> userIds = new java.util.LinkedHashSet<>();
             for (WeeklyWorkEntity entity : data.values()) {
-                if (unitId != null && !unitId.equals(entity.getUnitId())) {
-                    continue;
-                }
                 if (weekNo != null && !weekNo.isEmpty() && !weekNo.equals(entity.getWeekNo())) {
                     continue;
                 }
@@ -315,9 +353,6 @@ public class WeeklyWorkServiceImplTest {
         public List<WeeklyWorkListItemVO> queryList(com.example.lecturesystem.modules.weeklywork.dto.WeeklyWorkQueryRequest request) {
             List<WeeklyWorkListItemVO> result = new ArrayList<>();
             for (WeeklyWorkEntity entity : data.values()) {
-                if (request.getUnitId() != null && !request.getUnitId().equals(entity.getUnitId())) {
-                    continue;
-                }
                 if (request.getUserId() != null && !request.getUserId().equals(entity.getUserId())) {
                     continue;
                 }
@@ -326,6 +361,12 @@ public class WeeklyWorkServiceImplTest {
                 }
                 if (request.getStatus() != null && !request.getStatus().isEmpty() && !request.getStatus().equals(entity.getStatus())) {
                     continue;
+                }
+                if (request.getTreePathPrefix() != null && !request.getTreePathPrefix().isBlank()) {
+                    String treePath = userTreePaths.get(entity.getUserId());
+                    if (treePath == null || !treePath.startsWith(request.getTreePathPrefix())) {
+                        continue;
+                    }
                 }
                 WeeklyWorkListItemVO item = new WeeklyWorkListItemVO();
                 item.setId(entity.getId());

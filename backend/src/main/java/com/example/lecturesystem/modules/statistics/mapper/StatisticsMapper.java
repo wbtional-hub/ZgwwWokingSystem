@@ -14,21 +14,21 @@ public interface StatisticsMapper {
     long countAllUsers();
 
     long countUsersByUnitName(@Param("unitName") String unitName,
-                              @Param("unitId") Long unitId);
+                              @Param("treePathPrefix") String treePathPrefix);
 
     StatisticsOverviewVO queryOverview(@Param("weekNo") String weekNo,
                                        @Param("unitName") String unitName,
-                                       @Param("unitId") Long unitId);
+                                       @Param("treePathPrefix") String treePathPrefix);
 
     List<StatisticsOrgRankVO> queryOrgRank(@Param("weekNo") String weekNo,
                                            @Param("unitName") String unitName,
-                                           @Param("unitId") Long unitId);
+                                           @Param("treePathPrefix") String treePathPrefix);
 
     List<WorkScoreListItemVO> queryStatusList(@Param("weekNo") String weekNo,
                                               @Param("unitName") String unitName,
                                               @Param("status") String status,
-                                              @Param("unitId") Long unitId);
+                                              @Param("treePathPrefix") String treePathPrefix);
 
     List<StatisticsTrendVO> queryTrend(@Param("unitName") String unitName,
-                                       @Param("unitId") Long unitId);
+                                       @Param("treePathPrefix") String treePathPrefix);
 }

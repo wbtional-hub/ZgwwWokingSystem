@@ -64,6 +64,7 @@
               <van-cell title="岗位" :value="state.selectedNode.jobTitle || '-'" />
               <van-cell title="手机号" :value="state.selectedNode.mobile || '-'" />
             </van-cell-group>
+            <div class="popup-tip subtle-tip">组织树节点默认继承上级所属单位，当前页面仅维护树结构与节点资料，不直接改单位归属。</div>
 
             <div class="section-head">
               <span>直属下级（{{ state.children.length }}）</span>
@@ -146,10 +147,9 @@
             :model-value="createUnitLabel"
             label="所属单位"
             readonly
-            is-link
-            placeholder="请选择所属单位"
-            @click="openUnitPicker('create')"
+            placeholder="自动继承上级节点所属单位"
           />
+          <div class="popup-tip subtle-tip">新增下级会自动继承当前上级节点所属单位。</div>
           <van-field
             :model-value="Number(state.createForm.status) === 1 ? '启用' : '停用'"
             label="状态"
@@ -179,10 +179,9 @@
             :model-value="editUnitLabel"
             label="所属单位"
             readonly
-            is-link
-            placeholder="请选择所属单位"
-            @click="openUnitPicker('edit')"
+            placeholder="当前页面不支持修改所属单位"
           />
+          <div class="popup-tip subtle-tip">节点所属单位跟随当前组织结构维护，如需调整请走其他维护流程。</div>
           <div class="popup-actions">
             <van-button block plain @click="state.editVisible = false">取消</van-button>
             <van-button block type="primary" native-type="submit" :loading="state.submittingEdit">保存修改</van-button>

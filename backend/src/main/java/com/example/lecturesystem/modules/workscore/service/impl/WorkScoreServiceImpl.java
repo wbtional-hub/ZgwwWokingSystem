@@ -3,8 +3,7 @@ package com.example.lecturesystem.modules.workscore.service.impl;
 import com.example.lecturesystem.modules.auth.security.LoginUser;
 import com.example.lecturesystem.modules.operationlog.service.OperationLogService;
 import com.example.lecturesystem.modules.permission.support.CurrentUserFacade;
-import com.example.lecturesystem.modules.permission.support.DataScopeContext;
-import com.example.lecturesystem.modules.permission.support.DataScopeHelper;
+import com.example.lecturesystem.modules.permission.support.DataScopeService;
 import com.example.lecturesystem.modules.permission.service.PermissionService;
 import com.example.lecturesystem.modules.workscore.dto.CalculateWorkScoreRequest;
 import com.example.lecturesystem.modules.workscore.dto.WorkScoreQueryRequest;
@@ -13,6 +12,7 @@ import com.example.lecturesystem.modules.workscore.mapper.WorkScoreMapper;
 import com.example.lecturesystem.modules.workscore.service.WorkScoreService;
 import com.example.lecturesystem.modules.workscore.vo.WorkScoreCandidateVO;
 import com.example.lecturesystem.modules.workscore.vo.WorkScoreListItemVO;
+import com.example.lecturesystem.modules.user.entity.UserEntity;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
@@ -47,7 +47,7 @@ public class WorkScoreServiceImpl implements WorkScoreService {
     private final PermissionService permissionService;
     private final OperationLogService operationLogService;
     private final CurrentUserFacade currentUserFacade;
-    private final DataScopeHelper dataScopeHelper;
+    private final DataScopeService dataScopeService;
 
     public WorkScoreServiceImpl(WorkScoreMapper workScoreMapper,
                                 PermissionService permissionService) {
@@ -60,7 +60,7 @@ public class WorkScoreServiceImpl implements WorkScoreService {
             public Object query(com.example.lecturesystem.modules.operationlog.dto.OperationLogQueryRequest request) {
                 return java.util.List.of();
             }
-        }, null, null);
+        }, null, new DataScopeService());
     }
 
     @Autowired
@@ -68,19 +68,19 @@ public class WorkScoreServiceImpl implements WorkScoreService {
                                 PermissionService permissionService,
                                 OperationLogService operationLogService,
                                 CurrentUserFacade currentUserFacade,
-                                DataScopeHelper dataScopeHelper) {
+                                DataScopeService dataScopeService) {
         this.workScoreMapper = workScoreMapper;
         this.permissionService = permissionService;
         this.operationLogService = operationLogService;
         this.currentUserFacade = currentUserFacade;
-        this.dataScopeHelper = dataScopeHelper;
+        this.dataScopeService = dataScopeService;
     }
 
     @Override
     public Object query(WorkScoreQueryRequest request) {
         WorkScoreQueryRequest normalizedRequest = request == null ? new WorkScoreQueryRequest() : request;
-        if (dataScopeHelper != null) {
-            dataScopeHelper.injectUnitScope(normalizedRequest);
+        if (currentUserFacade != null && dataScopeService != null) {
+            dataScopeService.injectTreePathScope(normalizedRequest, currentUserFacade.currentUserEntity());
         }
         normalizedRequest.setWeekNo(normalizeText(normalizedRequest.getWeekNo()));
         normalizedRequest.setUnitName(normalizeText(normalizedRequest.getUnitName()));
@@ -93,8 +93,7 @@ public class WorkScoreServiceImpl implements WorkScoreService {
 
     @Override
     public Object detail(Long id) {
-        DataScopeContext scope = dataScopeHelper != null ? dataScopeHelper.currentScope() : null;
-        WorkScoreListItemVO detail = workScoreMapper.findDetailById(id, scope != null && !scope.isSuperAdmin() ? scope.getUnitId() : null);
+        WorkScoreListItemVO detail = workScoreMapper.findDetailById(id, currentTreePathPrefix());
         if (detail == null) {
             throw new IllegalArgumentException("评分记录不存在");
         }
@@ -106,7 +105,6 @@ public class WorkScoreServiceImpl implements WorkScoreService {
     public Object calculate(CalculateWorkScoreRequest request) {
         LoginUser loginUser = currentLoginUser();
         requireAdmin(loginUser);
-        DataScopeContext scope = dataScopeHelper != null ? dataScopeHelper.currentScope() : null;
         String weekNo = normalizeWeekNo(request.getWeekNo());
         LocalDate weekStart = parseWeekStart(weekNo);
         LocalDate weekEnd = weekStart.plusDays(6);
@@ -115,7 +113,7 @@ public class WorkScoreServiceImpl implements WorkScoreService {
                 weekNo,
                 weekStart,
                 weekEnd,
-                scope != null && !scope.isSuperAdmin() ? scope.getUnitId() : null
+                currentTreePathPrefix()
         );
         int calculatedCount = 0;
         for (WorkScoreCandidateVO candidate : candidates) {
@@ -380,5 +378,13 @@ public class WorkScoreServiceImpl implements WorkScoreService {
         if (!loginUser.isAdmin()) {
             throw new IllegalArgumentException("仅管理员可执行该操作");
         }
+    }
+
+    private String currentTreePathPrefix() {
+        if (currentUserFacade == null || dataScopeService == null) {
+            return null;
+        }
+        UserEntity currentUser = currentUserFacade.currentUserEntity();
+        return dataScopeService.buildTreePathPrefix(currentUser);
     }
 }

@@ -1,6 +1,7 @@
 package com.example.lecturesystem.modules.unit.service;
 
 import com.example.lecturesystem.modules.unit.dto.CreateUnitRequest;
+import com.example.lecturesystem.modules.unit.dto.SaveAttendanceLocationRequest;
 import com.example.lecturesystem.modules.unit.dto.ToggleUnitStatusRequest;
 import com.example.lecturesystem.modules.unit.dto.UpdateUnitRequest;
 
@@ -10,4 +11,6 @@ public interface UnitService {
     void updateUnit(UpdateUnitRequest request);
     void deleteUnit(Long id);
     void toggleUnitStatus(ToggleUnitStatusRequest request);
+    Object queryAttendanceLocation(Long unitId);
+    Long saveAttendanceLocation(SaveAttendanceLocationRequest request);
 }

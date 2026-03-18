@@ -9,9 +9,7 @@ import java.util.List;
 public interface PermissionMapper {
     boolean existsUserRole(@Param("userId") Long userId, @Param("roleCode") String roleCode);
 
-    List<Long> queryUserIdsByUnitId(@Param("unitId") Long unitId);
-
-    List<Long> queryUserIdsByTreePathPrefix(@Param("unitId") Long unitId, @Param("treePathPrefix") String treePathPrefix);
+    List<Long> queryUserIdsByTreePathPrefix(@Param("treePathPrefix") String treePathPrefix);
 
     int insertUserRole(@Param("userId") Long userId, @Param("roleCode") String roleCode);
 }

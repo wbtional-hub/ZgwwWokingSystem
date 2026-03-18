@@ -1,22 +1,23 @@
 package com.example.lecturesystem.modules.attendance.dto;
 
-import com.example.lecturesystem.modules.permission.support.UnitScopedRequest;
+import com.example.lecturesystem.modules.permission.support.TreePathScopedRequest;
 
-public class AttendanceQueryRequest implements UnitScopedRequest {
-    private Long unitId;
+public class AttendanceQueryRequest implements TreePathScopedRequest {
+    private String treePathPrefix;
     private String keywords;
     private String unitName;
     private String dateFrom;
     private String dateTo;
+    private String checkInStatus;
+    private Long userId;
+    private Boolean abnormalOnly;
 
-    @Override
-    public Long getUnitId() {
-        return unitId;
+    public String getTreePathPrefix() {
+        return treePathPrefix;
     }
 
-    @Override
-    public void setUnitId(Long unitId) {
-        this.unitId = unitId;
+    public void setTreePathPrefix(String treePathPrefix) {
+        this.treePathPrefix = treePathPrefix;
     }
 
     public String getKeywords() {
@@ -49,5 +50,29 @@ public class AttendanceQueryRequest implements UnitScopedRequest {
 
     public void setDateTo(String dateTo) {
         this.dateTo = dateTo;
+    }
+
+    public String getCheckInStatus() {
+        return checkInStatus;
+    }
+
+    public void setCheckInStatus(String checkInStatus) {
+        this.checkInStatus = checkInStatus;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    public Boolean getAbnormalOnly() {
+        return abnormalOnly;
+    }
+
+    public void setAbnormalOnly(Boolean abnormalOnly) {
+        this.abnormalOnly = abnormalOnly;
     }
 }

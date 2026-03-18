@@ -1,18 +1,18 @@
 package com.example.lecturesystem.modules.workscore.dto;
 
-import com.example.lecturesystem.modules.permission.support.UnitScopedRequest;
+import com.example.lecturesystem.modules.permission.support.TreePathScopedRequest;
 
-public class WorkScoreQueryRequest implements UnitScopedRequest {
-    private Long unitId;
+public class WorkScoreQueryRequest implements TreePathScopedRequest {
+    private String treePathPrefix;
     private String weekNo;
     private String unitName;
     private String status;
     private Boolean sortByTotalDesc;
 
     @Override
-    public Long getUnitId() { return unitId; }
+    public String getTreePathPrefix() { return treePathPrefix; }
     @Override
-    public void setUnitId(Long unitId) { this.unitId = unitId; }
+    public void setTreePathPrefix(String treePathPrefix) { this.treePathPrefix = treePathPrefix; }
     public String getWeekNo() { return weekNo; }
     public void setWeekNo(String weekNo) { this.weekNo = weekNo; }
     public String getUnitName() { return unitName; }

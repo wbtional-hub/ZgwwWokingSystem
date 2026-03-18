@@ -7,6 +7,9 @@ public class UserPageVO {
     private Integer pageNo;
     private Integer pageSize;
     private Long total;
+    private Long scopeUserCount;
+    private String scopeType;
+    private String scopeDescription;
     private List<UserListItemVO> list = new ArrayList<>();
 
     public Integer getPageNo() {
@@ -31,6 +34,30 @@ public class UserPageVO {
 
     public void setTotal(Long total) {
         this.total = total;
+    }
+
+    public Long getScopeUserCount() {
+        return scopeUserCount;
+    }
+
+    public void setScopeUserCount(Long scopeUserCount) {
+        this.scopeUserCount = scopeUserCount;
+    }
+
+    public String getScopeType() {
+        return scopeType;
+    }
+
+    public void setScopeType(String scopeType) {
+        this.scopeType = scopeType;
+    }
+
+    public String getScopeDescription() {
+        return scopeDescription;
+    }
+
+    public void setScopeDescription(String scopeDescription) {
+        this.scopeDescription = scopeDescription;
     }
 
     public List<UserListItemVO> getList() {

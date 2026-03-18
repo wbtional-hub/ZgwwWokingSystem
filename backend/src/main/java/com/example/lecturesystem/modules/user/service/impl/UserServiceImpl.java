@@ -2,6 +2,7 @@ package com.example.lecturesystem.modules.user.service.impl;
 
 import com.example.lecturesystem.modules.auth.security.LoginUser;
 import com.example.lecturesystem.modules.operationlog.service.OperationLogService;
+import com.example.lecturesystem.modules.permission.support.DataScopeService;
 import com.example.lecturesystem.modules.user.dto.CreateUserRequest;
 import com.example.lecturesystem.modules.user.dto.UserQueryRequest;
 import com.example.lecturesystem.modules.user.dto.UpdateUserRequest;
@@ -25,6 +26,7 @@ public class UserServiceImpl implements UserService {
 
     private final UserMapper userMapper;
     private final OperationLogService operationLogService;
+    private final DataScopeService dataScopeService;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     public UserServiceImpl(UserMapper userMapper) {
@@ -37,13 +39,14 @@ public class UserServiceImpl implements UserService {
             public Object query(com.example.lecturesystem.modules.operationlog.dto.OperationLogQueryRequest request) {
                 return java.util.List.of();
             }
-        });
+        }, new DataScopeService());
     }
 
     @Autowired
-    public UserServiceImpl(UserMapper userMapper, OperationLogService operationLogService) {
+    public UserServiceImpl(UserMapper userMapper, OperationLogService operationLogService, DataScopeService dataScopeService) {
         this.userMapper = userMapper;
         this.operationLogService = operationLogService;
+        this.dataScopeService = dataScopeService;
     }
 
     @Override
@@ -51,12 +54,22 @@ public class UserServiceImpl implements UserService {
         normalizePage(request);
         LoginUser loginUser = currentLoginUser();
         boolean admin = loginUser.isAdmin();
-        long total = admin ? userMapper.countPage(request) : userMapper.countPageByUserId(loginUser.getUserId(), request);
+        String treePathPrefix = null;
+        UserEntity currentUser = null;
+        if (!admin) {
+            currentUser = requireUser(loginUser.getUserId());
+            treePathPrefix = dataScopeService.buildTreePathPrefix(currentUser);
+        }
+        long total = admin ? userMapper.countPage(request) : userMapper.countPageByTreePath(treePathPrefix, request);
         UserPageVO result = new UserPageVO();
         result.setPageNo(request.getPageNo());
         result.setPageSize(request.getPageSize());
         result.setTotal(total);
-        result.setList(admin ? userMapper.queryPage(request) : userMapper.queryPageByUserId(loginUser.getUserId(), request));
+        result.setList(admin ? userMapper.queryPage(request) : userMapper.queryPageByTreePath(treePathPrefix, request));
+        long scopeUserCount = admin ? userMapper.countPage(new UserQueryRequest()) : userMapper.countPageByTreePath(treePathPrefix, new UserQueryRequest());
+        result.setScopeUserCount(scopeUserCount);
+        result.setScopeType((admin ? com.example.lecturesystem.modules.permission.support.DataScopeType.CUSTOM : dataScopeService.resolveScopeType(currentUser)).name());
+        result.setScopeDescription(admin ? "当前可查看全部用户，共 " + scopeUserCount + " 人" : dataScopeService.describeScope(currentUser, scopeUserCount));
         return result;
     }
 
@@ -97,13 +110,25 @@ public class UserServiceImpl implements UserService {
     @Override
     public Object detail(Long userId) {
         LoginUser loginUser = currentLoginUser();
-        if (!loginUser.isAdmin() && !loginUser.getUserId().equals(userId)) {
-            throw new IllegalArgumentException("只能查看自己的用户信息");
+        UserDetailVO detail;
+        if (loginUser.isAdmin()) {
+            detail = userMapper.detailById(userId);
+        } else {
+            UserEntity currentUser = requireUser(loginUser.getUserId());
+            detail = userMapper.detailByIdAndTreePath(userId, dataScopeService.buildTreePathPrefix(currentUser));
+            if (detail == null) {
+                throw new IllegalArgumentException("只能查看自己及下级的用户信息");
+            }
         }
-        UserDetailVO detail = userMapper.detailById(userId);
         if (detail == null) {
             throw new IllegalArgumentException("用户不存在");
         }
+        operationLogService.log(
+                "DATA_ACCESS",
+                "VIEW_USER_DETAIL",
+                userId,
+                "用户 " + currentOperator() + " 查看了用户 " + (detail.getRealName() == null ? detail.getUsername() : detail.getRealName()) + " 的资料"
+        );
         return detail;
     }
 
@@ -206,4 +231,5 @@ public class UserServiceImpl implements UserService {
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
     }
+
 }

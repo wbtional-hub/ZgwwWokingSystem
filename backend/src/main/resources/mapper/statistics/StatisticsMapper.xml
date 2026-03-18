@@ -19,8 +19,8 @@
         <if test="unitName != null and unitName != ''">
             AND su.unit_name LIKE CONCAT('%', #{unitName}, '%')
         </if>
-        <if test="unitId != null">
-            AND u.unit_id = #{unitId}
+        <if test="treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{treePathPrefix}, '%')
         </if>
     </select>
 
@@ -38,8 +38,8 @@
         <if test="unitName != null and unitName != ''">
             AND su.unit_name LIKE CONCAT('%', #{unitName}, '%')
         </if>
-        <if test="unitId != null">
-            AND s.unit_id = #{unitId}
+        <if test="treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{treePathPrefix}, '%')
         </if>
     </select>
 
@@ -57,8 +57,8 @@
         <if test="unitName != null and unitName != ''">
             AND su.unit_name LIKE CONCAT('%', #{unitName}, '%')
         </if>
-        <if test="unitId != null">
-            AND s.unit_id = #{unitId}
+        <if test="treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{treePathPrefix}, '%')
         </if>
         GROUP BY s.unit_id, COALESCE(su.unit_name, '未分组')
         ORDER BY average_score DESC, red_count ASC, score_count DESC
@@ -77,8 +77,8 @@
         <if test="unitName != null and unitName != ''">
             AND su.unit_name LIKE CONCAT('%', #{unitName}, '%')
         </if>
-        <if test="unitId != null">
-            AND s.unit_id = #{unitId}
+        <if test="treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{treePathPrefix}, '%')
         </if>
         ORDER BY s.total_score ASC, s.level ASC, s.id ASC
     </select>
@@ -96,8 +96,8 @@
         <if test="unitName != null and unitName != ''">
             AND su.unit_name LIKE CONCAT('%', #{unitName}, '%')
         </if>
-        <if test="unitId != null">
-            AND s.unit_id = #{unitId}
+        <if test="treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{treePathPrefix}, '%')
         </if>
         GROUP BY s.week_no
         ORDER BY s.week_no DESC

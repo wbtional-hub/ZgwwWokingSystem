@@ -10,6 +10,13 @@ public class UnitListItemVO {
     private Long adminUserId;
     private String adminUsername;
     private String adminRealName;
+    private Long attendanceLocationId;
+    private String attendanceLocationName;
+    private String attendanceLocationAddress;
+    private java.math.BigDecimal attendanceLocationLongitude;
+    private java.math.BigDecimal attendanceLocationLatitude;
+    private Integer attendanceLocationRadiusMeters;
+    private Integer attendanceLocationStatus;
     private LocalDateTime createTime;
 
     public Long getId() {
@@ -66,6 +73,62 @@ public class UnitListItemVO {
 
     public void setAdminRealName(String adminRealName) {
         this.adminRealName = adminRealName;
+    }
+
+    public Long getAttendanceLocationId() {
+        return attendanceLocationId;
+    }
+
+    public void setAttendanceLocationId(Long attendanceLocationId) {
+        this.attendanceLocationId = attendanceLocationId;
+    }
+
+    public String getAttendanceLocationName() {
+        return attendanceLocationName;
+    }
+
+    public void setAttendanceLocationName(String attendanceLocationName) {
+        this.attendanceLocationName = attendanceLocationName;
+    }
+
+    public String getAttendanceLocationAddress() {
+        return attendanceLocationAddress;
+    }
+
+    public void setAttendanceLocationAddress(String attendanceLocationAddress) {
+        this.attendanceLocationAddress = attendanceLocationAddress;
+    }
+
+    public java.math.BigDecimal getAttendanceLocationLongitude() {
+        return attendanceLocationLongitude;
+    }
+
+    public void setAttendanceLocationLongitude(java.math.BigDecimal attendanceLocationLongitude) {
+        this.attendanceLocationLongitude = attendanceLocationLongitude;
+    }
+
+    public java.math.BigDecimal getAttendanceLocationLatitude() {
+        return attendanceLocationLatitude;
+    }
+
+    public void setAttendanceLocationLatitude(java.math.BigDecimal attendanceLocationLatitude) {
+        this.attendanceLocationLatitude = attendanceLocationLatitude;
+    }
+
+    public Integer getAttendanceLocationRadiusMeters() {
+        return attendanceLocationRadiusMeters;
+    }
+
+    public void setAttendanceLocationRadiusMeters(Integer attendanceLocationRadiusMeters) {
+        this.attendanceLocationRadiusMeters = attendanceLocationRadiusMeters;
+    }
+
+    public Integer getAttendanceLocationStatus() {
+        return attendanceLocationStatus;
+    }
+
+    public void setAttendanceLocationStatus(Integer attendanceLocationStatus) {
+        this.attendanceLocationStatus = attendanceLocationStatus;
     }
 
     public LocalDateTime getCreateTime() {

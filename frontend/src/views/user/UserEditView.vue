@@ -15,6 +15,10 @@
       {{ moduleOverviewText }}
     </div>
 
+    <div v-if="store.scopeDescription" class="module-overview module-overview--scope">
+      {{ store.scopeDescription }}
+    </div>
+
     <div v-if="routeSourceHint" class="module-tip module-tip--source">
       {{ routeSourceHint }}
       <router-link v-if="returnToUnitsRoute" class="module-tip-link" :to="returnToUnitsRoute">返回来源单位</router-link>
@@ -52,6 +56,7 @@
       <span>共 {{ store.total }} 人</span>
       <span>当前第 {{ store.pageNo }} 页</span>
       <span>{{ pageRangeText }}</span>
+      <span>{{ scopeSummaryText }}</span>
     </div>
 
     <div v-if="store.list.length" class="page-summary page-summary--subtle">
@@ -73,6 +78,10 @@
 
     <div class="sync-summary">
       列表最后同步：{{ lastSyncTime }}
+    </div>
+
+    <div v-if="actionFeedback" class="sync-summary sync-summary--highlight">
+      {{ actionFeedback }}
     </div>
 
     <div v-if="detailVisible && store.currentDetail" class="focus-summary">
@@ -372,6 +381,7 @@ const route = useRoute()
 const router = useRouter()
 const detailVisible = ref(false)
 const lastSyncTime = ref('-')
+const actionFeedback = ref('')
 const actingUserId = ref(null)
 const actingType = ref('')
 const resettingFilters = ref(false)
@@ -393,7 +403,7 @@ const statusOptions = [
   { text: '停用', value: 0 }
 ]
 const pageDescription = '后台模板模块，已接入列表筛选、详情浏览、表单维护与关键操作。'
-const moduleOverviewText = computed(() => `当前共 ${store.total} 人，位于第 ${store.pageNo} 页${filterSummary.value ? `，筛选条件：${filterSummary.value}` : '，当前未使用筛选条件'}。`)
+const moduleOverviewText = computed(() => `当前查询结果共 ${store.total} 人，位于第 ${store.pageNo} 页${filterSummary.value ? `，筛选条件：${filterSummary.value}` : '，当前未使用筛选条件'}。`)
 const routeSourceHint = computed(() => {
   if (route.query.from !== 'units') {
     return ''
@@ -579,6 +589,9 @@ const pageRangeText = computed(() => {
   const end = start + store.list.length - 1
   return `当前展示第 ${start}-${end} 条`
 })
+const scopeSummaryText = computed(() => (
+  store.scopeDescription || `当前权限范围可查看 ${store.scopeUserCount || 0} 人`
+))
 const routeTargetUserId = computed(() => resolveRouteUserId(route.query.userId))
 const routeTargetIndex = computed(() =>
   store.list.findIndex((item) => item.id === routeTargetUserId.value)
@@ -684,6 +697,10 @@ async function fetchPage(extra = {}) {
   } catch (error) {
     showToast(error.message || '用户列表加载失败')
   }
+}
+
+function updateActionFeedback(message) {
+  actionFeedback.value = message
 }
 
 function applyRouteFilters(query) {
@@ -996,6 +1013,7 @@ async function handleSubmit(formData) {
       if (createdUserId) {
         await showDetail(createdUserId)
       }
+      updateActionFeedback(`新增用户成功，列表已回刷到第 1 页，并已打开用户 ID ${createdUserId} 的详情。`)
     } else {
       const editedUserId = dialog.editingId
       const restoreDetailId = dialog.restoreDetailId
@@ -1019,6 +1037,7 @@ async function handleSubmit(formData) {
       } else if (detailVisible.value && store.currentDetail?.id === editedUserId) {
         await showDetail(editedUserId)
       }
+      updateActionFeedback(`编辑用户成功，列表已按当前筛选重新回刷${editedUserId ? `，并同步用户 ID ${editedUserId} 的最新资料。` : '。'}`)
     }
   } catch (error) {
     showToast(error.message || '保存失败')
@@ -1053,9 +1072,11 @@ async function handleDelete(userId) {
     showToast('删除成功')
     if (store.list.length === 1 && store.pageNo > 1) {
       await fetchPage({ pageNo: store.pageNo - 1 })
+      updateActionFeedback(`删除用户成功，列表已自动回刷到上一页，当前第 ${store.pageNo} 页。`)
       return
     }
     await fetchPage()
+    updateActionFeedback('删除用户成功，列表已按当前筛选重新回刷。')
   } catch (error) {
     if (!isActionCancelled(error) && error?.message) {
       showToast(error.message)
@@ -1120,6 +1141,12 @@ async function handleResetPassword(userId, options = {}) {
     actingUserId.value = userId
     actingType.value = 'resetPassword'
     await store.resetPassword(userId)
+    await fetchPage()
+    if (detailVisible.value && store.currentDetail?.id === userId) {
+      await showDetail(userId)
+    }
+    const targetName = target?.realName || target?.username || `用户ID ${userId}`
+    updateActionFeedback(`${targetName} 的密码已重置为默认值 123456，列表状态已重新回刷。`)
     showToast('密码已重置为默认值 123456')
   } catch (error) {
     if (!isActionCancelled(error) && error?.message) {
@@ -1289,6 +1316,20 @@ function syncListRouteQuery({ keywords = searchForm.keywords, status = searchFor
 
 .page-summary--subtle {
   margin-top: -8px;
+}
+
+.sync-summary {
+  margin: 0 0 16px;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.sync-summary--highlight {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #ecfdf3;
+  color: #027a48;
 }
 
 .focus-summary {

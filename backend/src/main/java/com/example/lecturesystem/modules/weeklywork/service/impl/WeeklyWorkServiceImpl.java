@@ -3,7 +3,7 @@ package com.example.lecturesystem.modules.weeklywork.service.impl;
 import com.example.lecturesystem.modules.auth.security.LoginUser;
 import com.example.lecturesystem.modules.operationlog.service.OperationLogService;
 import com.example.lecturesystem.modules.permission.support.CurrentUserFacade;
-import com.example.lecturesystem.modules.permission.support.DataScopeHelper;
+import com.example.lecturesystem.modules.permission.support.DataScopeService;
 import com.example.lecturesystem.modules.weeklywork.dto.ReviewWeeklyWorkRequest;
 import com.example.lecturesystem.modules.weeklywork.dto.SaveWeeklyWorkRequest;
 import com.example.lecturesystem.modules.weeklywork.dto.SubmitWeeklyWorkRequest;
@@ -35,7 +35,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     private final UserMapper userMapper;
     private final OperationLogService operationLogService;
     private final CurrentUserFacade currentUserFacade;
-    private final DataScopeHelper dataScopeHelper;
+    private final DataScopeService dataScopeService;
 
     public WeeklyWorkServiceImpl(WeeklyWorkMapper weeklyWorkMapper,
                                  PermissionService permissionService,
@@ -49,7 +49,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
             public Object query(com.example.lecturesystem.modules.operationlog.dto.OperationLogQueryRequest request) {
                 return java.util.List.of();
             }
-        }, null, null);
+        }, null, new DataScopeService());
     }
 
     @Autowired
@@ -58,13 +58,13 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
                                  UserMapper userMapper,
                                  OperationLogService operationLogService,
                                  CurrentUserFacade currentUserFacade,
-                                 DataScopeHelper dataScopeHelper) {
+                                 DataScopeService dataScopeService) {
         this.weeklyWorkMapper = weeklyWorkMapper;
         this.permissionService = permissionService;
         this.userMapper = userMapper;
         this.operationLogService = operationLogService;
         this.currentUserFacade = currentUserFacade;
-        this.dataScopeHelper = dataScopeHelper;
+        this.dataScopeService = dataScopeService;
     }
 
     @Override
@@ -119,16 +119,14 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     @Override
     public Object query(WeeklyWorkQueryRequest request) {
         WeeklyWorkQueryRequest normalizedRequest = request == null ? new WeeklyWorkQueryRequest() : request;
-        if (dataScopeHelper != null) {
-            dataScopeHelper.injectUnitScope(normalizedRequest);
-        }
         LoginUser loginUser = currentLoginUser();
+        if (!permissionService.isSuperAdmin(loginUser.getUserId())) {
+            dataScopeService.injectTreePathScope(normalizedRequest, requireCurrentUser(loginUser.getUserId()));
+        }
 
         if (!permissionService.isSuperAdmin(loginUser.getUserId()) && normalizedRequest.getUserId() != null) {
-            Set<Long> scopeUserIds = permissionService.queryDataScopeUserIds(loginUser.getUserId());
-            if (!scopeUserIds.contains(normalizedRequest.getUserId())) {
-                throw new IllegalArgumentException("无权查看指定用户的周工作");
-            }
+            UserEntity targetUser = requireCurrentUser(normalizedRequest.getUserId());
+            dataScopeService.validateReadableUser(requireCurrentUser(loginUser.getUserId()), targetUser, "无权查看指定用户的周工作");
         }
 
         return weeklyWorkMapper.queryList(normalizedRequest);
@@ -193,17 +191,12 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     }
 
     private void validateReadable(LoginUser loginUser, WeeklyWorkEntity entity) {
-        if (dataScopeHelper != null) {
-            dataScopeHelper.validateReadableUnit(entity.getUnitId());
-            return;
-        }
         if (permissionService.isSuperAdmin(loginUser.getUserId())) {
             return;
         }
-        Set<Long> scopeUserIds = permissionService.queryDataScopeUserIds(loginUser.getUserId());
-        if (!scopeUserIds.contains(entity.getUserId())) {
-            throw new IllegalArgumentException("无权查看该周报");
-        }
+        UserEntity currentUser = requireCurrentUser(loginUser.getUserId());
+        UserEntity targetUser = requireCurrentUser(entity.getUserId());
+        dataScopeService.validateReadableUser(currentUser, targetUser, "无权查看该周报");
     }
 
     private LoginUser currentLoginUser() {
@@ -216,4 +209,5 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         }
         return loginUser;
     }
+
 }

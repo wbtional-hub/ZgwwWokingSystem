@@ -3,6 +3,7 @@ package com.example.lecturesystem.modules.user.dto;
 import com.example.lecturesystem.modules.permission.support.UnitScopedRequest;
 
 public class UserQueryRequest implements UnitScopedRequest {
+    // 仅作为用户管理页的业务筛选字段，不允许作为数据权限范围注入入口使用。
     private Long unitId;
     private String keywords;
     private Integer status;
@@ -48,7 +49,7 @@ public class UserQueryRequest implements UnitScopedRequest {
 
     @Override
     public void setUnitId(Long unitId) {
-        this.unitId = unitId;
+        this.unitId = unitId != null && unitId > 0 ? unitId : null;
     }
 
     public int getOffset() {

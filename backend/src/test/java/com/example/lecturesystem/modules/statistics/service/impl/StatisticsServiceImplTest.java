@@ -3,13 +3,19 @@ package com.example.lecturesystem.modules.statistics.service.impl;
 import com.example.lecturesystem.modules.attendance.mapper.AttendanceMapper;
 import com.example.lecturesystem.modules.attendance.entity.AttendanceRecordEntity;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceRecordListItemVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserRankVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalTrendPointVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserSummaryVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceStatusCountVO;
 import com.example.lecturesystem.modules.attendance.dto.AttendanceQueryRequest;
-import com.example.lecturesystem.modules.auth.security.LoginUser;
-import com.example.lecturesystem.modules.permission.service.PermissionService;
+import com.example.lecturesystem.modules.permission.support.CurrentUserFacade;
+import com.example.lecturesystem.modules.permission.support.DataScopeContext;
+import com.example.lecturesystem.modules.permission.support.DataScopeService;
 import com.example.lecturesystem.modules.statistics.mapper.StatisticsMapper;
 import com.example.lecturesystem.modules.statistics.vo.StatisticsOrgRankVO;
 import com.example.lecturesystem.modules.statistics.vo.StatisticsOverviewVO;
 import com.example.lecturesystem.modules.statistics.vo.StatisticsTrendVO;
+import com.example.lecturesystem.modules.user.entity.UserEntity;
 import com.example.lecturesystem.modules.workscore.vo.WorkScoreListItemVO;
 import com.example.lecturesystem.modules.weeklywork.dto.WeeklyWorkQueryRequest;
 import com.example.lecturesystem.modules.weeklywork.entity.WeeklyWorkEntity;
@@ -18,21 +24,16 @@ import com.example.lecturesystem.modules.weeklywork.vo.WeeklyWorkListItemVO;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.WeekFields;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 public class StatisticsServiceImplTest {
     @After
     public void tearDown() {
-        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -40,10 +41,13 @@ public class StatisticsServiceImplTest {
         StubStatisticsMapper statisticsMapper = new StubStatisticsMapper(10L);
         StubAttendanceMapper attendanceMapper = new StubAttendanceMapper();
         StubWeeklyWorkMapper weeklyWorkMapper = new StubWeeklyWorkMapper();
-        StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L, 4L, 5L));
-        StatisticsServiceImpl service = new StatisticsServiceImpl(statisticsMapper, attendanceMapper, weeklyWorkMapper, permissionService);
-
-        mockLoginUser(3L, false);
+        StatisticsServiceImpl service = new StatisticsServiceImpl(
+                statisticsMapper,
+                attendanceMapper,
+                weeklyWorkMapper,
+                new StubCurrentUserFacade(3L, "USER", "/3/"),
+                new DataScopeService()
+        );
         Map<?, ?> result = (Map<?, ?>) service.overview();
 
         Assert.assertEquals(3L, result.get("userCount"));
@@ -58,10 +62,13 @@ public class StatisticsServiceImplTest {
         StubStatisticsMapper statisticsMapper = new StubStatisticsMapper(8L);
         StubAttendanceMapper attendanceMapper = new StubAttendanceMapper();
         StubWeeklyWorkMapper weeklyWorkMapper = new StubWeeklyWorkMapper();
-        StubPermissionService permissionService = new StubPermissionService(true, Set.of());
-        StatisticsServiceImpl service = new StatisticsServiceImpl(statisticsMapper, attendanceMapper, weeklyWorkMapper, permissionService);
-
-        mockLoginUser(1L, true);
+        StatisticsServiceImpl service = new StatisticsServiceImpl(
+                statisticsMapper,
+                attendanceMapper,
+                weeklyWorkMapper,
+                new StubCurrentUserFacade(1L, "ADMIN", "/1/"),
+                new DataScopeService()
+        );
         Map<?, ?> result = (Map<?, ?>) service.overview();
 
         Assert.assertEquals(8L, result.get("userCount"));
@@ -71,35 +78,29 @@ public class StatisticsServiceImplTest {
         Assert.assertEquals(62.5D, (Double) result.get("weeklySubmitRate"), 0.001D);
     }
 
-    private void mockLoginUser(Long userId, boolean superAdmin) {
-        LoginUser loginUser = new LoginUser(userId, "tester", "测试用户", superAdmin);
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(loginUser, null, java.util.List.of())
-        );
-    }
+    private static class StubCurrentUserFacade extends CurrentUserFacade {
+        private final UserEntity currentUser;
 
-    private static class StubPermissionService implements PermissionService {
-        private final boolean superAdmin;
-        private final Set<Long> scopeUserIds;
-
-        private StubPermissionService(boolean superAdmin, Set<Long> scopeUserIds) {
-            this.superAdmin = superAdmin;
-            this.scopeUserIds = scopeUserIds;
+        private StubCurrentUserFacade(Long userId, String role, String treePath) {
+            super(null);
+            this.currentUser = new UserEntity();
+            this.currentUser.setId(userId);
+            this.currentUser.setRole(role);
+            this.currentUser.setTreePath(treePath);
         }
 
         @Override
-        public boolean isSuperAdmin(Long userId) {
-            return superAdmin;
+        public UserEntity currentUserEntity() {
+            return currentUser;
         }
 
         @Override
-        public boolean isUnitAdmin(Long userId) {
-            return false;
-        }
-
-        @Override
-        public Set<Long> queryDataScopeUserIds(Long currentUserId) {
-            return scopeUserIds;
+        public DataScopeContext currentDataScope() {
+            return new DataScopeContext(
+                    currentUser.getId(),
+                    currentUser.getUnitId(),
+                    "ADMIN".equalsIgnoreCase(currentUser.getRole())
+            );
         }
     }
 
@@ -116,27 +117,27 @@ public class StatisticsServiceImplTest {
         }
 
         @Override
-        public long countUsersByUnitName(String unitName, Long unitId) {
-            return allUsers;
+        public long countUsersByUnitName(String unitName, String treePathPrefix) {
+            return treePathPrefix == null ? allUsers : 3L;
         }
 
         @Override
-        public StatisticsOverviewVO queryOverview(String weekNo, String unitName, Long unitId) {
+        public StatisticsOverviewVO queryOverview(String weekNo, String unitName, String treePathPrefix) {
             return null;
         }
 
         @Override
-        public List<StatisticsOrgRankVO> queryOrgRank(String weekNo, String unitName, Long unitId) {
+        public List<StatisticsOrgRankVO> queryOrgRank(String weekNo, String unitName, String treePathPrefix) {
             return List.of();
         }
 
         @Override
-        public List<WorkScoreListItemVO> queryStatusList(String weekNo, String unitName, String status, Long unitId) {
+        public List<WorkScoreListItemVO> queryStatusList(String weekNo, String unitName, String status, String treePathPrefix) {
             return List.of();
         }
 
         @Override
-        public List<StatisticsTrendVO> queryTrend(String unitName, Long unitId) {
+        public List<StatisticsTrendVO> queryTrend(String unitName, String treePathPrefix) {
             return List.of();
         }
     }
@@ -158,6 +159,16 @@ public class StatisticsServiceImplTest {
         }
 
         @Override
+        public com.example.lecturesystem.modules.unit.vo.AttendanceLocationVO findAttendanceLocationByUnitId(Long unitId) {
+            return null;
+        }
+
+        @Override
+        public String findUnitNameById(Long unitId) {
+            return null;
+        }
+
+        @Override
         public int update(AttendanceRecordEntity entity) {
             return 0;
         }
@@ -173,8 +184,33 @@ public class StatisticsServiceImplTest {
         }
 
         @Override
-        public long countDistinctUsersByRange(Long unitId, LocalDate startDate, LocalDate endDate, Integer validFlag) {
-            return unitId == null ? 4L : 2L;
+        public long countDistinctUsersByRange(String treePathPrefix, LocalDate startDate, LocalDate endDate, Integer validFlag) {
+            return treePathPrefix == null ? 4L : 2L;
+        }
+
+        @Override
+        public long countByQuery(AttendanceQueryRequest request) {
+            return 0;
+        }
+
+        @Override
+        public List<AttendanceStatusCountVO> queryStatusCounts(AttendanceQueryRequest request) {
+            return List.of();
+        }
+
+        @Override
+        public List<AttendanceAbnormalUserRankVO> queryAbnormalUserRanks(AttendanceQueryRequest request) {
+            return List.of();
+        }
+
+        @Override
+        public List<AttendanceAbnormalTrendPointVO> queryAbnormalTrend(AttendanceQueryRequest request) {
+            return List.of();
+        }
+
+        @Override
+        public AttendanceAbnormalUserSummaryVO queryAbnormalUserSummary(AttendanceQueryRequest request) {
+            return null;
         }
 
         @Override
@@ -215,12 +251,12 @@ public class StatisticsServiceImplTest {
         }
 
         @Override
-        public long countDistinctSubmittedUsers(Long unitId, String weekNo, String status) {
+        public long countDistinctSubmittedUsers(String treePathPrefix, String weekNo, String status) {
             String currentWeekNo = buildCurrentWeekNo(LocalDate.now());
             if (!currentWeekNo.equals(weekNo)) {
                 return 0L;
             }
-            return unitId == null ? 5L : 2L;
+            return treePathPrefix == null ? 5L : 2L;
         }
 
         @Override

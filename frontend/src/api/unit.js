@@ -19,3 +19,11 @@ export function toggleUnitStatus(data) {
 export function deleteUnit(id) {
   return request.delete(`/unit/${id}`)
 }
+
+export function queryUnitAttendanceLocation(unitId) {
+  return request.get(`/unit/${unitId}/attendance-location`)
+}
+
+export function saveUnitAttendanceLocation(data) {
+  return request.post('/unit/attendance-location/save', data)
+}

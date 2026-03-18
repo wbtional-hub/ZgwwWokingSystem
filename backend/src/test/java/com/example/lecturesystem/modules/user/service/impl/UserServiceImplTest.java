@@ -1,6 +1,9 @@
 package com.example.lecturesystem.modules.user.service.impl;
 
 import com.example.lecturesystem.modules.auth.security.LoginUser;
+import com.example.lecturesystem.modules.operationlog.dto.OperationLogQueryRequest;
+import com.example.lecturesystem.modules.operationlog.service.OperationLogService;
+import com.example.lecturesystem.modules.permission.support.DataScopeService;
 import com.example.lecturesystem.modules.user.dto.CreateUserRequest;
 import com.example.lecturesystem.modules.user.dto.UpdateUserRequest;
 import com.example.lecturesystem.modules.user.dto.UserQueryRequest;
@@ -56,6 +59,7 @@ public class UserServiceImplTest {
         userMapper.insertSeed(seedUser(1L, "lisi", "李四", 1, false));
         userMapper.insertSeed(seedUser(2L, "wangwu", "王五", 1, true));
         UserServiceImpl service = new UserServiceImpl(userMapper);
+        mockLoginUser(1L, "admin");
 
         UserQueryRequest request = new UserQueryRequest();
         Object page = service.queryPage(request);
@@ -105,6 +109,7 @@ public class UserServiceImplTest {
         seeded.setTreePath("/2/9/1/");
         userMapper.insertSeed(seeded);
         UserServiceImpl service = new UserServiceImpl(userMapper);
+        mockLoginUser(1L, "admin");
 
         UserDetailVO detail = (UserDetailVO) service.detail(1L);
 
@@ -113,8 +118,80 @@ public class UserServiceImplTest {
         Assert.assertEquals("/2/9/1/", detail.getTreePath());
     }
 
+    @Test
+    public void queryPageShouldReturnCurrentUserAndDescendantsForNonAdmin() {
+        InMemoryUserMapper userMapper = new InMemoryUserMapper();
+        UserEntity root = seedUser(2L, "root", "根用户", 1, false);
+        root.setTreePath("/2/");
+        root.setLevelNo(1);
+        UserEntity child = seedUser(3L, "child", "下级用户", 1, false);
+        child.setParentUserId(2L);
+        child.setTreePath("/2/3/");
+        child.setLevelNo(2);
+        UserEntity other = seedUser(9L, "other", "其他用户", 1, false);
+        other.setTreePath("/9/");
+        other.setLevelNo(1);
+        userMapper.insertSeed(root);
+        userMapper.insertSeed(child);
+        userMapper.insertSeed(other);
+        UserServiceImpl service = new UserServiceImpl(userMapper);
+        mockNormalLoginUser(2L, "root");
+
+        UserQueryRequest request = new UserQueryRequest();
+
+        com.example.lecturesystem.modules.user.vo.UserPageVO page = (com.example.lecturesystem.modules.user.vo.UserPageVO) service.queryPage(request);
+
+        Assert.assertEquals(2L, page.getTotal().longValue());
+        Assert.assertEquals(2, page.getList().size());
+        Assert.assertEquals(Long.valueOf(2L), page.getScopeUserCount());
+        Assert.assertEquals("SUB_TREE", page.getScopeType());
+        Assert.assertEquals("当前可查看自己及下级，共 2 人", page.getScopeDescription());
+    }
+
+    @Test
+    public void detailShouldAllowDescendantForNonAdmin() {
+        InMemoryUserMapper userMapper = new InMemoryUserMapper();
+        UserEntity root = seedUser(2L, "root", "根用户", 1, false);
+        root.setTreePath("/2/");
+        UserEntity child = seedUser(3L, "child", "下级用户", 1, false);
+        child.setParentUserId(2L);
+        child.setTreePath("/2/3/");
+        userMapper.insertSeed(root);
+        userMapper.insertSeed(child);
+        UserServiceImpl service = new UserServiceImpl(userMapper);
+        mockNormalLoginUser(2L, "root");
+
+        UserDetailVO detail = (UserDetailVO) service.detail(3L);
+
+        Assert.assertEquals(Long.valueOf(3L), detail.getId());
+    }
+
+    @Test
+    public void detailShouldWriteDataAccessLog() {
+        InMemoryUserMapper userMapper = new InMemoryUserMapper();
+        UserEntity seeded = seedUser(1L, "lisi", "李四", 1, false);
+        userMapper.insertSeed(seeded);
+        StubOperationLogService operationLogService = new StubOperationLogService();
+        UserServiceImpl service = new UserServiceImpl(userMapper, operationLogService, new DataScopeService());
+        mockLoginUser(1L, "admin");
+
+        service.detail(1L);
+
+        Assert.assertEquals("DATA_ACCESS", operationLogService.moduleName);
+        Assert.assertEquals("VIEW_USER_DETAIL", operationLogService.actionName);
+        Assert.assertEquals(Long.valueOf(1L), operationLogService.bizId);
+        Assert.assertTrue(operationLogService.content.contains("查看了用户"));
+    }
+
     private void mockLoginUser(Long userId, String username) {
         LoginUser loginUser = new LoginUser(userId, username, "管理员", true);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(loginUser, null, List.of())
+        );
+    }
+
+    private void mockNormalLoginUser(Long userId, String username) {
+        LoginUser loginUser = new LoginUser(userId, username, "普通用户", false);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(loginUser, null, List.of())
         );
@@ -190,6 +267,23 @@ public class UserServiceImplTest {
         }
 
         @Override
+        public long countPageByTreePath(String treePathPrefix, UserQueryRequest request) {
+            return queryPageByTreePath(treePathPrefix, request).size();
+        }
+
+        @Override
+        public List<UserListItemVO> queryPageByTreePath(String treePathPrefix, UserQueryRequest request) {
+            return queryPage(request).stream()
+                    .filter(item -> {
+                        UserEntity entity = users.get(item.getId());
+                        return entity != null
+                                && entity.getTreePath() != null
+                                && entity.getTreePath().startsWith(treePathPrefix);
+                    })
+                    .toList();
+        }
+
+        @Override
         public long countPage(UserQueryRequest request) {
             return queryPage(request).size();
         }
@@ -253,6 +347,15 @@ public class UserServiceImplTest {
         }
 
         @Override
+        public UserDetailVO detailByIdAndTreePath(Long id, String treePathPrefix) {
+            UserEntity entity = findById(id);
+            if (entity == null || entity.getTreePath() == null || !entity.getTreePath().startsWith(treePathPrefix)) {
+                return null;
+            }
+            return detailById(id);
+        }
+
+        @Override
         public int updateUser(UserEntity entity) {
             UserEntity target = users.get(entity.getId());
             target.setRealName(entity.getRealName());
@@ -302,6 +405,26 @@ public class UserServiceImplTest {
             target.setUpdateUser(source.getUpdateUser());
             target.setIsDeleted(source.getIsDeleted());
             return target;
+        }
+    }
+
+    private static class StubOperationLogService implements OperationLogService {
+        private String moduleName;
+        private String actionName;
+        private Long bizId;
+        private String content;
+
+        @Override
+        public void log(String moduleName, String actionName, Long bizId, String content) {
+            this.moduleName = moduleName;
+            this.actionName = actionName;
+            this.bizId = bizId;
+            this.content = content;
+        }
+
+        @Override
+        public Object query(OperationLogQueryRequest request) {
+            return List.of();
         }
     }
 }
