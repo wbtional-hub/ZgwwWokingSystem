@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.operationlog.mapper.OperationLogMapper">
+
+    <resultMap id="OperationLogEntityMap" type="com.example.lecturesystem.modules.operationlog.entity.OperationLogEntity">
+        <id property="id" column="id"/>
+        <result property="unitId" column="unit_id"/>
+        <result property="moduleName" column="module_name"/>
+        <result property="actionName" column="action_name"/>
+        <result property="operatorId" column="operator_id"/>
+        <result property="operatorName" column="operator_name"/>
+        <result property="bizId" column="biz_id"/>
+        <result property="content" column="content"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <resultMap id="OperationLogListItemMap" type="com.example.lecturesystem.modules.operationlog.vo.OperationLogListItemVO">
+        <id property="id" column="id"/>
+        <result property="moduleName" column="module_name"/>
+        <result property="actionName" column="action_name"/>
+        <result property="operatorId" column="operator_id"/>
+        <result property="operatorName" column="operator_name"/>
+        <result property="bizId" column="biz_id"/>
+        <result property="content" column="content"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.operationlog.entity.OperationLogEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO operation_log (
+            unit_id, module_name, action_name, operator_id, operator_name, biz_id, content, create_time
+        ) VALUES (
+            #{unitId}, #{moduleName}, #{actionName}, #{operatorId}, #{operatorName}, #{bizId}, #{content}, #{createTime}
+        )
+    </insert>
+
+    <select id="queryList" resultMap="OperationLogListItemMap">
+        SELECT o.id, o.module_name, o.action_name, o.operator_id, o.operator_name, o.biz_id, o.content, o.create_time
+        FROM operation_log o
+        LEFT JOIN sys_user u ON u.id = o.operator_id
+        WHERE 1 = 1
+        <if test="request.moduleName != null and request.moduleName != ''">
+            AND o.module_name = #{request.moduleName}
+        </if>
+        <if test="request.operatorName != null and request.operatorName != ''">
+            AND o.operator_name LIKE CONCAT('%', #{request.operatorName}, '%')
+        </if>
+        <if test="request.unitId != null">
+            AND (
+                o.unit_id = #{request.unitId}
+                OR (o.unit_id IS NULL AND u.unit_id = #{request.unitId})
+            )
+        </if>
+        <if test="startTime != null">
+            AND o.create_time <![CDATA[>=]]> #{startTime}
+        </if>
+        <if test="endTime != null">
+            AND o.create_time <![CDATA[<=]]> #{endTime}
+        </if>
+        ORDER BY o.create_time DESC, o.id DESC
+    </select>
+</mapper>

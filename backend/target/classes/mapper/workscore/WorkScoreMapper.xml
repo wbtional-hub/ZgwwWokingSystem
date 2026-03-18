@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.workscore.mapper.WorkScoreMapper">
+    <resultMap id="WorkScoreListItemMap" type="com.example.lecturesystem.modules.workscore.vo.WorkScoreListItemVO">
+        <id property="id" column="id"/>
+        <result property="weekNo" column="week_no"/>
+        <result property="unitId" column="unit_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="unitName" column="unit_name"/>
+        <result property="username" column="username"/>
+        <result property="realName" column="real_name"/>
+        <result property="attendanceDays" column="attendance_days"/>
+        <result property="attendanceScore" column="attendance_score"/>
+        <result property="weeklyWorkStatus" column="weekly_work_status"/>
+        <result property="weeklyWorkScore" column="weekly_work_score"/>
+        <result property="disciplineScore" column="discipline_score"/>
+        <result property="disciplineRemark" column="discipline_remark"/>
+        <result property="totalScore" column="total_score"/>
+        <result property="level" column="level"/>
+        <result property="status" column="status"/>
+        <result property="calculateTime" column="calculate_time"/>
+    </resultMap>
+
+    <resultMap id="WorkScoreCandidateMap" type="com.example.lecturesystem.modules.workscore.vo.WorkScoreCandidateVO">
+        <result property="unitId" column="unit_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="attendanceDays" column="attendance_days"/>
+        <result property="weeklyWorkStatus" column="weekly_work_status"/>
+    </resultMap>
+
+    <insert id="upsert" parameterType="com.example.lecturesystem.modules.workscore.entity.WorkScoreEntity">
+        INSERT INTO work_score (
+            week_no, unit_id, user_id, attendance_days, attendance_score, weekly_work_status,
+            weekly_work_score, discipline_score, discipline_remark, total_score, level, status, calculate_time
+        )
+        VALUES (
+            #{weekNo}, #{unitId}, #{userId}, #{attendanceDays}, #{attendanceScore}, #{weeklyWorkStatus},
+            #{weeklyWorkScore}, #{disciplineScore}, #{disciplineRemark}, #{totalScore}, #{level}, #{status}, #{calculateTime}
+        )
+        ON CONFLICT (user_id, week_no)
+        DO UPDATE SET
+            unit_id = EXCLUDED.unit_id,
+            attendance_days = EXCLUDED.attendance_days,
+            attendance_score = EXCLUDED.attendance_score,
+            weekly_work_status = EXCLUDED.weekly_work_status,
+            weekly_work_score = EXCLUDED.weekly_work_score,
+            discipline_score = EXCLUDED.discipline_score,
+            discipline_remark = EXCLUDED.discipline_remark,
+            total_score = EXCLUDED.total_score,
+            level = EXCLUDED.level,
+            status = EXCLUDED.status,
+            calculate_time = EXCLUDED.calculate_time
+    </insert>
+
+    <select id="findDetailById" resultMap="WorkScoreListItemMap">
+        SELECT s.id, s.week_no, s.unit_id, s.user_id, su.unit_name, u.username, u.real_name,
+               s.attendance_days, s.attendance_score, s.weekly_work_status, s.weekly_work_score,
+               s.discipline_score, s.discipline_remark, s.total_score, s.level, s.status, s.calculate_time
+        FROM work_score s
+        INNER JOIN sys_user u ON u.id = s.user_id
+        LEFT JOIN sys_org_unit su ON su.id = s.unit_id
+        WHERE s.id = #{id}
+        <if test="unitId != null">
+            AND s.unit_id = #{unitId}
+        </if>
+    </select>
+
+    <select id="queryList" resultMap="WorkScoreListItemMap">
+        SELECT s.id, s.week_no, s.unit_id, s.user_id, su.unit_name, u.username, u.real_name,
+               s.attendance_days, s.attendance_score, s.weekly_work_status, s.weekly_work_score,
+               s.discipline_score, s.discipline_remark, s.total_score, s.level, s.status, s.calculate_time
+        FROM work_score s
+        INNER JOIN sys_user u ON u.id = s.user_id
+        LEFT JOIN sys_org_unit su ON su.id = s.unit_id
+        WHERE u.is_deleted = FALSE
+        <if test="request.weekNo != null and request.weekNo != ''">
+            AND s.week_no = #{request.weekNo}
+        </if>
+        <if test="request.unitName != null and request.unitName != ''">
+            AND su.unit_name LIKE CONCAT('%', #{request.unitName}, '%')
+        </if>
+        <if test="request.status != null and request.status != ''">
+            AND s.status = #{request.status}
+        </if>
+        <if test="request.unitId != null">
+            AND s.unit_id = #{request.unitId}
+        </if>
+        ORDER BY
+        <choose>
+            <when test="request.sortByTotalDesc != null and request.sortByTotalDesc">
+                s.total_score DESC, s.level ASC,
+            </when>
+            <otherwise>
+                s.level ASC,
+            </otherwise>
+        </choose>
+        s.calculate_time DESC, s.id DESC
+    </select>
+
+    <select id="queryCandidates" resultMap="WorkScoreCandidateMap">
+        SELECT u.unit_id,
+               u.id AS user_id,
+               COUNT(DISTINCT a.attendance_date) AS attendance_days,
+               MAX(w.status) AS weekly_work_status
+        FROM sys_user u
+        LEFT JOIN attendance_record a
+               ON a.user_id = u.id
+              AND a.valid_flag = 1
+              AND a.attendance_date <![CDATA[>=]]> #{weekStart}
+              AND a.attendance_date <![CDATA[<=]]> #{weekEnd}
+        LEFT JOIN weekly_work w
+               ON w.user_id = u.id
+              AND w.week_no = #{weekNo}
+        WHERE u.is_deleted = FALSE
+        <if test="unitId != null">
+            AND u.unit_id = #{unitId}
+        </if>
+        GROUP BY u.unit_id, u.id
+        ORDER BY u.unit_id, u.id
+    </select>
+
+    <select id="queryWeekRanking" resultType="com.example.lecturesystem.modules.workscore.entity.WorkScoreEntity">
+        SELECT id, week_no, unit_id, user_id, attendance_days, attendance_score, weekly_work_status,
+               weekly_work_score, discipline_score, discipline_remark, total_score, level, status, calculate_time
+        FROM work_score
+        WHERE week_no = #{weekNo}
+        ORDER BY total_score DESC, calculate_time DESC, id ASC
+    </select>
+</mapper>

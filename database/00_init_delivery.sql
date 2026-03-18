@@ -1,0 +1,10 @@
+\i 01_schema.sql
+\i 02_seed.sql
+\i 03_attendance_record_daily.sql
+\i 04_work_score.sql
+\i 05_work_score_level_status.sql
+\i 06_operation_log.sql
+\i 07_user_role_rbac_lite.sql
+\i 08_sys_org_unit_delivery.sql
+\i 09_unit_scope_minimal.sql
+\i 10_operation_log_unit_id.sql

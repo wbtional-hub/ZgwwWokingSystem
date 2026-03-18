@@ -1,0 +1,43 @@
+lecture-team-system-framework
+├─ backend
+│  ├─ pom.xml
+│  └─ src/main/java/com/example/lecturesystem
+│     ├─ LectureTeamApplication.java
+│     ├─ common
+│     ├─ config
+│     └─ modules
+│        ├─ auth
+│        ├─ unit
+│        ├─ user
+│        ├─ orgtree
+│        ├─ permission
+│        ├─ attendance
+│        ├─ weeklywork
+│        ├─ statistics
+│        ├─ operationlog
+│        └─ param
+│
+├─ frontend
+│  ├─ package.json
+│  ├─ vite.config.js
+│  └─ src
+│     ├─ api
+│     ├─ router
+│     ├─ stores
+│     ├─ layouts
+│     ├─ views
+│     │  ├─ auth
+│     │  ├─ unit
+│     │  ├─ user
+│     │  ├─ orgtree
+│     │  ├─ attendance
+│     │  ├─ weeklywork
+│     │  ├─ statistics
+│     │  ├─ operationlog
+│     │  └─ param
+│     └─ components
+│
+└─ database
+   ├─ 00_readme.txt
+   ├─ 01_schema.sql
+   └─ 02_seed.sql

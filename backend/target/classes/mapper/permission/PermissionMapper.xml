@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.permission.mapper.PermissionMapper">
+
+    <select id="existsUserRole" resultType="boolean">
+        SELECT CASE WHEN COUNT(1) > 0 THEN TRUE ELSE FALSE END
+        FROM sys_user_role
+        WHERE user_id = #{userId}
+          AND role_code = #{roleCode}
+    </select>
+
+    <select id="queryUserIdsByUnitId" resultType="long">
+        SELECT id
+        FROM sys_user
+        WHERE unit_id = #{unitId}
+          AND is_deleted = FALSE
+    </select>
+
+    <select id="queryUserIdsByTreePathPrefix" resultType="long">
+        SELECT u.id
+        FROM sys_user u
+        WHERE u.unit_id = #{unitId}
+          AND u.tree_path LIKE #{treePathPrefix}
+          AND u.is_deleted = FALSE
+    </select>
+
+    <insert id="insertUserRole">
+        INSERT INTO sys_user_role (user_id, role_code)
+        VALUES (#{userId}, #{roleCode})
+    </insert>
+</mapper>

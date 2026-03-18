@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.orgtree.mapper.OrgTreeMapper">
+
+    <resultMap id="OrgNodeEntityMap" type="com.example.lecturesystem.modules.orgtree.entity.OrgNodeEntity">
+        <id property="id" column="user_id"/>
+        <result property="unitId" column="unit_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="parentUserId" column="parent_user_id"/>
+        <result property="levelNo" column="level_no"/>
+        <result property="treePath" column="tree_path"/>
+    </resultMap>
+
+    <resultMap id="OrgTreeNodeMap" type="com.example.lecturesystem.modules.orgtree.vo.OrgTreeNodeVO">
+        <id property="userId" column="user_id"/>
+        <result property="parentUserId" column="parent_user_id"/>
+        <result property="unitId" column="unit_id"/>
+        <result property="levelNo" column="level_no"/>
+        <result property="treePath" column="tree_path"/>
+        <result property="username" column="username"/>
+        <result property="realName" column="real_name"/>
+        <result property="jobTitle" column="job_title"/>
+        <result property="mobile" column="mobile"/>
+        <result property="status" column="status"/>
+    </resultMap>
+
+    <select id="findByUserId" resultMap="OrgNodeEntityMap">
+        SELECT id AS user_id, unit_id, parent_user_id, level_no, tree_path
+        FROM sys_user
+        WHERE id = #{userId}
+          AND is_deleted = FALSE
+    </select>
+
+    <select id="querySubtreeNodes" resultMap="OrgTreeNodeMap">
+        SELECT u.id AS user_id,
+               u.parent_user_id,
+               u.unit_id,
+               u.level_no,
+               u.tree_path,
+               u.username,
+               u.real_name,
+               u.job_title,
+               u.mobile,
+               u.status
+        FROM sys_user u
+        WHERE u.unit_id = #{unitId}
+          AND u.is_deleted = FALSE
+          AND u.tree_path LIKE #{treePathPrefix}
+        ORDER BY u.level_no, u.id
+    </select>
+
+    <select id="queryChildrenNodes" resultMap="OrgTreeNodeMap">
+        SELECT u.id AS user_id,
+               u.parent_user_id,
+               u.unit_id,
+               u.level_no,
+               u.tree_path,
+               u.username,
+               u.real_name,
+               u.job_title,
+               u.mobile,
+               u.status
+        FROM sys_user u
+        WHERE u.unit_id = #{unitId}
+          AND u.parent_user_id = #{parentUserId}
+          AND u.is_deleted = FALSE
+        ORDER BY u.level_no, u.id
+    </select>
+
+    <select id="queryAncestorNodes" resultMap="OrgTreeNodeMap">
+        SELECT u.id AS user_id,
+               u.parent_user_id,
+               u.unit_id,
+               u.level_no,
+               u.tree_path,
+               u.username,
+               u.real_name,
+               u.job_title,
+               u.mobile,
+               u.status
+        FROM sys_user u
+        WHERE u.unit_id = #{unitId}
+          AND u.is_deleted = FALSE
+          AND #{treePath} LIKE u.tree_path || '%'
+        ORDER BY u.level_no, u.id
+    </select>
+
+    <update id="updateUserNodeInfo">
+        UPDATE sys_user
+        SET parent_user_id = #{parentUserId},
+            unit_id = COALESCE(#{unitId}, unit_id),
+            level_no = #{levelNo},
+            tree_path = #{treePath}
+        WHERE id = #{userId}
+          AND is_deleted = FALSE
+    </update>
+
+    <update id="updateSubtreeAfterMove">
+        UPDATE sys_user
+        SET parent_user_id = CASE WHEN id = #{userId} THEN #{newParentUserId} ELSE parent_user_id END,
+            level_no = level_no + #{levelOffset},
+            tree_path = #{newTreePath} || substring(tree_path from char_length(#{oldTreePath}) + 1)
+        WHERE tree_path = #{oldTreePath}
+           OR tree_path LIKE #{oldTreePath} || '%'
+    </update>
+</mapper>

@@ -1,0 +1,18 @@
+模块名称：unit
+
+功能描述：
+单位管理模块。负责超级管理员创建单位、编辑单位、启停单位、指定单位管理员。与 user、permission、operation-log 模块相关。
+
+与其他模块关系：
+1. 本模块为独立文件夹，不与其他模块混写。
+2. 若涉及用户身份、角色、组织范围，则调用 auth / permission / orgtree。
+3. 若涉及审计留痕，则调用 operationlog。
+4. 需要参数控制时，调用 param。
+5. 统计模块通常消费 attendance / weeklywork / orgtree 的结果。
+
+开发约束：
+1. Controller 只做收参与返回。
+2. Service 实现业务。
+3. DTO 只放请求参数。
+4. Entity 只放数据库字段。
+5. 后续新增 mapper、xml、vo 时，也放在当前模块文件夹内。

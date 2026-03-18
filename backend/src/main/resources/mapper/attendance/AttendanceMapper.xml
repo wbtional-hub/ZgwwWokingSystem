@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.attendance.mapper.AttendanceMapper">
+    <resultMap id="AttendanceRecordEntityMap" type="com.example.lecturesystem.modules.attendance.entity.AttendanceRecordEntity">
+        <id property="id" column="id"/>
+        <result property="unitId" column="unit_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="attendanceDate" column="attendance_date"/>
+        <result property="checkInTime" column="check_in_time"/>
+        <result property="checkOutTime" column="check_out_time"/>
+        <result property="checkInAddress" column="check_in_address"/>
+        <result property="checkOutAddress" column="check_out_address"/>
+        <result property="validFlag" column="valid_flag"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <resultMap id="AttendanceRecordListItemMap" type="com.example.lecturesystem.modules.attendance.vo.AttendanceRecordListItemVO">
+        <id property="id" column="id"/>
+        <result property="unitId" column="unit_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="username" column="username"/>
+        <result property="realName" column="real_name"/>
+        <result property="unitName" column="unit_name"/>
+        <result property="attendanceDate" column="attendance_date"/>
+        <result property="checkInTime" column="check_in_time"/>
+        <result property="checkOutTime" column="check_out_time"/>
+        <result property="checkInAddress" column="check_in_address"/>
+        <result property="checkOutAddress" column="check_out_address"/>
+        <result property="validFlag" column="valid_flag"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.attendance.entity.AttendanceRecordEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO attendance_record (
+            unit_id, user_id, attendance_date, check_in_time, check_out_time, check_in_address, check_out_address, valid_flag
+        )
+        VALUES (
+            #{unitId}, #{userId}, #{attendanceDate}, #{checkInTime}, #{checkOutTime}, #{checkInAddress}, #{checkOutAddress}, #{validFlag}
+        )
+    </insert>
+
+    <select id="findById" resultMap="AttendanceRecordEntityMap">
+        SELECT id, unit_id, user_id, attendance_date, check_in_time, check_out_time,
+               check_in_address, check_out_address, valid_flag, create_time
+        FROM attendance_record
+        WHERE id = #{id}
+    </select>
+
+    <select id="findByUserIdAndDate" resultMap="AttendanceRecordEntityMap">
+        SELECT id, unit_id, user_id, attendance_date, check_in_time, check_out_time,
+               check_in_address, check_out_address, valid_flag, create_time
+        FROM attendance_record
+        WHERE user_id = #{userId}
+          AND attendance_date = #{attendanceDate}
+    </select>
+
+    <update id="update" parameterType="com.example.lecturesystem.modules.attendance.entity.AttendanceRecordEntity">
+        UPDATE attendance_record
+        SET unit_id = #{unitId},
+            user_id = #{userId},
+            attendance_date = #{attendanceDate},
+            check_in_time = #{checkInTime},
+            check_out_time = #{checkOutTime},
+            check_in_address = #{checkInAddress},
+            check_out_address = #{checkOutAddress},
+            valid_flag = #{validFlag}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateValidFlag">
+        UPDATE attendance_record
+        SET valid_flag = #{validFlag}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM attendance_record
+        WHERE id = #{id}
+    </delete>
+
+    <select id="countDistinctUsersByRange" resultType="long">
+        SELECT COUNT(DISTINCT a.user_id)
+        FROM attendance_record a
+        WHERE 1 = 1
+        <if test="startDate != null">
+            AND a.attendance_date <![CDATA[>=]]> #{startDate}
+        </if>
+        <if test="endDate != null">
+            AND a.attendance_date <![CDATA[<=]]> #{endDate}
+        </if>
+        <if test="validFlag != null">
+            AND a.valid_flag = #{validFlag}
+        </if>
+        <if test="unitId != null">
+            AND a.unit_id = #{unitId}
+        </if>
+    </select>
+
+    <select id="queryList" resultMap="AttendanceRecordListItemMap">
+        SELECT a.id, a.unit_id, a.user_id, u.username, u.real_name, su.unit_name,
+               a.attendance_date, a.check_in_time, a.check_out_time,
+               a.check_in_address, a.check_out_address, a.valid_flag, a.create_time
+        FROM attendance_record a
+        INNER JOIN sys_user u ON u.id = a.user_id
+        LEFT JOIN sys_org_unit su ON su.id = a.unit_id
+        WHERE u.is_deleted = FALSE
+        <if test="request.keywords != null and request.keywords != ''">
+            AND (
+                u.username LIKE CONCAT('%', #{request.keywords}, '%')
+                OR u.real_name LIKE CONCAT('%', #{request.keywords}, '%')
+            )
+        </if>
+        <if test="request.unitName != null and request.unitName != ''">
+            AND su.unit_name LIKE CONCAT('%', #{request.unitName}, '%')
+        </if>
+        <if test="request.dateFrom != null and request.dateFrom != ''">
+            AND a.attendance_date <![CDATA[>=]]> #{request.dateFrom}
+        </if>
+        <if test="request.dateTo != null and request.dateTo != ''">
+            AND a.attendance_date <![CDATA[<=]]> #{request.dateTo}
+        </if>
+        <if test="request.unitId != null">
+            AND a.unit_id = #{request.unitId}
+        </if>
+        ORDER BY a.attendance_date DESC, a.check_in_time DESC NULLS LAST, a.id DESC
+    </select>
+</mapper>
