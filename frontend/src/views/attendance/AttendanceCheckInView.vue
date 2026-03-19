@@ -24,6 +24,20 @@
         <van-field v-model="state.queryForm.dateFrom" label="开始日期" type="date" :disabled="pageBusy" />
         <van-field v-model="state.queryForm.dateTo" label="结束日期" type="date" :disabled="pageBusy" />
       </div>
+      <div class="quick-range-row">
+        <span class="quick-range-label">快捷时间</span>
+        <button
+          v-for="option in QUICK_RANGE_OPTIONS"
+          :key="option.key"
+          type="button"
+          class="quick-range-button"
+          :class="{ 'quick-range-button-active': isQuickRangeActive(option.key) }"
+          :disabled="pageBusy"
+          @click="handleApplyQuickRange(option.key)"
+        >
+          {{ option.label }}
+        </button>
+      </div>
       <div class="panel-actions">
         <van-button size="small" type="primary" :loading="state.loading" :disabled="pageBusy" @click="handleSearch">查询</van-button>
         <van-button size="small" plain :disabled="pageBusy" @click="handleReset">重置</van-button>
@@ -69,6 +83,7 @@
       <div class="panel-hint">按当前时间范围和数据权限统计异常次数与异常率，点击用户可直接回筛异常记录。</div>
       <div class="attendance-meta">当前统计范围：{{ abnormalMonitorRangeText }}</div>
       <div class="attendance-meta">异常口径：`check_in_result` 不属于 `CHECK_IN_SUCCESS / CHECK_OUT_SUCCESS`。</div>
+      <div class="attendance-meta">高风险人数：{{ state.abnormalMonitor.highRiskCount || 0 }}，预警触发人数：{{ state.abnormalMonitor.alertCount || 0 }}</div>
       <div v-if="state.abnormalSelection.activeUserId" class="attendance-meta">
         当前选中异常用户：{{ selectedAbnormalUserName }}
       </div>
@@ -104,11 +119,16 @@
               <div class="rank-title">{{ item.realName || item.username || `用户${item.userId}` }}</div>
               <div class="attendance-meta">账号：{{ item.username || '-' }}</div>
               <div class="attendance-meta">组织：{{ item.unitName || '-' }}</div>
+              <div class="attendance-meta">主要异常：{{ item.mainReasonLabel || '-' }} / {{ item.mainReasonTag || '-' }}</div>
+              <div class="attendance-meta">近7天趋势：{{ trendDirectionLabel(item.trendDirection) }}（{{ item.recent7DayAbnormalCount ?? 0 }} vs {{ item.previous7DayAbnormalCount ?? 0 }}）</div>
+              <div v-if="item.alertRuleText" class="attendance-meta">预警规则：{{ item.alertRuleText }}</div>
             </div>
             <div class="rank-stats">
               <div class="rank-badge rank-badge-danger">异常 {{ item.abnormalCount }}</div>
               <div class="rank-badge">总记录 {{ item.totalCount }}</div>
               <div class="rank-badge">异常率 {{ formatPercent(item.abnormalRate) }}</div>
+              <div class="rank-badge" :class="riskBadgeClass(item.riskLevel)">风险 {{ item.riskScore ?? 0 }} / {{ riskLevelLabel(item.riskLevel) }}</div>
+              <div v-if="item.alertTriggered" class="rank-badge rank-badge-warning">预警</div>
             </div>
           </button>
         </div>
@@ -119,6 +139,22 @@
               {{ item.count }}
             </van-tag>
           </div>
+        </div>
+        <div class="reason-distribution-wrap">
+          <div class="summary-label">异常原因分布</div>
+          <div v-if="state.abnormalMonitor.reasonDistributions.length" class="reason-distribution-list">
+            <div v-for="item in state.abnormalMonitor.reasonDistributions" :key="`${item.reasonKey}-${item.reasonTag}`" class="reason-distribution-item">
+              <div>
+                <div class="rank-title">{{ item.reasonLabel || item.reasonKey || '-' }}</div>
+                <div class="attendance-meta">标签：{{ item.reasonTag || '-' }}</div>
+              </div>
+              <div class="rank-stats">
+                <div class="rank-badge">{{ item.count ?? 0 }}次</div>
+                <div class="rank-badge">{{ formatPercent(item.rate) }}</div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="panel-hint">当前范围暂无异常原因分布数据。</div>
         </div>
       </template>
     </section>
@@ -138,6 +174,14 @@
             <div class="attendance-meta">最近异常日期：{{ state.abnormalUserSummary.recentAbnormalDate || '-' }}</div>
             <div class="attendance-meta">最近异常类型：{{ resultLabel(state.abnormalUserSummary.recentAbnormalType) }}</div>
             <div class="attendance-meta">异常总次数：{{ state.abnormalUserSummary.abnormalCount ?? 0 }}</div>
+            <div class="attendance-meta">风险等级：{{ state.abnormalUserSummary.riskScore ?? 0 }} / {{ riskLevelLabel(state.abnormalUserSummary.riskLevel) }}</div>
+            <div class="attendance-meta">最近7天趋势：{{ trendDirectionLabel(state.abnormalUserSummary.trendDirection) }}（{{ state.abnormalUserSummary.recent7DayAbnormalCount ?? 0 }} vs {{ state.abnormalUserSummary.previous7DayAbnormalCount ?? 0 }}）</div>
+            <div class="attendance-meta">主要异常原因：{{ state.abnormalUserSummary.mainReasonLabel || '-' }} / {{ state.abnormalUserSummary.mainReasonTag || '-' }}</div>
+            <div class="attendance-meta">地点集中度：{{ state.abnormalUserSummary.topLocation || '-' }}（{{ state.abnormalUserSummary.topLocationCount ?? 0 }}次，{{ formatPercent(state.abnormalUserSummary.locationConcentrationRate) }}）</div>
+            <div class="attendance-meta">时间段分析：上午 {{ state.abnormalUserSummary.morningAbnormalCount ?? 0 }} / 下午 {{ state.abnormalUserSummary.afternoonAbnormalCount ?? 0 }} / 晚间 {{ state.abnormalUserSummary.eveningAbnormalCount ?? 0 }}</div>
+            <div class="attendance-meta">异常高发时段：{{ state.abnormalUserSummary.peakTimeSlot || '-' }}</div>
+            <div class="attendance-meta">预警状态：{{ state.abnormalUserSummary.alertTriggered ? '已触发' : '未触发' }}</div>
+            <div v-if="state.abnormalUserSummary.alertTriggered" class="attendance-meta">预警规则：{{ state.abnormalUserSummary.alertRuleText || '已触发高风险预警' }}</div>
           </div>
           <van-empty v-else description="当前用户暂无异常摘要" />
           <div v-if="trendOverview.hasData" class="summary-grid trend-overview-grid">
@@ -220,8 +264,61 @@
 
     <section class="panel">
       <div class="panel-title">{{ state.form.id ? `编辑/补录考勤 #${state.form.id}` : '补录考勤' }}</div>
-      <div class="panel-hint">统一 save 接口支持新增补录和回填修改。</div>
-      <van-field v-model.trim="state.form.userId" label="用户ID" placeholder="默认当前登录用户" :disabled="pageBusy" />
+      <div class="panel-hint">统一 save 接口支持新增补录和回填修改。补录用户优先支持按姓名或手机号搜索，未选择时仍默认当前登录用户。</div>
+      <van-field
+        v-model.trim="state.userPicker.keyword"
+        label="搜索用户"
+        placeholder="请输入姓名或手机号"
+        :disabled="pageBusy"
+        @keyup.enter="handleSearchFormUsers"
+      />
+      <div class="panel-actions">
+        <van-button
+          size="small"
+          plain
+          type="primary"
+          :loading="state.userPicker.loading"
+          :disabled="pageBusy || !state.userPicker.keyword.trim()"
+          @click="handleSearchFormUsers"
+        >
+          搜索用户
+        </van-button>
+        <van-button
+          v-if="state.form.selectedUser"
+          size="small"
+          plain
+          :disabled="pageBusy"
+          @click="handleClearSelectedFormUser"
+        >
+          改回当前登录用户
+        </van-button>
+      </div>
+      <div v-if="state.form.selectedUser" class="selected-user-card">
+        <div class="summary-label">已选补录用户</div>
+        <div class="attendance-meta">姓名：{{ state.form.selectedUser.realName || '-' }}</div>
+        <div class="attendance-meta">账号：{{ state.form.selectedUser.username || '-' }}</div>
+        <div class="attendance-meta">手机号：{{ state.form.selectedUser.mobile || '-' }}</div>
+        <div class="attendance-meta">组织：{{ state.form.selectedUser.unitName || '-' }}</div>
+        <div class="attendance-meta">用户ID：{{ state.form.selectedUser.id || '-' }}</div>
+      </div>
+      <div v-else class="attendance-meta">当前未指定补录用户，保存时将默认使用当前登录用户。</div>
+      <div v-if="state.userPicker.candidates.length" class="user-candidate-list">
+        <button
+          v-for="item in state.userPicker.candidates"
+          :key="item.id"
+          type="button"
+          class="user-candidate-item"
+          :class="{ 'user-candidate-item-active': Number(state.form.userId || 0) === item.id }"
+          :disabled="pageBusy"
+          @click="handleSelectFormUser(item)"
+        >
+          <div class="user-candidate-title">{{ item.realName || item.username || `用户${item.id}` }}</div>
+          <div class="attendance-meta">手机号：{{ item.mobile || '-' }}</div>
+          <div class="attendance-meta">账号：{{ item.username || '-' }}</div>
+          <div class="attendance-meta">组织：{{ item.unitName || '-' }}</div>
+        </button>
+      </div>
+      <div v-else-if="state.userPicker.searched && !state.userPicker.loading" class="attendance-meta">未找到匹配用户，请尝试姓名或手机号关键字。</div>
       <van-field v-model="state.form.attendanceDate" label="考勤日期" type="date" :disabled="pageBusy" />
       <van-field v-model="state.form.checkInTime" label="上班时间" type="datetime-local" :disabled="pageBusy" />
       <van-field v-model="state.form.checkOutTime" label="下班时间" type="datetime-local" :disabled="pageBusy" />
@@ -243,12 +340,13 @@
     <section class="panel">
       <div class="panel-title">考勤列表</div>
       <div class="panel-hint">
-        共 {{ state.list.length }} 条考勤记录
+        共 {{ state.total }} 条考勤记录
         <template v-if="state.queryForm.checkInStatus">
           ，当前筛选：{{ getAttendanceStatusLabel(state.queryForm.checkInStatus) }}
         </template>
       </div>
       <div class="attendance-meta">当前查询范围：{{ listRangeText }}</div>
+      <div v-if="listPageSummary" class="attendance-meta">{{ listPageSummary }}</div>
       <div v-if="listFilterSummary" class="attendance-meta">当前筛选摘要：{{ listFilterSummary }}</div>
       <div v-if="listLinkageSummary" class="attendance-meta">当前联动：{{ listLinkageSummary }}</div>
 
@@ -311,6 +409,14 @@
             </div>
           </template>
         </van-card>
+        <van-pagination
+          v-if="state.total > state.pageSize"
+          v-model="state.pageNo"
+          :total-items="state.total"
+          :items-per-page="state.pageSize"
+          mode="simple"
+          @change="handlePageChange"
+        />
       </div>
     </section>
   </AppPageShell>
@@ -320,6 +426,7 @@
 import { computed, onMounted, reactive } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
 import AppPageShell from '@/components/layout/AppPageShell.vue'
+import { queryUserPageApi } from '@/api/user'
 import { useUserStore } from '@/stores/user'
 import {
   ATTENDANCE_CHECK_IN_STATUS,
@@ -340,6 +447,11 @@ import {
 } from '@/api/attendance'
 
 const userStore = useUserStore()
+const QUICK_RANGE_OPTIONS = [
+  { key: 'today', label: '今天' },
+  { key: 'last7Days', label: '近7天' },
+  { key: 'thisMonth', label: '本月' }
+]
 
 const state = reactive({
   loading: false,
@@ -353,6 +465,9 @@ const state = reactive({
   exporting: false,
   abnormalExporting: false,
   deletingId: null,
+  pageNo: 1,
+  pageSize: 10,
+  total: 0,
   list: [],
   summary: {
     totalCount: 0,
@@ -362,7 +477,10 @@ const state = reactive({
   },
   abnormalMonitor: {
     topUsers: [],
-    statusCounts: []
+    statusCounts: [],
+    reasonDistributions: [],
+    highRiskCount: 0,
+    alertCount: 0
   },
   abnormalTrend: [],
   abnormalUserSummary: null,
@@ -397,6 +515,12 @@ const state = reactive({
     status: '',
     distanceMeters: null,
     reason: ''
+  },
+  userPicker: {
+    loading: false,
+    searched: false,
+    keyword: '',
+    candidates: []
   },
   queryForm: {
     keywords: '',
@@ -455,6 +579,7 @@ function createEmptyForm() {
   return {
     id: null,
     userId: '',
+    selectedUser: null,
     attendanceDate: toInputDate(new Date()),
     checkInTime: '',
     checkOutTime: '',
@@ -473,6 +598,45 @@ function toInputDate(value) {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+function addDays(value, offset) {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return new Date(NaN)
+  }
+  date.setDate(date.getDate() + offset)
+  return date
+}
+
+function startOfMonth(value) {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return new Date(NaN)
+  }
+  date.setDate(1)
+  return date
+}
+
+function getQuickRangeDates(key) {
+  const today = new Date()
+  if (key === 'today') {
+    const dateText = toInputDate(today)
+    return { dateFrom: dateText, dateTo: dateText }
+  }
+  if (key === 'last7Days') {
+    return {
+      dateFrom: toInputDate(addDays(today, -6)),
+      dateTo: toInputDate(today)
+    }
+  }
+  if (key === 'thisMonth') {
+    return {
+      dateFrom: toInputDate(startOfMonth(today)),
+      dateTo: toInputDate(today)
+    }
+  }
+  return { dateFrom: '', dateTo: '' }
 }
 
 function toInputDateTime(value) {
@@ -516,6 +680,55 @@ function formatPercent(value) {
   return `${Number(value).toFixed(1)}%`
 }
 
+function riskLevelLabel(level) {
+  if (level === 'HIGH') {
+    return '高风险'
+  }
+  if (level === 'MEDIUM') {
+    return '中风险'
+  }
+  if (level === 'LOW') {
+    return '低风险'
+  }
+  return '-'
+}
+
+function riskBadgeClass(level) {
+  if (level === 'HIGH') {
+    return 'rank-badge-warning'
+  }
+  if (level === 'MEDIUM') {
+    return 'rank-badge-primary'
+  }
+  return ''
+}
+
+function trendDirectionLabel(direction) {
+  if (direction === 'RISING') {
+    return '上升'
+  }
+  if (direction === 'FALLING') {
+    return '下降'
+  }
+  if (direction === 'STABLE') {
+    return '持平'
+  }
+  return '-'
+}
+
+function normalizeFormSelectedUser(user) {
+  if (!user) {
+    return null
+  }
+  return {
+    id: user.id ?? null,
+    realName: user.realName || '',
+    username: user.username || '',
+    mobile: user.mobile || '',
+    unitName: user.unitName || ''
+  }
+}
+
 function resultLabel(status) {
   return getAttendanceStatusLabel(status)
 }
@@ -536,7 +749,9 @@ function buildQueryPayload() {
     userId: state.queryForm.userId || undefined,
     abnormalOnly: state.queryForm.abnormalOnly || undefined,
     dateFrom: state.queryForm.dateFrom || undefined,
-    dateTo: state.queryForm.dateTo || undefined
+    dateTo: state.queryForm.dateTo || undefined,
+    pageNo: state.pageNo,
+    pageSize: state.pageSize
   }
 }
 
@@ -573,6 +788,19 @@ function formatRangeText(dateFrom, dateTo) {
     return `截至 ${dateTo}`
   }
   return '全部时间'
+}
+
+function validateQueryDateRange() {
+  if (state.queryForm.dateFrom && state.queryForm.dateTo && state.queryForm.dateFrom > state.queryForm.dateTo) {
+    showToast('开始日期不能晚于结束日期')
+    return false
+  }
+  return true
+}
+
+function isQuickRangeActive(key) {
+  const range = getQuickRangeDates(key)
+  return state.queryForm.dateFrom === range.dateFrom && state.queryForm.dateTo === range.dateTo
 }
 
 function clearTrendDateLinkage(options = {}) {
@@ -636,6 +864,15 @@ const listRangeText = computed(() => {
   return formatRangeText(state.queryForm.dateFrom || undefined, state.queryForm.dateTo || undefined)
 })
 
+const listPageSummary = computed(() => {
+  if (!state.total || !state.list.length) {
+    return ''
+  }
+  const start = (state.pageNo - 1) * state.pageSize + 1
+  const end = start + state.list.length - 1
+  return `当前第 ${state.pageNo} 页，展示第 ${start}-${end} 条`
+})
+
 const listFilterSummary = computed(() => {
   const parts = []
   if (state.queryForm.abnormalOnly) {
@@ -654,6 +891,9 @@ const listFilterSummary = computed(() => {
 })
 
 async function fetchList() {
+  if (!validateQueryDateRange()) {
+    return
+  }
   state.loading = true
   state.summaryLoading = true
   state.abnormalLoading = true
@@ -680,7 +920,16 @@ async function fetchList() {
       )
     }
     const [response, summaryResponse, abnormalResponse, trendResponse, summaryUserResponse] = await Promise.all(requests)
-    state.list = Array.isArray(response?.data) ? response.data : []
+    const pageData = response?.data || {}
+    state.pageNo = Number(pageData.pageNo || state.pageNo || 1)
+    state.pageSize = Number(pageData.pageSize || state.pageSize || 10)
+    state.total = Number(pageData.total || 0)
+    state.list = Array.isArray(pageData.list) ? pageData.list : []
+    if (state.total > 0 && !state.list.length && state.pageNo > 1) {
+      state.pageNo -= 1
+      await fetchList()
+      return
+    }
     const summaryData = summaryResponse?.data || {}
     state.summary.totalCount = Number(summaryData.totalCount || 0)
     state.summary.successCount = Number(summaryData.successCount || 0)
@@ -689,15 +938,26 @@ async function fetchList() {
     const abnormalData = abnormalResponse?.data || {}
     state.abnormalMonitor.topUsers = Array.isArray(abnormalData.topUsers) ? abnormalData.topUsers : []
     state.abnormalMonitor.statusCounts = Array.isArray(abnormalData.statusCounts) ? abnormalData.statusCounts : []
+    state.abnormalMonitor.reasonDistributions = Array.isArray(abnormalData.reasonDistributions) ? abnormalData.reasonDistributions : []
+    state.abnormalMonitor.highRiskCount = Number(abnormalData.highRiskCount || 0)
+    state.abnormalMonitor.alertCount = Number(abnormalData.alertCount || 0)
     state.abnormalTrend = Array.isArray(trendResponse?.data) ? trendResponse.data : []
     state.abnormalUserSummary = summaryUserResponse?.data || null
+    if (state.queryForm.userId) {
+      state.trendUser = state.abnormalMonitor.topUsers.find((item) => item.userId === state.queryForm.userId) || state.trendUser
+    }
   } catch (error) {
+    state.total = 0
+    state.list = []
     state.summary.totalCount = 0
     state.summary.successCount = 0
     state.summary.abnormalCount = 0
     state.summary.statusCounts = []
     state.abnormalMonitor.topUsers = []
     state.abnormalMonitor.statusCounts = []
+    state.abnormalMonitor.reasonDistributions = []
+    state.abnormalMonitor.highRiskCount = 0
+    state.abnormalMonitor.alertCount = 0
     state.abnormalTrend = []
     state.abnormalUserSummary = null
     showToast(error.message || '考勤列表加载失败')
@@ -736,11 +996,21 @@ async function fetchCurrentLocation() {
 }
 
 function handleSearch() {
+  state.pageNo = 1
   clearTrendDateLinkage()
   fetchList()
 }
 
+function handleApplyQuickRange(rangeKey) {
+  const range = getQuickRangeDates(rangeKey)
+  state.queryForm.dateFrom = range.dateFrom
+  state.queryForm.dateTo = range.dateTo
+  state.pageNo = 1
+  handleSearch()
+}
+
 function handleReset() {
+  state.pageNo = 1
   state.queryForm.keywords = ''
   state.queryForm.unitName = ''
   state.queryForm.checkInStatus = ''
@@ -778,6 +1048,7 @@ function handleSelectAbnormalUser(item) {
   state.queryForm.keywords = item.realName || item.username || ''
   state.queryForm.abnormalOnly = true
   state.queryForm.checkInStatus = ''
+  state.pageNo = 1
   state.trendUser = item
   fetchList()
   showToast(`已切换到 ${item.realName || item.username || item.userId} 的异常记录`)
@@ -791,6 +1062,7 @@ function restoreAbnormalSelection() {
   state.queryForm.checkInStatus = state.abnormalSelection.backupCheckInStatus || ''
   state.queryForm.dateFrom = state.abnormalSelection.backupDateFrom || ''
   state.queryForm.dateTo = state.abnormalSelection.backupDateTo || ''
+  state.pageNo = 1
   state.abnormalSelection.activeUserId = null
   state.abnormalSelection.backupKeywords = ''
   state.abnormalSelection.backupUserId = null
@@ -830,6 +1102,7 @@ async function handleTrendDateClick(item) {
   state.queryForm.dateFrom = item.attendanceDate
   state.queryForm.dateTo = item.attendanceDate
   state.queryForm.abnormalOnly = true
+  state.pageNo = 1
   await fetchList()
   showToast(`已切换到 ${item.attendanceDate} 的当天异常明细`)
 }
@@ -839,12 +1112,102 @@ async function handleClearTrendDateLinkage() {
     return
   }
   clearTrendDateLinkage({ restoreDates: true })
+  state.pageNo = 1
   await fetchList()
   showToast('已清除当天联动')
 }
 
+function handlePageChange(pageNo) {
+  if (pageBusy.value || Number(pageNo) === Number(state.pageNo)) {
+    return
+  }
+  state.pageNo = Number(pageNo)
+  fetchList()
+}
+
+function resetUserPicker() {
+  state.userPicker.loading = false
+  state.userPicker.searched = false
+  state.userPicker.keyword = ''
+  state.userPicker.candidates = []
+}
+
 function resetForm() {
   state.form = createEmptyForm()
+  resetUserPicker()
+}
+
+async function handleSearchFormUsers() {
+  const keywords = state.userPicker.keyword.trim()
+  if (!keywords) {
+    showToast('请输入姓名或手机号')
+    return
+  }
+  state.userPicker.loading = true
+  state.userPicker.searched = true
+  try {
+    const response = await queryUserPageApi({
+      keywords,
+      pageNo: 1,
+      pageSize: 8
+    })
+    const page = response?.data || {}
+    state.userPicker.candidates = Array.isArray(page.list) ? page.list : []
+    if (!state.userPicker.candidates.length) {
+      showToast('未找到匹配用户')
+    }
+  } catch (error) {
+    state.userPicker.candidates = []
+    showToast(error.message || '用户搜索失败')
+  } finally {
+    state.userPicker.loading = false
+  }
+}
+
+function handleSelectFormUser(user) {
+  state.form.userId = user?.id ? String(user.id) : ''
+  state.form.selectedUser = normalizeFormSelectedUser(user)
+  state.userPicker.keyword = user?.realName || user?.mobile || user?.username || ''
+  showToast(`已选择 ${user?.realName || user?.username || user?.id}`)
+}
+
+function handleClearSelectedFormUser() {
+  state.form.userId = ''
+  state.form.selectedUser = null
+  resetUserPicker()
+}
+
+function resolveCheckInRequestErrorMessage(error) {
+  const backendMessage = error?.response?.data?.message
+  if (backendMessage && String(backendMessage).trim()) {
+    return String(backendMessage).trim()
+  }
+  if (error?.message && String(error.message).trim()) {
+    return String(error.message).trim()
+  }
+  return '打卡失败，请稍后重试'
+}
+
+function inferCheckInStatusFromErrorMessage(message) {
+  if (!message) {
+    return ''
+  }
+  if (message.includes('未配置打卡点') || message.includes('配置不完整')) {
+    return ATTENDANCE_CHECK_IN_STATUS.LOCATION_NOT_CONFIGURED
+  }
+  if (message.includes('打卡点未启用')) {
+    return ATTENDANCE_CHECK_IN_STATUS.LOCATION_DISABLED
+  }
+  if (message.includes('未绑定单位')) {
+    return ATTENDANCE_CHECK_IN_STATUS.LOCATION_NOT_BOUND
+  }
+  if (message.includes('超出单位打卡范围')) {
+    return ATTENDANCE_CHECK_IN_STATUS.OUT_OF_RANGE
+  }
+  if (message.includes('今日考勤已完成')) {
+    return ATTENDANCE_CHECK_IN_STATUS.ALREADY_FINISHED
+  }
+  return ''
 }
 
 async function handleCheckIn() {
@@ -860,9 +1223,21 @@ async function handleCheckIn() {
   }
   state.checkingIn = true
   try {
-    const position = await new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 })
-    })
+    let position
+    try {
+      position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 })
+      })
+    } catch (error) {
+      state.checkInResult.success = false
+      state.checkInResult.allowCheckIn = false
+      state.checkInResult.action = ''
+      state.checkInResult.status = ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
+      state.checkInResult.distanceMeters = null
+      state.checkInResult.reason = error?.code === 1 ? '定位权限被拒绝' : '定位失败，请重试'
+      showToast(state.checkInResult.reason)
+      return
+    }
     const response = await checkInApi({
       address: `浏览器定位 ${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`,
       latitude: Number(position.coords.latitude.toFixed(6)),
@@ -875,20 +1250,26 @@ async function handleCheckIn() {
     state.checkInResult.status = result.status || ''
     state.checkInResult.distanceMeters = result.distanceMeters ?? null
     state.checkInResult.reason = result.failReason || result.reason || ''
+    await Promise.all([fetchList(), fetchCurrentLocation()])
     if (result.success) {
       showToast(result.action === 'CHECK_OUT' ? '下班时间已补齐' : '上班打卡成功')
-      await fetchList()
     } else {
       showToast(result.reason || '打卡失败')
     }
   } catch (error) {
+    const message = resolveCheckInRequestErrorMessage(error)
+    if (error?.response) {
+      await Promise.all([fetchList(), fetchCurrentLocation()])
+    }
     state.checkInResult.success = false
     state.checkInResult.allowCheckIn = false
     state.checkInResult.action = ''
-    state.checkInResult.status = ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
+    state.checkInResult.status = inferCheckInStatusFromErrorMessage(message)
     state.checkInResult.distanceMeters = null
-    state.checkInResult.reason = error?.code === 1 ? '定位权限被拒绝' : '定位失败，请重试'
-    showToast(state.checkInResult.reason)
+    state.checkInResult.reason = message
+    if (!error?.response) {
+      showToast(message)
+    }
   } finally {
     state.checkingIn = false
   }
@@ -898,6 +1279,13 @@ function openEditForm(item) {
   state.form = {
     id: item.id,
     userId: item.userId ? String(item.userId) : '',
+    selectedUser: normalizeFormSelectedUser({
+      id: item.userId,
+      realName: item.realName,
+      username: item.username,
+      mobile: item.mobile,
+      unitName: item.unitName
+    }),
     attendanceDate: item.attendanceDate || toInputDate(new Date()),
     checkInTime: item.checkInTime ? toInputDateTime(item.checkInTime) : '',
     checkOutTime: item.checkOutTime ? toInputDateTime(item.checkOutTime) : '',
@@ -905,6 +1293,10 @@ function openEditForm(item) {
     checkOutAddress: item.checkOutAddress || '',
     validFlag: Number(item.validFlag) || 0
   }
+  state.userPicker.loading = false
+  state.userPicker.searched = false
+  state.userPicker.keyword = item.realName || item.mobile || item.username || ''
+  state.userPicker.candidates = []
 }
 
 async function handleSave() {
@@ -991,6 +1383,9 @@ async function handleExport() {
     showToast('当前没有可导出的考勤记录')
     return
   }
+  if (!validateQueryDateRange()) {
+    return
+  }
   state.exporting = true
   try {
     const headers = [
@@ -1058,10 +1453,13 @@ async function handleExportAbnormalRanks() {
     showToast('当前没有可导出的异常榜单')
     return
   }
+  if (!validateQueryDateRange()) {
+    return
+  }
   state.abnormalExporting = true
   try {
     const abnormalMonitorPayload = buildAbnormalMonitorPayload()
-    const headers = ['排名', '用户ID', '账号', '姓名', '组织', '异常次数', '总记录数', '异常率']
+    const headers = ['排名', '用户ID', '账号', '姓名', '组织', '异常次数', '总记录数', '异常率', '风险分', '风险等级', '近7天趋势', '主要异常原因', '原因标签', '预警']
     const rows = state.abnormalMonitor.topUsers.map((item, index) => [
       index + 1,
       item.userId,
@@ -1070,7 +1468,13 @@ async function handleExportAbnormalRanks() {
       item.unitName || '',
       item.abnormalCount ?? 0,
       item.totalCount ?? 0,
-      formatPercent(item.abnormalRate)
+      formatPercent(item.abnormalRate),
+      item.riskScore ?? 0,
+      riskLevelLabel(item.riskLevel),
+      trendDirectionLabel(item.trendDirection),
+      item.mainReasonLabel || '',
+      item.mainReasonTag || '',
+      item.alertTriggered ? item.alertRuleText || '是' : '否'
     ])
     const metaRows = [
       ['统计范围', abnormalMonitorRangeText.value],
@@ -1113,6 +1517,35 @@ onMounted(() => {
   gap: 8px;
 }
 
+.quick-range-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.quick-range-label {
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.quick-range-button {
+  border: 1px solid #dbe3ee;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.quick-range-button-active {
+  border-color: #1989fa;
+  background: #e8f3ff;
+  color: #1989fa;
+}
+
 .panel {
   margin-bottom: 16px;
   padding: 12px;
@@ -1139,6 +1572,14 @@ onMounted(() => {
   border-radius: 12px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
+}
+
+.selected-user-card {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
 }
 
 .attendance-guide {
@@ -1182,6 +1623,34 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.user-candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.user-candidate-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.user-candidate-item-active {
+  border-color: #1989fa;
+  background: #eff6ff;
+}
+
+.user-candidate-title {
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
 }
 
 .summary-grid {
@@ -1265,6 +1734,18 @@ onMounted(() => {
   color: #be123c;
 }
 
+.rank-badge-primary {
+  background: #dbeafe;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.rank-badge-warning {
+  background: #fef3c7;
+  border-color: #fde68a;
+  color: #b45309;
+}
+
 .summary-card {
   padding: 12px;
   border-radius: 12px;
@@ -1314,6 +1795,27 @@ onMounted(() => {
   gap: 6px;
   padding: 8px 10px;
   border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.reason-distribution-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.reason-distribution-wrap {
+  margin-top: 12px;
+}
+
+.reason-distribution-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
 }
