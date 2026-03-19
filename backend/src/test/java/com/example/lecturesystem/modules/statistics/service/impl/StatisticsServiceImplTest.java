@@ -4,7 +4,10 @@ import com.example.lecturesystem.modules.attendance.mapper.AttendanceMapper;
 import com.example.lecturesystem.modules.attendance.entity.AttendanceRecordEntity;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceRecordListItemVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserRankVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalReasonDistributionVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalTrendComparisonVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalTrendPointVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserBehaviorPointVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserSummaryVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceStatusCountVO;
 import com.example.lecturesystem.modules.attendance.dto.AttendanceQueryRequest;
@@ -209,8 +212,32 @@ public class StatisticsServiceImplTest {
         }
 
         @Override
+        public List<AttendanceAbnormalTrendComparisonVO> queryAbnormalTrendComparisons(AttendanceQueryRequest request,
+                                                                                        LocalDate recentDateFrom,
+                                                                                        LocalDate recentDateTo,
+                                                                                        LocalDate previousDateFrom,
+                                                                                        LocalDate previousDateTo) {
+            return List.of();
+        }
+
+        @Override
+        public List<AttendanceAbnormalReasonDistributionVO> queryAbnormalReasonDistributions(AttendanceQueryRequest request) {
+            return List.of();
+        }
+
+        @Override
+        public List<AttendanceAbnormalReasonDistributionVO> queryAbnormalUserTopReasons(AttendanceQueryRequest request) {
+            return List.of();
+        }
+
+        @Override
         public AttendanceAbnormalUserSummaryVO queryAbnormalUserSummary(AttendanceQueryRequest request) {
             return null;
+        }
+
+        @Override
+        public List<AttendanceAbnormalUserBehaviorPointVO> queryAbnormalUserBehaviorPoints(AttendanceQueryRequest request) {
+            return List.of();
         }
 
         @Override

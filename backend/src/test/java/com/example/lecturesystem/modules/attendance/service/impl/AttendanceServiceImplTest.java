@@ -4,9 +4,13 @@ import com.example.lecturesystem.modules.attendance.dto.AttendanceQueryRequest;
 import com.example.lecturesystem.modules.attendance.dto.CheckInRequest;
 import com.example.lecturesystem.modules.attendance.dto.SaveAttendanceRequest;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalMonitorVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalReasonDistributionVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalTrendComparisonVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalTrendPointVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserBehaviorPointVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserRankVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserSummaryVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendancePageVO;
 import com.example.lecturesystem.modules.attendance.entity.AttendanceRecordEntity;
 import com.example.lecturesystem.modules.attendance.mapper.AttendanceMapper;
 import com.example.lecturesystem.modules.attendance.support.AttendanceCheckInStatus;
@@ -151,6 +155,29 @@ public class AttendanceServiceImplTest {
     }
 
     @Test
+    public void checkInShouldReturnFriendlyFailureWhenLocationConfigIsIncomplete() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        attendanceMapper.unitNames.put(2L, "平台单位");
+        attendanceMapper.attendanceLocations.put(2L, attendanceLocation(2L, "平台主打卡点", "116.397428", "39.909230", null));
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        mockLoginUser(3L, false);
+        CheckInRequest request = new CheckInRequest();
+        request.setAddress("办公楼");
+        request.setLongitude(new BigDecimal("116.397428"));
+        request.setLatitude(new BigDecimal("39.909230"));
+
+        Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
+
+        Assert.assertEquals(Boolean.FALSE, result.get("success"));
+        Assert.assertEquals(AttendanceCheckInStatus.LOCATION_NOT_CONFIGURED, result.get("status"));
+        Assert.assertEquals("当前单位打卡点配置不完整，请联系管理员重新保存", result.get("reason"));
+    }
+
+    @Test
     public void queryShouldUseDataScopeForNonSuperAdmin() {
         InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
         StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L, 4L));
@@ -169,9 +196,10 @@ public class AttendanceServiceImplTest {
 
         mockLoginUser(3L, false);
         AttendanceQueryRequest request = new AttendanceQueryRequest();
-        List<?> result = (List<?>) service.query(request);
+        AttendancePageVO result = (AttendancePageVO) service.query(request);
 
-        Assert.assertEquals(2, result.size());
+        Assert.assertEquals(Long.valueOf(2L), result.getTotal());
+        Assert.assertEquals(2, result.getList().size());
     }
 
     @Test
@@ -192,11 +220,36 @@ public class AttendanceServiceImplTest {
         AttendanceQueryRequest request = new AttendanceQueryRequest();
         request.setCheckInStatus(AttendanceCheckInStatus.CHECK_OUT_SUCCESS);
 
-        List<?> result = (List<?>) service.query(request);
+        AttendancePageVO result = (AttendancePageVO) service.query(request);
 
-        Assert.assertEquals(1, result.size());
-        AttendanceRecordListItemVO item = (AttendanceRecordListItemVO) result.get(0);
+        Assert.assertEquals(Long.valueOf(1L), result.getTotal());
+        Assert.assertEquals(1, result.getList().size());
+        AttendanceRecordListItemVO item = result.getList().get(0);
         Assert.assertEquals(AttendanceCheckInStatus.CHECK_OUT_SUCCESS, item.getCheckInResult());
+    }
+
+    @Test
+    public void queryShouldSupportPagination() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(true, Set.of());
+        StubUserMapper userMapper = new StubUserMapper();
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        attendanceMapper.insert(seedAttendance(2L, 3L, LocalDate.now().minusDays(2)));
+        attendanceMapper.insert(seedAttendance(2L, 4L, LocalDate.now().minusDays(1)));
+        attendanceMapper.insert(seedAttendance(2L, 5L, LocalDate.now()));
+
+        mockLoginUser(1L, true);
+        AttendanceQueryRequest request = new AttendanceQueryRequest();
+        request.setPageNo(2);
+        request.setPageSize(1);
+
+        AttendancePageVO result = (AttendancePageVO) service.query(request);
+
+        Assert.assertEquals(Integer.valueOf(2), result.getPageNo());
+        Assert.assertEquals(Integer.valueOf(1), result.getPageSize());
+        Assert.assertEquals(Long.valueOf(3L), result.getTotal());
+        Assert.assertEquals(1, result.getList().size());
     }
 
     @Test
@@ -281,6 +334,23 @@ public class AttendanceServiceImplTest {
     }
 
     @Test
+    public void queryShouldRejectInvalidDateRange() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(true, Set.of());
+        StubUserMapper userMapper = new StubUserMapper();
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        mockLoginUser(1L, true);
+        AttendanceQueryRequest request = new AttendanceQueryRequest();
+        request.setDateFrom("2026-03-20");
+        request.setDateTo("2026-03-19");
+
+        IllegalArgumentException error = Assert.assertThrows(IllegalArgumentException.class, () -> service.query(request));
+
+        Assert.assertEquals("开始日期不能晚于结束日期", error.getMessage());
+    }
+
+    @Test
     public void queryAbnormalMonitorShouldReturnTopUsersAndAbnormalStatusCounts() {
         InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
         StubPermissionService permissionService = new StubPermissionService(true, Set.of());
@@ -311,7 +381,52 @@ public class AttendanceServiceImplTest {
         Assert.assertEquals(Long.valueOf(2L), topUser.getAbnormalCount());
         Assert.assertEquals(Long.valueOf(3L), topUser.getTotalCount());
         Assert.assertEquals(new BigDecimal("66.7"), topUser.getAbnormalRate());
+        Assert.assertEquals(Integer.valueOf(53), topUser.getRiskScore());
+        Assert.assertEquals("MEDIUM", topUser.getRiskLevel());
+        Assert.assertEquals("RISING", topUser.getTrendDirection());
+        Assert.assertEquals("打卡点未配置", topUser.getMainReasonLabel());
+        Assert.assertEquals("配置问题", topUser.getMainReasonTag());
+        Assert.assertEquals(Boolean.FALSE, topUser.getAlertTriggered());
+        Assert.assertEquals(Long.valueOf(0L), result.getHighRiskCount());
+        Assert.assertEquals(Long.valueOf(0L), result.getAlertCount());
+        Assert.assertEquals(2, result.getReasonDistributions().size());
         Assert.assertEquals(2, result.getStatusCounts().size());
+    }
+
+    @Test
+    public void queryAbnormalMonitorShouldMarkHighRiskTrendAndAlert() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(true, Set.of());
+        StubUserMapper userMapper = new StubUserMapper();
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        LocalDate baseDate = LocalDate.of(2026, 3, 19);
+        for (int i = 0; i < 4; i++) {
+            AttendanceRecordEntity recentFail = seedAttendance(2L, 8L, baseDate.minusDays(i));
+            recentFail.setCheckInResult(AttendanceCheckInStatus.LOCATION_NOT_CONFIGURED);
+            recentFail.setCheckInFailReason("当前单位打卡点配置不完整，请联系管理员重新保存");
+            attendanceMapper.insert(recentFail);
+        }
+        AttendanceRecordEntity olderFail = seedAttendance(2L, 8L, baseDate.minusDays(9));
+        olderFail.setCheckInResult(AttendanceCheckInStatus.OUT_OF_RANGE);
+        olderFail.setCheckInFailReason("超出单位打卡范围");
+        attendanceMapper.insert(olderFail);
+
+        mockLoginUser(1L, true);
+        AttendanceQueryRequest request = new AttendanceQueryRequest();
+        request.setDateTo(baseDate.toString());
+
+        AttendanceAbnormalMonitorVO result = (AttendanceAbnormalMonitorVO) service.queryAbnormalMonitor(request);
+
+        AttendanceAbnormalUserRankVO topUser = result.getTopUsers().get(0);
+        Assert.assertEquals(Long.valueOf(4L), topUser.getRecent7DayAbnormalCount());
+        Assert.assertEquals(Long.valueOf(1L), topUser.getPrevious7DayAbnormalCount());
+        Assert.assertEquals("RISING", topUser.getTrendDirection());
+        Assert.assertEquals("HIGH", topUser.getRiskLevel());
+        Assert.assertEquals(Boolean.TRUE, topUser.getAlertTriggered());
+        Assert.assertTrue(topUser.getAlertRuleText().contains("综合风险高"));
+        Assert.assertEquals(Long.valueOf(1L), result.getHighRiskCount());
+        Assert.assertEquals(Long.valueOf(1L), result.getAlertCount());
     }
 
     @Test
@@ -375,6 +490,10 @@ public class AttendanceServiceImplTest {
         Assert.assertEquals(Long.valueOf(2L), result.getAbnormalCount());
         Assert.assertEquals(LocalDate.now(), result.getRecentAbnormalDate());
         Assert.assertEquals(AttendanceCheckInStatus.LOCATION_NOT_CONFIGURED, result.getRecentAbnormalType());
+        Assert.assertEquals("配置问题", result.getMainReasonTag());
+        Assert.assertEquals("上午", result.getPeakTimeSlot());
+        Assert.assertEquals("办公楼", result.getTopLocation());
+        Assert.assertEquals(new BigDecimal("100.0"), result.getLocationConcentrationRate());
     }
 
     private void mockLoginUser(Long userId, boolean superAdmin) {
@@ -654,7 +773,16 @@ public class AttendanceServiceImplTest {
                 item.setCreateTime(entity.getCreateTime());
                 result.add(item);
             }
-            return result;
+            result.sort(Comparator
+                    .comparing(AttendanceRecordListItemVO::getAttendanceDate, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(AttendanceRecordListItemVO::getCheckInTime, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(AttendanceRecordListItemVO::getId, Comparator.nullsLast(Comparator.reverseOrder())));
+            int offset = request.getOffset();
+            if (offset >= result.size()) {
+                return List.of();
+            }
+            int endIndex = Math.min(offset + (request.getPageSize() == null ? 10 : request.getPageSize()), result.size());
+            return new ArrayList<>(result.subList(offset, endIndex));
         }
 
         @Override
@@ -742,6 +870,99 @@ public class AttendanceServiceImplTest {
         }
 
         @Override
+        public List<AttendanceAbnormalTrendComparisonVO> queryAbnormalTrendComparisons(AttendanceQueryRequest request,
+                                                                                       LocalDate recentDateFrom,
+                                                                                       LocalDate recentDateTo,
+                                                                                       LocalDate previousDateFrom,
+                                                                                       LocalDate previousDateTo) {
+            Map<Long, long[]> counters = new LinkedHashMap<>();
+            for (AttendanceRecordEntity entity : filterEntities(withoutStatusFilters(request))) {
+                long[] values = counters.computeIfAbsent(entity.getUserId(), key -> new long[]{0L, 0L});
+                if (entity.getAttendanceDate() != null
+                        && !entity.getAttendanceDate().isBefore(recentDateFrom)
+                        && !entity.getAttendanceDate().isAfter(recentDateTo)
+                        && isAbnormal(entity.getCheckInResult())) {
+                    values[0] += 1L;
+                }
+                if (entity.getAttendanceDate() != null
+                        && !entity.getAttendanceDate().isBefore(previousDateFrom)
+                        && !entity.getAttendanceDate().isAfter(previousDateTo)
+                        && isAbnormal(entity.getCheckInResult())) {
+                    values[1] += 1L;
+                }
+            }
+            List<AttendanceAbnormalTrendComparisonVO> result = new ArrayList<>();
+            for (Map.Entry<Long, long[]> entry : counters.entrySet()) {
+                AttendanceAbnormalTrendComparisonVO item = new AttendanceAbnormalTrendComparisonVO();
+                item.setUserId(entry.getKey());
+                item.setRecent7DayAbnormalCount(entry.getValue()[0]);
+                item.setPrevious7DayAbnormalCount(entry.getValue()[1]);
+                result.add(item);
+            }
+            return result;
+        }
+
+        @Override
+        public List<AttendanceAbnormalReasonDistributionVO> queryAbnormalReasonDistributions(AttendanceQueryRequest request) {
+            Map<String, Long> counts = new LinkedHashMap<>();
+            for (AttendanceRecordEntity entity : filterEntities(withoutStatusFilters(request))) {
+                if (!isAbnormal(entity.getCheckInResult())) {
+                    continue;
+                }
+                String reasonKey = normalizeReasonKey(entity);
+                counts.put(reasonKey, counts.getOrDefault(reasonKey, 0L) + 1L);
+            }
+            List<AttendanceAbnormalReasonDistributionVO> result = new ArrayList<>();
+            for (Map.Entry<String, Long> entry : counts.entrySet()) {
+                AttendanceAbnormalReasonDistributionVO item = new AttendanceAbnormalReasonDistributionVO();
+                item.setReasonKey(entry.getKey());
+                item.setCount(entry.getValue());
+                result.add(item);
+            }
+            result.sort(Comparator
+                    .comparing(AttendanceAbnormalReasonDistributionVO::getCount, Comparator.reverseOrder())
+                    .thenComparing(AttendanceAbnormalReasonDistributionVO::getReasonKey, Comparator.nullsLast(Comparator.naturalOrder())));
+            return result.size() > 5 ? new ArrayList<>(result.subList(0, 5)) : result;
+        }
+
+        @Override
+        public List<AttendanceAbnormalReasonDistributionVO> queryAbnormalUserTopReasons(AttendanceQueryRequest request) {
+            Map<Long, Map<String, Long>> userReasonCounts = new LinkedHashMap<>();
+            for (AttendanceRecordEntity entity : filterEntities(withoutStatusFilters(request))) {
+                if (!isAbnormal(entity.getCheckInResult())) {
+                    continue;
+                }
+                Map<String, Long> reasonCounts = userReasonCounts.computeIfAbsent(entity.getUserId(), key -> new LinkedHashMap<>());
+                String reasonKey = normalizeReasonKey(entity);
+                reasonCounts.put(reasonKey, reasonCounts.getOrDefault(reasonKey, 0L) + 1L);
+            }
+            List<AttendanceAbnormalReasonDistributionVO> result = new ArrayList<>();
+            for (Map.Entry<Long, Map<String, Long>> entry : userReasonCounts.entrySet()) {
+                Map.Entry<String, Long> topReason = null;
+                for (Map.Entry<String, Long> reasonEntry : entry.getValue().entrySet()) {
+                    if (topReason == null
+                            || reasonEntry.getValue() > topReason.getValue()
+                            || (reasonEntry.getValue().equals(topReason.getValue())
+                            && reasonEntry.getKey().compareTo(topReason.getKey()) < 0)) {
+                        topReason = reasonEntry;
+                    }
+                }
+                if (topReason == null) {
+                    continue;
+                }
+                AttendanceAbnormalReasonDistributionVO item = new AttendanceAbnormalReasonDistributionVO();
+                item.setUserId(entry.getKey());
+                item.setReasonKey(topReason.getKey());
+                item.setCount(topReason.getValue());
+                result.add(item);
+            }
+            result.sort(Comparator
+                    .comparing(AttendanceAbnormalReasonDistributionVO::getCount, Comparator.reverseOrder())
+                    .thenComparing(AttendanceAbnormalReasonDistributionVO::getUserId));
+            return result;
+        }
+
+        @Override
         public AttendanceAbnormalUserSummaryVO queryAbnormalUserSummary(AttendanceQueryRequest request) {
             List<AttendanceRecordEntity> filtered = filterEntities(withoutStatusFilters(request));
             AttendanceRecordEntity latest = null;
@@ -773,6 +994,24 @@ public class AttendanceServiceImplTest {
             result.setAbnormalCount(abnormalCount);
             result.setRecentAbnormalDate(latest.getAttendanceDate());
             result.setRecentAbnormalType(latest.getCheckInResult());
+            return result;
+        }
+
+        @Override
+        public List<AttendanceAbnormalUserBehaviorPointVO> queryAbnormalUserBehaviorPoints(AttendanceQueryRequest request) {
+            List<AttendanceAbnormalUserBehaviorPointVO> result = new ArrayList<>();
+            for (AttendanceRecordEntity entity : filterEntities(withoutStatusFilters(request))) {
+                if (request.getUserId() != null && !request.getUserId().equals(entity.getUserId())) {
+                    continue;
+                }
+                if (!isAbnormal(entity.getCheckInResult())) {
+                    continue;
+                }
+                AttendanceAbnormalUserBehaviorPointVO item = new AttendanceAbnormalUserBehaviorPointVO();
+                item.setCheckInAddress(entity.getCheckInAddress());
+                item.setCheckInTime(entity.getCheckInTime());
+                result.add(item);
+            }
             return result;
         }
 
@@ -823,6 +1062,19 @@ public class AttendanceServiceImplTest {
 
         private LocalDate parseDate(String text) {
             return text == null || text.isBlank() ? null : LocalDate.parse(text);
+        }
+
+        private boolean isAbnormal(String checkInResult) {
+            return checkInResult != null
+                    && !AttendanceCheckInStatus.CHECK_IN_SUCCESS.equals(checkInResult)
+                    && !AttendanceCheckInStatus.CHECK_OUT_SUCCESS.equals(checkInResult);
+        }
+
+        private String normalizeReasonKey(AttendanceRecordEntity entity) {
+            if (entity.getCheckInFailReason() != null && !entity.getCheckInFailReason().isBlank()) {
+                return entity.getCheckInFailReason().trim();
+            }
+            return entity.getCheckInResult();
         }
 
         private AttendanceRecordEntity cloneEntity(AttendanceRecordEntity entity) {
