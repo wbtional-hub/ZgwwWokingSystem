@@ -178,6 +178,7 @@
             AND u.tree_path LIKE CONCAT(#{request.treePathPrefix}, '%')
         </if>
         ORDER BY a.attendance_date DESC, a.check_in_time DESC NULLS LAST, a.id DESC
+        LIMIT #{request.pageSize} OFFSET #{request.offset}
     </select>
 
     <select id="countByQuery" resultType="long">
@@ -331,6 +332,106 @@
         ORDER BY a.attendance_date ASC
     </select>
 
+    <select id="queryAbnormalTrendComparisons" resultType="com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalTrendComparisonVO">
+        SELECT a.user_id,
+               SUM(
+                   CASE
+                       WHEN a.attendance_date <![CDATA[>=]]> #{recentDateFrom}
+                        AND a.attendance_date <![CDATA[<=]]> #{recentDateTo}
+                        AND a.check_in_result NOT IN ('CHECK_IN_SUCCESS', 'CHECK_OUT_SUCCESS')
+                       THEN 1 ELSE 0
+                   END
+               ) AS recent7_day_abnormal_count,
+               SUM(
+                   CASE
+                       WHEN a.attendance_date <![CDATA[>=]]> #{previousDateFrom}
+                        AND a.attendance_date <![CDATA[<=]]> #{previousDateTo}
+                        AND a.check_in_result NOT IN ('CHECK_IN_SUCCESS', 'CHECK_OUT_SUCCESS')
+                       THEN 1 ELSE 0
+                   END
+               ) AS previous7_day_abnormal_count
+        FROM attendance_record a
+        INNER JOIN sys_user u ON u.id = a.user_id
+        LEFT JOIN sys_org_unit su ON su.id = a.unit_id
+        WHERE u.is_deleted = FALSE
+          AND a.attendance_date <![CDATA[>=]]> #{previousDateFrom}
+          AND a.attendance_date <![CDATA[<=]]> #{recentDateTo}
+        <if test="request.unitName != null and request.unitName != ''">
+            AND su.unit_name LIKE CONCAT('%', #{request.unitName}, '%')
+        </if>
+        <if test="request.userId != null">
+            AND a.user_id = #{request.userId}
+        </if>
+        <if test="request.treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{request.treePathPrefix}, '%')
+        </if>
+        GROUP BY a.user_id
+    </select>
+
+    <select id="queryAbnormalReasonDistributions" resultType="com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalReasonDistributionVO">
+        SELECT COALESCE(NULLIF(TRIM(a.check_in_fail_reason), ''), a.check_in_result) AS reason_key,
+               COUNT(1) AS count
+        FROM attendance_record a
+        INNER JOIN sys_user u ON u.id = a.user_id
+        LEFT JOIN sys_org_unit su ON su.id = a.unit_id
+        WHERE u.is_deleted = FALSE
+          AND a.check_in_result NOT IN ('CHECK_IN_SUCCESS', 'CHECK_OUT_SUCCESS')
+        <if test="request.unitName != null and request.unitName != ''">
+            AND su.unit_name LIKE CONCAT('%', #{request.unitName}, '%')
+        </if>
+        <if test="request.userId != null">
+            AND a.user_id = #{request.userId}
+        </if>
+        <if test="request.dateFrom != null and request.dateFrom != ''">
+            AND a.attendance_date <![CDATA[>=]]> #{request.dateFrom}
+        </if>
+        <if test="request.dateTo != null and request.dateTo != ''">
+            AND a.attendance_date <![CDATA[<=]]> #{request.dateTo}
+        </if>
+        <if test="request.treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{request.treePathPrefix}, '%')
+        </if>
+        GROUP BY COALESCE(NULLIF(TRIM(a.check_in_fail_reason), ''), a.check_in_result)
+        ORDER BY COUNT(1) DESC, reason_key ASC
+        LIMIT 5
+    </select>
+
+    <select id="queryAbnormalUserTopReasons" resultType="com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalReasonDistributionVO">
+        SELECT ranked.user_id, ranked.reason_key, ranked.count
+        FROM (
+            SELECT a.user_id,
+                   COALESCE(NULLIF(TRIM(a.check_in_fail_reason), ''), a.check_in_result) AS reason_key,
+                   COUNT(1) AS count,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY a.user_id
+                       ORDER BY COUNT(1) DESC, COALESCE(NULLIF(TRIM(a.check_in_fail_reason), ''), a.check_in_result) ASC
+                   ) AS rn
+            FROM attendance_record a
+            INNER JOIN sys_user u ON u.id = a.user_id
+            LEFT JOIN sys_org_unit su ON su.id = a.unit_id
+            WHERE u.is_deleted = FALSE
+              AND a.check_in_result NOT IN ('CHECK_IN_SUCCESS', 'CHECK_OUT_SUCCESS')
+            <if test="request.unitName != null and request.unitName != ''">
+                AND su.unit_name LIKE CONCAT('%', #{request.unitName}, '%')
+            </if>
+            <if test="request.userId != null">
+                AND a.user_id = #{request.userId}
+            </if>
+            <if test="request.dateFrom != null and request.dateFrom != ''">
+                AND a.attendance_date <![CDATA[>=]]> #{request.dateFrom}
+            </if>
+            <if test="request.dateTo != null and request.dateTo != ''">
+                AND a.attendance_date <![CDATA[<=]]> #{request.dateTo}
+            </if>
+            <if test="request.treePathPrefix != null">
+                AND u.tree_path LIKE CONCAT(#{request.treePathPrefix}, '%')
+            </if>
+            GROUP BY a.user_id, COALESCE(NULLIF(TRIM(a.check_in_fail_reason), ''), a.check_in_result)
+        ) ranked
+        WHERE ranked.rn = 1
+        ORDER BY ranked.count DESC, ranked.user_id ASC
+    </select>
+
     <select id="queryAbnormalUserSummary" resultType="com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserSummaryVO">
         SELECT latest.user_id, latest.username, latest.real_name, latest.unit_name,
                counts.abnormal_count, latest.recent_abnormal_date, latest.recent_abnormal_type
@@ -381,5 +482,28 @@
             </if>
             GROUP BY a.user_id
         ) counts ON counts.user_id = latest.user_id
+    </select>
+
+    <select id="queryAbnormalUserBehaviorPoints" resultType="com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserBehaviorPointVO">
+        SELECT a.check_in_address, a.check_in_time
+        FROM attendance_record a
+        INNER JOIN sys_user u ON u.id = a.user_id
+        LEFT JOIN sys_org_unit su ON su.id = a.unit_id
+        WHERE u.is_deleted = FALSE
+          AND a.user_id = #{request.userId}
+          AND a.check_in_result NOT IN ('CHECK_IN_SUCCESS', 'CHECK_OUT_SUCCESS')
+        <if test="request.unitName != null and request.unitName != ''">
+            AND su.unit_name LIKE CONCAT('%', #{request.unitName}, '%')
+        </if>
+        <if test="request.dateFrom != null and request.dateFrom != ''">
+            AND a.attendance_date <![CDATA[>=]]> #{request.dateFrom}
+        </if>
+        <if test="request.dateTo != null and request.dateTo != ''">
+            AND a.attendance_date <![CDATA[<=]]> #{request.dateTo}
+        </if>
+        <if test="request.treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{request.treePathPrefix}, '%')
+        </if>
+        ORDER BY a.attendance_date DESC, a.check_in_time DESC NULLS LAST, a.id DESC
     </select>
 </mapper>

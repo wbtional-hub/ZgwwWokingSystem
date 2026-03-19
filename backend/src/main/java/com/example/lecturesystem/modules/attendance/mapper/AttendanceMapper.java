@@ -5,6 +5,9 @@ import com.example.lecturesystem.modules.attendance.entity.AttendanceRecordEntit
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserRankVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserSummaryVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalTrendPointVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalTrendComparisonVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalReasonDistributionVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserBehaviorPointVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceRecordListItemVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceStatusCountVO;
 import com.example.lecturesystem.modules.unit.vo.AttendanceLocationVO;
@@ -46,7 +49,19 @@ public interface AttendanceMapper {
 
     List<AttendanceAbnormalTrendPointVO> queryAbnormalTrend(@Param("request") AttendanceQueryRequest request);
 
+    List<AttendanceAbnormalTrendComparisonVO> queryAbnormalTrendComparisons(@Param("request") AttendanceQueryRequest request,
+                                                                            @Param("recentDateFrom") LocalDate recentDateFrom,
+                                                                            @Param("recentDateTo") LocalDate recentDateTo,
+                                                                            @Param("previousDateFrom") LocalDate previousDateFrom,
+                                                                            @Param("previousDateTo") LocalDate previousDateTo);
+
+    List<AttendanceAbnormalReasonDistributionVO> queryAbnormalReasonDistributions(@Param("request") AttendanceQueryRequest request);
+
+    List<AttendanceAbnormalReasonDistributionVO> queryAbnormalUserTopReasons(@Param("request") AttendanceQueryRequest request);
+
     AttendanceAbnormalUserSummaryVO queryAbnormalUserSummary(@Param("request") AttendanceQueryRequest request);
+
+    List<AttendanceAbnormalUserBehaviorPointVO> queryAbnormalUserBehaviorPoints(@Param("request") AttendanceQueryRequest request);
 
     List<AttendanceRecordListItemVO> queryList(@Param("request") AttendanceQueryRequest request);
 }
