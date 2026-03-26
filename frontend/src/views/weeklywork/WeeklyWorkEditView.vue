@@ -75,8 +75,7 @@
     <section v-if="!isEditorPage && isMineTab" class="calendar-board">
       <div class="calendar-board__header">
         <div>
-          <div class="panel-title">周历视图</div>
-          <div class="panel-hint">按周查看本月安排，日历里只显示少量任务提示，保持清爽易读。</div>
+          <div class="panel-title">周历</div>
         </div>
       </div>
       <div class="calendar-board__toolbar">
@@ -127,13 +126,19 @@
       <div class="calendar-board__footer">
         <div>
           <div class="calendar-board__focus">{{ selectedCalendarTitle }}</div>
-          <div class="calendar-board__hint">{{ selectedCalendarHint }}</div>
+          <div v-if="selectedCalendarHint" class="calendar-board__hint">{{ selectedCalendarHint }}</div>
         </div>
-        <van-button v-if="showCreateEntry" type="primary" size="small" :disabled="pageBusy" @click="openCreateForm({ date: selectedCalendarDate })">
-          在这一天新建
+        <van-button
+          v-if="selectedDateRecords.length"
+          plain
+          size="small"
+          :disabled="pageBusy"
+          @click="calendarDetailsExpanded = !calendarDetailsExpanded"
+        >
+          {{ calendarDetailsExpanded ? '收起当天周报' : '查看当天周报' }}
         </van-button>
       </div>
-      <div v-if="selectedDateRecords.length" class="calendar-record-list">
+      <div v-if="showSelectedDateRecords" class="calendar-record-list">
         <button
           v-for="item in selectedDateRecords"
           :key="`calendar-record-${item.id}`"
@@ -143,36 +148,83 @@
           @click="handleCalendarRecordOpen(item)"
         >
           <div class="calendar-record-card__top">
-            <strong>{{ item.weekNo || '-' }}</strong>
+            <strong>{{ recordCardTitle(item) }}</strong>
             <van-tag size="medium" :type="statusTagType(item.status)">{{ statusLabel(item.status, item) }}</van-tag>
           </div>
-          <div class="calendar-record-card__meta">创建时间：{{ formatDateTime(item.createTime) }}</div>
-          <div class="calendar-record-card__meta">任务概览：{{ summarizeTask(item) }}</div>
+          <div class="report-compact-meta report-compact-meta--calendar">
+            <span class="report-compact-chip">{{ recordTaskCount(item) }} 项任务</span>
+            <span class="report-compact-chip">{{ compactRecordUpdateLabel(item) }}</span>
+            <span v-if="item.status !== 'DRAFT'" class="report-compact-chip">{{ currentStageText(item) }}</span>
+          </div>
+          <div class="report-preview report-preview--mine task-text-block">任务概览：{{ summarizeTask(item) }}</div>
+          <div class="calendar-record-card__actions">
+            <van-button
+              v-if="showCardDetailAction(item)"
+              size="small"
+              plain
+              type="primary"
+              :disabled="pageBusy"
+              @click.stop="openDetail(item, { syncCurrent: true })"
+            >
+              查看详情
+            </van-button>
+            <van-button
+              v-if="showCardEditAction(item)"
+              size="small"
+              plain
+              type="primary"
+              :disabled="pageBusy"
+              @click.stop="openEditForm(item)"
+            >
+              继续编辑
+            </van-button>
+            <van-button
+              v-if="showCardSubmitAction(item)"
+              size="small"
+              plain
+              type="primary"
+              :loading="submitTargetId === item.id"
+              :disabled="pageBusy || !canSubmit(item)"
+              @click.stop="handleSubmitFromList(item)"
+            >
+              提交到下一步
+            </van-button>
+          </div>
         </button>
       </div>
     </section>
 
     <section v-if="isEditorPage" class="task-board">
-      <div class="task-board__header">
-        <div>
-          <div class="panel-title">当前周报任务列表</div>
-          <div class="task-board__summary">共 {{ taskList.length }} 项任务，草稿和退回状态可继续维护。</div>
+      <div class="editor-workbench">
+        <div class="task-board__header">
+          <div>
+            <div class="panel-title">周报编辑</div>
+            <div class="task-board__summary">围绕当前周报完成任务维护和提交。</div>
+          </div>
+          <div class="task-board__actions">
+            <van-button v-if="taskList.length" size="small" type="primary" :disabled="pageBusy || !canEditCurrentWeekly" @click="openTaskEditor()">
+              {{ currentTaskActionLabel }}
+            </van-button>
+          </div>
         </div>
-        <div class="task-board__actions">
-          <van-button v-if="taskList.length" size="small" type="primary" :disabled="pageBusy || !canEditCurrentWeekly" @click="openTaskEditor()">
-            {{ currentTaskActionLabel }}
-          </van-button>
+        <div class="editor-workbench__meta">
+          <span class="editor-workbench__chip">{{ currentStatusLabel }}</span>
+          <span class="editor-workbench__chip">{{ taskList.length }} 项任务</span>
+          <span class="editor-workbench__chip">{{ stickyActionHint }}</span>
         </div>
+        <van-field
+          v-model.trim="editorForm.weekNo"
+          class="editor-workbench__field"
+          label="周次"
+          placeholder="如：2026-W12"
+          :disabled="pageBusy || !canEditCurrentWeekly"
+        />
       </div>
 
-      <van-field
-        v-model.trim="editorForm.weekNo"
-        label="周次"
-        placeholder="如：2026-W12"
-        :disabled="pageBusy || !canEditCurrentWeekly"
-      />
-
       <div v-if="taskList.length" class="task-list">
+        <div>
+          <div class="panel-title">任务列表</div>
+        </div>
         <article
           v-for="(task, index) in taskList"
           :key="`task-${index}`"
@@ -222,7 +274,7 @@
       <div v-if="showEditorActionPanel" class="editor-action-panel">
         <div class="editor-action-panel__info">
           <div class="editor-action-panel__title">当前周报操作</div>
-          <div class="editor-action-panel__desc">{{ stickyActionHint }}</div>
+          <div class="editor-action-panel__desc">先保存，再决定是否提交到下一步。</div>
         </div>
         <div class="editor-action-panel__buttons">
           <van-button
@@ -310,8 +362,7 @@
     <section v-if="!isEditorPage" class="record-board">
       <div class="record-board__header">
         <div>
-          <div class="panel-title">周报记录区</div>
-          <div class="panel-hint">按填报与审核角色拆分入口，避免同一分区里混用填报和审核动作。</div>
+          <div class="panel-title">周报</div>
         </div>
       </div>
 
@@ -331,6 +382,7 @@
       </div>
 
       <div
+        v-if="showRecordFocusBanner"
         class="record-focus-banner"
         :class="{
           'record-focus-banner--audit': isAuditTab,
@@ -341,19 +393,26 @@
         <div class="record-focus-banner__desc">{{ currentViewBannerDesc }}</div>
       </div>
 
+      <div v-if="isAuditTab && currentTabRecords.length" class="audit-record-toggle">
+        <van-button plain size="small" :disabled="pageBusy" @click="auditRecordsExpanded = !auditRecordsExpanded">
+          {{ auditRecordToggleLabel }}
+        </van-button>
+      </div>
+
       <van-loading v-if="listLoading" size="24px" vertical class="state-block">加载中...</van-loading>
 
-      <van-empty v-else-if="!currentTabRecords.length" :description="currentRecordTab.emptyTitle">
-        <template #default>
-          <div class="empty-tip">{{ currentRecordTab.emptyDesc }}</div>
-        </template>
-      </van-empty>
+      <van-empty v-else-if="!currentTabRecords.length" :description="currentRecordTab.emptyDesc" />
+
+      <div v-else-if="isAuditTab && !showAuditRecordList" class="audit-record-collapsed">
+        <div class="audit-record-collapsed__title">{{ currentRecordTab.count }} 条记录</div>
+        <div class="audit-record-collapsed__desc">按需展开查看并处理。</div>
+      </div>
 
       <div v-else class="record-board__content">
         <div class="record-group">
-          <div class="record-group__title">{{ currentRecordTab.title }}</div>
-          <div class="panel-hint">{{ currentRecordTab.desc }}</div>
-          <div class="flow-state-legend">
+          <div v-if="showRecordGroupTitle" class="record-group__title">{{ currentRecordTab.title }}</div>
+          <div v-if="showRecordGroupHint" class="panel-hint">{{ currentRecordTab.desc }}</div>
+          <div v-if="showFlowLegend" class="flow-state-legend">
             <span
               v-for="legend in FLOW_STATE_LEGEND"
               :key="legend.key"
@@ -382,38 +441,46 @@
                 </div>
               </template>
               <template #desc>
-                <div class="report-meta">任务数：{{ recordTaskCount(item) }}</div>
-                <div class="report-stage-strip">
-                  <div class="report-stage-chip report-stage-chip--current">
-                    <span class="report-stage-chip__label">当前阶段</span>
-                    <strong class="report-stage-chip__value">{{ currentStageText(item) }}</strong>
-                  </div>
-                  <div class="report-stage-chip" :class="{ 'report-stage-chip--next': nextFlowStepText(item) !== '无下一步' }">
-                    <span class="report-stage-chip__label">下一步</span>
-                    <strong class="report-stage-chip__value">{{ nextFlowStepText(item) }}</strong>
-                  </div>
-                  <div class="report-stage-chip" :class="{ 'report-stage-chip--return': returnTargetText(item) !== '无退回目标' }">
-                    <span class="report-stage-chip__label">退回目标</span>
-                    <strong class="report-stage-chip__value">{{ returnTargetText(item) }}</strong>
-                  </div>
+                <div v-if="activeRecordTab === 'mine'" class="report-compact-meta">
+                  <span class="report-compact-chip">{{ statusLabel(item.status, item) }}</span>
+                  <span class="report-compact-chip">{{ recordTaskCount(item) }} 项任务</span>
+                  <span class="report-compact-chip">{{ compactRecordUpdateLabel(item) }}</span>
+                  <span v-if="item.status !== 'DRAFT'" class="report-compact-chip">{{ currentStageText(item) }}</span>
                 </div>
-                <div class="report-meta">当前状态：{{ statusLabel(item.status, item) }}</div>
-                <div class="report-meta">当前流转目标：{{ currentFlowTargetText(item) }}</div>
-                <div class="report-flow-stepper">
-                  <div
-                    v-for="step in buildFlowNodes(item)"
-                    :key="`card-${item.id}-${step.key}`"
-                    class="approval-step approval-step--compact"
-                    :class="[`approval-step--${step.state}`]"
-                  >
-                    <div class="approval-step__dot">{{ step.order }}</div>
-                    <div class="approval-step__label">{{ step.label }}</div>
-                    <div class="approval-step__state">{{ flowNodeStateLabel(step, item) }}</div>
+                <template v-else>
+                  <div class="report-meta">任务数：{{ recordTaskCount(item) }}</div>
+                  <div class="report-stage-strip">
+                    <div class="report-stage-chip report-stage-chip--current">
+                      <span class="report-stage-chip__label">当前阶段</span>
+                      <strong class="report-stage-chip__value">{{ currentStageText(item) }}</strong>
+                    </div>
+                    <div class="report-stage-chip" :class="{ 'report-stage-chip--next': nextFlowStepText(item) !== '无下一步' }">
+                      <span class="report-stage-chip__label">下一步</span>
+                      <strong class="report-stage-chip__value">{{ nextFlowStepText(item) }}</strong>
+                    </div>
+                    <div class="report-stage-chip" :class="{ 'report-stage-chip--return': returnTargetText(item) !== '无退回目标' }">
+                      <span class="report-stage-chip__label">退回目标</span>
+                      <strong class="report-stage-chip__value">{{ returnTargetText(item) }}</strong>
+                    </div>
                   </div>
-                </div>
-                <div class="report-meta">最近更新时间：{{ formatDateTime(resolveRecordUpdatedAt(item)) }}</div>
+                  <div class="report-meta">当前状态：{{ statusLabel(item.status, item) }}</div>
+                  <div class="report-meta">当前流转目标：{{ currentFlowTargetText(item) }}</div>
+                  <div class="report-flow-stepper">
+                    <div
+                      v-for="step in buildFlowNodes(item)"
+                      :key="`card-${item.id}-${step.key}`"
+                      class="approval-step approval-step--compact"
+                      :class="[`approval-step--${step.state}`]"
+                    >
+                      <div class="approval-step__dot">{{ step.order }}</div>
+                      <div class="approval-step__label">{{ step.label }}</div>
+                      <div class="approval-step__state">{{ flowNodeStateLabel(step, item) }}</div>
+                    </div>
+                  </div>
+                </template>
+                <div v-if="activeRecordTab !== 'mine'" class="report-meta">最近更新时间：{{ formatDateTime(resolveRecordUpdatedAt(item)) }}</div>
                 <div v-if="shouldShowReturnSummary(item) && recordReturnSummary(item)" class="report-meta report-meta--return">最近退回：{{ recordReturnSummary(item) }}</div>
-                <div class="report-preview task-text-block">任务概览：{{ summarizeTask(item) }}</div>
+                <div class="report-preview task-text-block" :class="{ 'report-preview--mine': activeRecordTab === 'mine' }">任务概览：{{ summarizeTask(item) }}</div>
               </template>
               <template #footer>
                 <div class="card-actions">
@@ -475,7 +542,7 @@
     >
       <div class="detail-panel">
         <div class="detail-header">
-          <div class="detail-title">周报详情</div>
+          <div class="detail-title">详情</div>
           <van-button plain size="small" :disabled="detailLoading" @click="handleExitView">关闭</van-button>
         </div>
         <div v-if="detailLoading" class="detail-loading-card">
@@ -517,22 +584,10 @@
                 <span class="detail-summary-kv__value">{{ formatDateTime(resolveRecordUpdatedAt(detailRecord)) }}</span>
               </div>
             </div>
-            <div class="detail-summary-card__chain">真实审批链：{{ flowChainSummary(detailRecord) }}</div>
-            <div class="detail-summary-card__chain">节点状态：{{ flowStateSummary(detailRecord) }}</div>
             <div v-if="shouldShowReturnSummary(detailRecord) && recordReturnSummary(detailRecord)" class="detail-summary-card__return">
               最近退回：{{ recordReturnSummary(detailRecord) }}
             </div>
-            <div class="flow-state-legend flow-state-legend--detail">
-              <span
-                v-for="legend in FLOW_STATE_LEGEND"
-                :key="`detail-${legend.key}`"
-                class="flow-state-legend__item"
-                :class="`flow-state-legend__item--${legend.key}`"
-              >
-                {{ legend.label }}
-              </span>
-            </div>
-            <div class="detail-flow-stepper">
+            <div v-if="activeRecordTab !== 'mine'" class="detail-flow-stepper">
               <div
                 v-for="step in detailFlowNodes"
                 :key="`detail-${step.key}`"
@@ -546,26 +601,29 @@
             </div>
           </div>
           <div class="detail-block">
-            <div class="detail-label">任务列表</div>
+            <div class="detail-label">任务</div>
             <div v-if="detailTasks.length" class="detail-task-list">
               <div v-for="(task, index) in detailTasks" :key="`detail-task-${index}`" class="detail-task-card">
                 <div class="detail-task-card__head">
                   <span>任务 {{ index + 1 }}</span>
-                  <van-tag plain type="primary">{{ taskNatureLabel(task.nature) }}</van-tag>
+                  <div class="detail-task-card__chips">
+                    <span class="detail-task-chip">{{ taskNatureLabel(task.nature) }}</span>
+                    <span v-if="task.receiveTime || task.deadline" class="detail-task-chip detail-task-chip--light">
+                      {{ task.receiveTime || '未设开始' }} - {{ task.deadline || '未设截止' }}
+                    </span>
+                  </div>
                 </div>
-                <div class="detail-task-card__meta task-text-block">领取任务时间：{{ task.receiveTime || '未填写' }}</div>
-                <div class="detail-task-card__meta task-text-block">完成时限：{{ task.deadline || '未填写' }}</div>
-                <div class="detail-task-card__block task-text-block">目前进展：{{ task.progress || '未填写' }}</div>
-                <div class="detail-task-card__block task-text-block">需要协助：{{ task.assistance || '无' }}</div>
+                <div class="detail-task-card__block task-text-block">
+                  <span class="detail-task-card__caption">目前进展</span>
+                  {{ task.progress || '未填写' }}
+                </div>
+                <div class="detail-task-card__block task-text-block">
+                  <span class="detail-task-card__caption">需要协助</span>
+                  {{ task.assistance || '无' }}
+                </div>
               </div>
             </div>
             <div v-else class="detail-value">未填写任务</div>
-          </div>
-          <div v-if="shouldShowReturnSummary(detailRecord) && recordReturnSummary(detailRecord)" class="detail-block">
-            <div class="detail-label">最近退回</div>
-            <div class="detail-value">
-              {{ recordReturnSummary(detailRecord) }}
-            </div>
           </div>
           <div v-if="approvalTimelineEntries.length" class="detail-block approval-timeline">
             <div class="detail-label">审批记录</div>
@@ -576,19 +634,11 @@
                 </span>
                 <span class="timeline-item__time">{{ formatDateTime(log.createTime) }}</span>
               </div>
-              <div class="timeline-title">{{ log.title }}</div>
-              <div class="timeline-detail">处理人：{{ log.reviewerName || '-' }}</div>
-              <div class="timeline-detail">审批意见：{{ log.comment || '无审批意见' }}</div>
-              <div v-if="log.toNode && log.action === 'RETURN'" class="timeline-detail timeline-detail--return">
-                退回目标：{{ approvalNodeLabel(log.toNode, detailRecord) }}
-              </div>
-              <div v-else-if="log.toNode && log.action !== 'SUBMIT'" class="timeline-detail">
-                当前流转至：{{ approvalTargetLabel(log, detailRecord) }}
-              </div>
+              <div class="timeline-detail">{{ compactTimelineMessage(log) }}</div>
             </div>
           </div>
           <div v-if="showApprovalActions(detailRecord)" class="detail-block approval-action-card">
-            <div class="detail-label">审批操作区</div>
+            <div class="detail-label">审批操作</div>
             <div class="approval-action-card__hint">
               当前节点：{{ approvalNodeLabel(resolveCurrentApprovalNode(detailRecord), detailRecord) }}
             </div>
@@ -635,7 +685,7 @@
       class="return-sheet-popup"
     >
       <div class="return-sheet">
-        <div class="return-sheet__title">退回上一级</div>
+        <div class="return-sheet__title">退回</div>
         <div class="return-sheet__subtitle">
           当前审批节点：{{ approvalNodeLabel(resolveCurrentApprovalNode(returnSheetRecord), returnSheetRecord) }}
         </div>
@@ -682,7 +732,7 @@
       class="task-editor-popup"
     >
       <div class="task-editor-sheet">
-        <div class="task-editor-sheet__title">编辑任务卡</div>
+        <div class="task-editor-sheet__title">任务编辑</div>
         <div class="task-editor-sheet__section">
           <div class="task-editor-sheet__label">任务性质</div>
           <div class="nature-pill-group">
@@ -783,6 +833,8 @@ const approvalRevisionMode = ref(false)
 const editorSnapshot = ref('')
 const calendarCursor = ref(getMonthStart())
 const selectedCalendarDate = ref(formatDateKey(new Date()))
+const calendarDetailsExpanded = ref(false)
+const auditRecordsExpanded = ref(false)
 const orgChildCount = ref(null)
 const orgChainMap = reactive({})
 const orgChainRequestMap = new Map()
@@ -930,11 +982,12 @@ const selectedDateRecords = computed(() => {
   return [...(recordsByCreateDate.value[selectedCalendarDate.value] || [])]
     .sort((left, right) => String(right.createTime || '').localeCompare(String(left.createTime || '')))
 })
-const selectedCalendarTitle = computed(() => `${selectedCalendarDate.value || '-'} 新增情况`)
+const selectedCalendarTitle = computed(() => selectedCalendarDate.value || '-')
+const showSelectedDateRecords = computed(() => selectedDateRecords.value.length > 0 && calendarDetailsExpanded.value)
 const selectedCalendarHint = computed(() => {
   return selectedDateRecords.value.length
-    ? `当天共新增 ${selectedDateRecords.value.length} 份周报，可点击记录继续查看或编辑。`
-    : '当天还没有新增记录，可以直接从这里发起新建。'
+    ? `${selectedDateRecords.value.length} 条周报`
+    : ''
 })
 const currentModeEyebrow = computed(() => {
   if (currentMode.value === 'create') {
@@ -997,9 +1050,9 @@ const recordTabs = computed(() => ([
     key: 'mine',
     label: '我的填报',
     title: '我的填报',
-    desc: '这里只保留填报动作，只看我自己提交的周报。',
-    emptyTitle: '暂无我的填报',
-    emptyDesc: '先新建并暂存或提交周报，填报记录会集中显示在这里。',
+    desc: '我的周报记录',
+    emptyTitle: '暂无周报',
+    emptyDesc: '还没有周报记录',
     count: myWeeklyRecords.value.length
   },
   ...(showAuditRecordTabs.value ? [
@@ -1007,18 +1060,18 @@ const recordTabs = computed(() => ([
       key: 'pending',
       label: '待我审核',
       title: '待我审核',
-      desc: '这里只保留审核入口和流程阶段，避免混入编辑与填报动作。',
-      emptyTitle: '暂无待我审核',
-      emptyDesc: '当前没有需要你处理的周报。',
+      desc: '待处理记录',
+      emptyTitle: '暂无待审核',
+      emptyDesc: '当前没有需要处理的周报',
       count: pendingReviewRecords.value.length
     },
     {
       key: 'processed',
       label: '我已审核',
       title: '我已审核',
-      desc: '这里展示我已处理过的周报，支持回看流程和处理结果。',
-      emptyTitle: '暂无我已审核',
-      emptyDesc: '你处理过的周报会显示在这里。',
+      desc: '已处理记录',
+      emptyTitle: '暂无已审核',
+      emptyDesc: '还没有已处理记录',
       count: processedReviewRecords.value.length
     }
   ] : [])
@@ -1026,6 +1079,12 @@ const recordTabs = computed(() => ([
 const currentRecordTab = computed(() => {
   return recordTabs.value.find((tab) => tab.key === activeRecordTab.value) || recordTabs.value[0]
 })
+const showRecordFocusBanner = computed(() => false)
+const showRecordGroupTitle = computed(() => showAuditRecordTabs.value)
+const showRecordGroupHint = computed(() => showAuditRecordTabs.value)
+const showFlowLegend = computed(() => showAuditRecordTabs.value || activeRecordTab.value !== 'mine')
+const showAuditRecordList = computed(() => isMineTab.value || auditRecordsExpanded.value)
+const auditRecordToggleLabel = computed(() => auditRecordsExpanded.value ? '收起记录' : '展开记录')
 const currentTabRecords = computed(() => {
   if (activeRecordTab.value === 'pending') {
     return pendingReviewRecords.value
@@ -1738,6 +1797,20 @@ function approvalTargetLabel(log, record = null) {
   return approvalNodeLabel(log.toNode, record)
 }
 
+function compactTimelineMessage(log = {}) {
+  const comment = String(log.comment || '').trim()
+  if (comment) {
+    return comment
+  }
+  if (log.action === 'RETURN' && log.toNode) {
+    return `退回至 ${approvalNodeLabel(log.toNode, detailRecord.value)}`
+  }
+  if (log.toNode && log.action !== 'SUBMIT') {
+    return `流转至 ${approvalTargetLabel(log, detailRecord.value)}`
+  }
+  return log.title || '已处理'
+}
+
 function recordCardTitle(record = null) {
   if (activeRecordTab.value === 'mine') {
     return record?.weekNo || '-'
@@ -2165,6 +2238,14 @@ function resolveRecordUpdatedAt(record = {}) {
   return record?.lastReviewTime || record?.updateTime || record?.submitTime || record?.createTime || ''
 }
 
+function compactRecordUpdateLabel(record = null) {
+  const rawValue = formatDateTime(resolveRecordUpdatedAt(record))
+  if (!rawValue || rawValue === '-') {
+    return '未更新时间'
+  }
+  return rawValue.length > 16 ? rawValue.slice(5, 16) : rawValue
+}
+
 function shouldShowReturnSummary(record = null) {
   return record?.status === 'RETURNED'
 }
@@ -2544,9 +2625,13 @@ function selectCalendarDate(day) {
   if (!day?.dateKey) {
     return
   }
+  const isSameDate = selectedCalendarDate.value === day.dateKey
   selectedCalendarDate.value = day.dateKey
   if (!day.isCurrentMonth) {
     calendarCursor.value = getMonthStart(day.dateKey)
+  }
+  if (!isSameDate) {
+    calendarDetailsExpanded.value = false
   }
 }
 
@@ -3077,6 +3162,7 @@ function handleRecordTabChange(tabKey) {
   beginFocusTransition(tabKey === 'mine' ? '正在切换填报分区' : '正在切换审核分区')
   const nextFocusRecord = resolveFocusRecordForTab(tabKey)
   activeRecordTab.value = tabKey
+  auditRecordsExpanded.value = tabKey === 'mine'
   activeRecordId.value = nextFocusRecord?.id ?? null
   if (!nextFocusRecord) {
     if (isAuditTab.value) {
@@ -3618,8 +3704,8 @@ watch(showAuditRecordTabs, (visible) => {
 }
 
 .record-board {
-  padding: 16px;
-  border-radius: 20px;
+  padding: 14px;
+  border-radius: 18px;
   background: linear-gradient(180deg, #ffffff, #f8fafc);
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
 }
@@ -3629,7 +3715,7 @@ watch(showAuditRecordTabs, (visible) => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .flow-state-legend {
@@ -3689,8 +3775,8 @@ watch(showAuditRecordTabs, (visible) => {
 .record-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .record-focus-banner {
@@ -3725,8 +3811,8 @@ watch(showAuditRecordTabs, (visible) => {
 }
 
 .record-tab {
-  min-height: 52px;
-  padding: 10px 14px;
+  min-height: 48px;
+  padding: 8px 12px;
   border: 1px solid #dbe3ef;
   border-radius: 999px;
   background: rgba(248, 250, 252, 0.88);
@@ -3751,7 +3837,7 @@ watch(showAuditRecordTabs, (visible) => {
 .record-tab__count {
   font-size: 12px;
   color: #64748b;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.72);
 }
@@ -3760,7 +3846,32 @@ watch(showAuditRecordTabs, (visible) => {
 .record-group {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+}
+
+.audit-record-toggle {
+  margin-bottom: 10px;
+}
+
+.audit-record-collapsed {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+.audit-record-collapsed__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.audit-record-collapsed__desc {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #64748b;
 }
 
 .record-group__title {
@@ -3788,6 +3899,42 @@ watch(showAuditRecordTabs, (visible) => {
   font-size: 13px;
   color: #64748b;
   line-height: 1.6;
+}
+
+.editor-workbench {
+  margin-bottom: 14px;
+  padding: 13px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  border: 1px solid #e2e8f0;
+}
+
+.editor-workbench__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.editor-workbench__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.editor-workbench__field {
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
 }
 
 .task-list {
@@ -3819,8 +3966,9 @@ watch(showAuditRecordTabs, (visible) => {
 .task-card {
   padding: 16px;
   border-radius: 18px;
-  background: #f8fafc;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
   border: 1px solid #e2e8f0;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
 .task-card--editable {
@@ -3941,27 +4089,28 @@ watch(showAuditRecordTabs, (visible) => {
 }
 
 .task-editor-sheet {
-  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
-  background: #fff;
+  padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #f8fbff, #ffffff);
   border-radius: 24px 24px 0 0;
+  box-shadow: 0 -14px 36px rgba(15, 23, 42, 0.08);
 }
 
 .task-editor-sheet__title {
-  margin-bottom: 14px;
-  font-size: 18px;
+  margin-bottom: 12px;
+  font-size: 16px;
   font-weight: 700;
   color: #0f172a;
 }
 
 .task-editor-sheet__section {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .task-editor-sheet__label {
-  margin-bottom: 10px;
-  font-size: 13px;
+  margin-bottom: 8px;
+  font-size: 12px;
   font-weight: 600;
-  color: #334155;
+  color: #64748b;
 }
 
 .task-editor-sheet__grid {
@@ -3969,19 +4118,33 @@ watch(showAuditRecordTabs, (visible) => {
   gap: 8px;
 }
 
+.task-editor-sheet :deep(.van-cell),
+.return-sheet :deep(.van-cell) {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.task-editor-sheet__grid :deep(.van-cell) {
+  margin-top: 0;
+}
+
 .nature-pill-group {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .nature-pill {
-  min-height: 48px;
+  min-height: 44px;
   padding: 0 12px;
   border: 1px solid #cbd5e1;
-  border-radius: 16px;
-  background: #f8fafc;
-  font-size: 15px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  font-size: 14px;
   font-weight: 600;
   color: #334155;
 }
@@ -3996,11 +4159,14 @@ watch(showAuditRecordTabs, (visible) => {
 .task-editor-sheet__actions {
   display: flex;
   gap: 10px;
-  margin-top: 16px;
+  margin-top: 14px;
 }
 
 .task-editor-sheet__actions :deep(.van-button) {
   flex: 1;
+  min-height: 40px;
+  border-radius: 14px;
+  font-weight: 700;
 }
 
 .editor-action-panel {
@@ -4036,7 +4202,7 @@ watch(showAuditRecordTabs, (visible) => {
   grid-template-columns: auto 1fr auto;
   gap: 10px;
   align-items: center;
-  margin-top: 14px;
+  margin-top: 8px;
 }
 
 .calendar-nav-button {
@@ -4055,14 +4221,30 @@ watch(showAuditRecordTabs, (visible) => {
 }
 
 .panel-title {
-  margin-bottom: 8px;
-  font-size: 15px;
+  margin-bottom: 6px;
+  font-size: 14px;
   font-weight: 600;
   color: #1f2937;
 }
 
 .card-actions {
   justify-content: flex-end;
+}
+
+.card-actions :deep(.van-button),
+.calendar-record-card__actions :deep(.van-button),
+.editor-action-panel__buttons :deep(.van-button),
+.audit-record-toggle :deep(.van-button) {
+  border-radius: 999px;
+  min-height: 32px;
+  font-weight: 600;
+}
+
+.card-actions :deep(.van-button--plain),
+.calendar-record-card__actions :deep(.van-button--plain),
+.audit-record-toggle :deep(.van-button--plain) {
+  background: #fff;
+  border-color: #dbe3ef;
 }
 
 .panel-hint,
@@ -4124,6 +4306,30 @@ watch(showAuditRecordTabs, (visible) => {
   color: #b45309;
 }
 
+.report-compact-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+
+.report-compact-meta--calendar {
+  margin: 8px 0 8px;
+}
+
+.report-compact-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .query-grid {
   display: grid;
   gap: 10px;
@@ -4173,6 +4379,9 @@ watch(showAuditRecordTabs, (visible) => {
 .report-card {
   overflow: hidden;
   border-radius: 18px;
+  border: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
 .report-card-wrap--active .report-card {
@@ -4207,6 +4416,11 @@ watch(showAuditRecordTabs, (visible) => {
 
 .report-preview {
   margin-top: 4px;
+}
+
+.report-preview--mine {
+  margin-top: 2px;
+  color: #334155;
 }
 
 .task-text-block {
@@ -4260,7 +4474,7 @@ watch(showAuditRecordTabs, (visible) => {
 }
 
 .detail-panel {
-  padding: 16px;
+  padding: 14px;
 }
 
 .detail-header {
@@ -4268,12 +4482,13 @@ watch(showAuditRecordTabs, (visible) => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .detail-title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .detail-loading-card {
@@ -4308,10 +4523,11 @@ watch(showAuditRecordTabs, (visible) => {
 }
 
 .detail-summary-card {
-  padding: 14px;
-  border-radius: 18px;
+  padding: 13px;
+  border-radius: 16px;
   background: linear-gradient(180deg, #ffffff, #f8fafc);
   border: 1px solid #e2e8f0;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
 .detail-summary-card__top {
@@ -4328,7 +4544,7 @@ watch(showAuditRecordTabs, (visible) => {
 
 .detail-summary-card__title {
   margin-top: 4px;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   color: #0f172a;
 }
@@ -4336,13 +4552,13 @@ watch(showAuditRecordTabs, (visible) => {
 .detail-summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .detail-summary-kv {
-  padding: 12px;
-  border-radius: 14px;
+  padding: 10px;
+  border-radius: 12px;
   background: #fff;
   border: 1px solid #e5e7eb;
 }
@@ -4391,13 +4607,13 @@ watch(showAuditRecordTabs, (visible) => {
 }
 
 .detail-block {
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .detail-label {
-  margin-bottom: 4px;
-  font-size: 13px;
-  color: #111827;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #64748b;
   font-weight: 600;
 }
 
@@ -4410,7 +4626,7 @@ watch(showAuditRecordTabs, (visible) => {
 .detail-task-card {
   padding: 12px;
   border-radius: 16px;
-  background: #f8fafc;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
   border: 1px solid #e2e8f0;
 }
 
@@ -4424,7 +4640,30 @@ watch(showAuditRecordTabs, (visible) => {
   color: #0f172a;
 }
 
-.detail-task-card__meta,
+.detail-task-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.detail-task-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.detail-task-chip--light {
+  background: #f8fafc;
+  color: #64748b;
+}
+
 .detail-task-card__block {
   margin-top: 8px;
   font-size: 13px;
@@ -4432,16 +4671,25 @@ watch(showAuditRecordTabs, (visible) => {
   color: #475569;
 }
 
+.detail-task-card__caption {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+}
+
 .approval-action-card {
   padding: 14px;
   border-radius: 18px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #f8fbff, #ffffff);
+  border: 1px solid #dbe7f6;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.05);
 }
 
 .approval-action-card__hint {
   margin-top: 4px;
-  font-size: 13px;
+  font-size: 12px;
   color: #64748b;
 }
 
@@ -4451,20 +4699,30 @@ watch(showAuditRecordTabs, (visible) => {
   margin-top: 12px;
 }
 
+.approval-action-grid :deep(.van-button) {
+  min-height: 40px;
+  border-radius: 14px;
+  font-weight: 700;
+}
+
+.approval-action-grid :deep(.van-button--plain) {
+  background: #fff;
+}
+
 .approval-action-grid__danger {
   opacity: 0.92;
 }
 
 .approval-timeline {
-  padding: 14px;
-  border-radius: 18px;
-  background: #fbfdff;
+  padding: 12px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff, #fbfdff);
   border: 1px solid #e5eef8;
 }
 
 .timeline-item {
-  margin-top: 10px;
-  padding: 0 0 0 14px;
+  margin-top: 8px;
+  padding: 0 0 0 12px;
   border-left: 2px solid #dbeafe;
 }
 
@@ -4476,14 +4734,6 @@ watch(showAuditRecordTabs, (visible) => {
   gap: 8px;
 }
 
-.timeline-title {
-  margin-top: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #1f2937;
-  line-height: 1.5;
-}
-
 .timeline-item__time,
 .timeline-detail {
   font-size: 12px;
@@ -4492,7 +4742,7 @@ watch(showAuditRecordTabs, (visible) => {
 }
 
 .timeline-detail {
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .timeline-tag {
@@ -4526,51 +4776,50 @@ watch(showAuditRecordTabs, (visible) => {
   color: #6d28d9;
 }
 
-.timeline-detail--return {
-  color: #b45309;
-}
-
 .return-sheet {
-  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
-  background: #fff;
+  padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #f8fbff, #ffffff);
   border-radius: 24px 24px 0 0;
+  box-shadow: 0 -14px 36px rgba(15, 23, 42, 0.08);
 }
 
 .return-sheet__title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: #0f172a;
 }
 
 .return-sheet__subtitle {
-  margin-top: 6px;
-  font-size: 13px;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.6;
   color: #64748b;
 }
 
 .return-sheet__section {
-  margin: 16px 0 14px;
+  margin: 14px 0 12px;
 }
 
 .return-sheet__label {
-  margin-bottom: 10px;
-  font-size: 13px;
+  margin-bottom: 8px;
+  font-size: 12px;
   font-weight: 600;
-  color: #334155;
+  color: #64748b;
 }
 
 .return-target-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .return-target-card {
   width: 100%;
-  padding: 14px;
+  padding: 12px;
   text-align: left;
   border: 1px solid #dbe3ef;
-  border-radius: 16px;
-  background: #f8fafc;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
 }
 
 .return-target-card--active {
@@ -4581,7 +4830,7 @@ watch(showAuditRecordTabs, (visible) => {
 
 .return-target-card__title {
   display: block;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   color: #0f172a;
 }
@@ -4589,7 +4838,7 @@ watch(showAuditRecordTabs, (visible) => {
 .return-target-card__desc {
   display: block;
   margin-top: 4px;
-  font-size: 12px;
+  font-size: 11px;
   color: #64748b;
 }
 
@@ -4597,13 +4846,19 @@ watch(showAuditRecordTabs, (visible) => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  margin-top: 16px;
+  margin-top: 14px;
+}
+
+.return-sheet__actions :deep(.van-button) {
+  min-height: 40px;
+  border-radius: 14px;
+  font-weight: 700;
 }
 
 .calendar-board {
   margin-bottom: 16px;
-  padding: 14px;
-  border-radius: 20px;
+  padding: 12px;
+  border-radius: 18px;
   background: linear-gradient(180deg, #fffdf7, #ffffff);
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
 }
@@ -4624,23 +4879,24 @@ watch(showAuditRecordTabs, (visible) => {
 }
 
 .calendar-board__month {
-  margin-top: 14px;
-  font-size: 18px;
+  margin-top: 0;
+  font-size: 16px;
   font-weight: 700;
   color: #0f172a;
+  text-align: center;
 }
 
 .calendar-grid {
   display: grid;
-  gap: 6px;
-  margin-top: 12px;
+  gap: 4px;
+  margin-top: 10px;
 }
 
 .calendar-weekdays,
 .calendar-week-row {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
+  gap: 4px;
 }
 
 .calendar-grid__weekday {
@@ -4651,10 +4907,10 @@ watch(showAuditRecordTabs, (visible) => {
 }
 
 .calendar-day {
-  min-height: 76px;
-  padding: 7px;
+  min-height: 68px;
+  padding: 6px;
   border: 1px solid #e2e8f0;
-  border-radius: 16px;
+  border-radius: 14px;
   background: #fff;
   text-align: left;
   display: flex;
@@ -4688,7 +4944,7 @@ watch(showAuditRecordTabs, (visible) => {
 }
 
 .calendar-day__date {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -4709,15 +4965,15 @@ watch(showAuditRecordTabs, (visible) => {
 .calendar-day__events {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   min-height: 0;
 }
 
 .calendar-day__event,
 .calendar-day__more {
   display: block;
-  padding: 2px 6px;
-  border-radius: 10px;
+  padding: 2px 5px;
+  border-radius: 9px;
   font-size: 9px;
   line-height: 1.35;
   white-space: nowrap;
@@ -4735,37 +4991,38 @@ watch(showAuditRecordTabs, (visible) => {
 }
 
 .calendar-board__footer {
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid #e2e8f0;
 }
 
 .calendar-board__focus {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   color: #0f172a;
 }
 
 .calendar-board__hint {
-  margin-top: 4px;
-  font-size: 12px;
-  line-height: 1.6;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.5;
   color: #64748b;
 }
 
 .calendar-record-list {
   display: grid;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .calendar-record-card {
   width: 100%;
-  padding: 12px;
+  padding: 11px;
   border: 1px solid #dbe3ef;
   border-radius: 16px;
   background: linear-gradient(180deg, #ffffff, #f8fafc);
   text-align: left;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
 .calendar-record-card__top {
@@ -4775,11 +5032,17 @@ watch(showAuditRecordTabs, (visible) => {
   gap: 12px;
 }
 
-.calendar-record-card__meta {
-  margin-top: 6px;
-  font-size: 11px;
+.calendar-record-card__top strong {
+  font-size: 14px;
   line-height: 1.5;
-  color: #64748b;
+  color: #0f172a;
+}
+
+.calendar-record-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .audit-mode-card--placeholder {
