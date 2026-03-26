@@ -9,7 +9,7 @@ D:\softwave\postgresql-18.3-1-windows-x64-binaries\pgsql\bin\pg_isready.exe -h 1
 进入后端目录：
 
 cd D:\20.develop64\ZgwwWokingSystem\backend
-mvn spring-boot:run
+mvn "-Dspring-boot.run.profiles=wsl" "-Dspring-boot.run.jvmArguments=-DDB_HOST=127.0.0.1" spring-boot:run
 
 前端
 cd D:\20.develop64\ZgwwWokingSystem\frontend
@@ -18,7 +18,7 @@ npm run dev
 
 
 PS D:\20.develop64\ZgwwWokingSystem\backend
-mvn spring-boot:run
+mvn -Dspring-boot.run.profiles=wsl -Dspring-boot.run.jvmArguments="-DDB_HOST=127.0.0.1" spring-boot:run
 
 
 http://localhost:8080/api/auth/login
@@ -288,3 +288,37 @@ JWT
 以后你其实只需要用这一句：
 
 按项目记忆继续开发。只读取 ai_center/progress，不要全量重读。进入滚动开发模式，连续完成 5 个
+
+
+2026-03-26 周报页面前端记忆
+
+1. 周报模块路由已拆成两个入口：
+   - /weekly-work：总览页
+   - /weekly-work/editor：新增/编辑独立页
+
+2. 周报总览页当前已做的 UI 收敛：
+   - 最底层用户按组织架构 children 数量判断，只显示“我的填报”
+   - 审核说明区、审核模式区已先隐藏
+   - 周历视图顶部摘要区已隐藏
+   - 新增周报入口已先隐藏
+
+3. 周历视图当前状态：
+   - 已改成按周展示
+   - 每天最多展示极少量任务提示，避免信息过密
+   - 周历整体做过压缩，减少占位
+
+4. 编辑页当前状态：
+   - 上方重复状态卡已移除
+   - 只保留下方周报操作区
+   - 保存草稿、提交到下一步放在当前周报页内部
+
+5. 总览卡片当前状态：
+   - 与单条周报相关的动作放在对应周报卡片内
+   - 现保留：查看详情 / 继续编辑 / 提交到下一步 / 立即审核（按状态显示）
+
+6. 本轮主要改动文件：
+   - frontend/src/views/weeklywork/WeeklyWorkEditView.vue
+   - frontend/src/router/index.js
+
+7. 验证状态：
+   - 前端 npm run build 已通过

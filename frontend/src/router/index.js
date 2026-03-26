@@ -31,6 +31,7 @@ const routes = [
       { path: 'org-tree', component: OrgTreeView, meta: { adminOnly: true } },
       { path: 'attendance', component: AttendanceCheckInView },
       { path: 'weekly-work', component: WeeklyWorkEditView },
+      { path: 'weekly-work/editor', component: WeeklyWorkEditView },
       { path: 'scores', component: ScoreView },
       { path: 'statistics', component: StatisticsOverviewView },
       { path: 'profile', component: ProfileView },
