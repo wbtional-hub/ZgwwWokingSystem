@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.knowledge.mapper.KnowledgeChunkMapper">
+
+    <resultMap id="KnowledgeChunkListMap" type="com.example.lecturesystem.modules.knowledge.vo.KnowledgeChunkListItemVO">
+        <id property="id" column="id"/>
+        <result property="documentId" column="document_id"/>
+        <result property="chunkNo" column="chunk_no"/>
+        <result property="chunkType" column="chunk_type"/>
+        <result property="headingPath" column="heading_path"/>
+        <result property="contentText" column="content_text"/>
+        <result property="keywordText" column="keyword_text"/>
+        <result property="contentLength" column="content_length"/>
+        <result property="sortNo" column="sort_no"/>
+    </resultMap>
+
+    <resultMap id="KnowledgeSearchResultMap" type="com.example.lecturesystem.modules.knowledge.vo.KnowledgeSearchResultVO">
+        <id property="chunkId" column="chunk_id"/>
+        <result property="documentId" column="document_id"/>
+        <result property="docTitle" column="doc_title"/>
+        <result property="policyRegion" column="policy_region"/>
+        <result property="headingPath" column="heading_path"/>
+        <result property="snippet" column="snippet"/>
+        <result property="keywordText" column="keyword_text"/>
+        <result property="chunkNo" column="chunk_no"/>
+    </resultMap>
+
+    <select id="queryByDocumentId" resultMap="KnowledgeChunkListMap">
+        SELECT id, document_id, chunk_no, chunk_type, heading_path, content_text, keyword_text, content_length, sort_no
+        FROM ai_knowledge_chunk
+        WHERE document_id = #{documentId}
+        ORDER BY sort_no ASC, id ASC
+    </select>
+
+    <insert id="batchInsert">
+        INSERT INTO ai_knowledge_chunk (
+            document_id, base_id, category_id, chunk_no, chunk_type, heading_path,
+            content_text, keyword_text, content_length, sort_no, create_time
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+                #{item.documentId}, #{item.baseId}, #{item.categoryId}, #{item.chunkNo}, #{item.chunkType}, #{item.headingPath},
+                #{item.contentText}, #{item.keywordText}, #{item.contentLength}, #{item.sortNo}, #{item.createTime}
+            )
+        </foreach>
+    </insert>
+
+    <select id="search" resultMap="KnowledgeSearchResultMap">
+        SELECT doc.id AS document_id,
+               chunk.id AS chunk_id,
+               doc.doc_title,
+               doc.policy_region,
+               chunk.heading_path,
+               chunk.content_text AS snippet,
+               chunk.keyword_text,
+               chunk.chunk_no
+        FROM ai_knowledge_chunk chunk
+        INNER JOIN ai_knowledge_document doc ON doc.id = chunk.document_id
+        WHERE doc.is_deleted = FALSE
+          AND chunk.base_id = #{request.baseId}
+        <if test="request.categoryId != null">
+            AND chunk.category_id = #{request.categoryId}
+        </if>
+        <if test="request.keywords != null and request.keywords != ''">
+            AND (
+                chunk.content_text LIKE CONCAT('%', #{request.keywords}, '%')
+                OR doc.doc_title LIKE CONCAT('%', #{request.keywords}, '%')
+                OR COALESCE(chunk.keyword_text, '') LIKE CONCAT('%', #{request.keywords}, '%')
+            )
+        </if>
+        <if test="request.policyRegion != null and request.policyRegion != ''">
+            AND doc.policy_region LIKE CONCAT('%', #{request.policyRegion}, '%')
+        </if>
+        <if test="request.effectiveOnly != null and request.effectiveOnly">
+            AND (doc.effective_date IS NULL OR doc.effective_date &lt;= CURRENT_DATE)
+            AND (doc.expire_date IS NULL OR doc.expire_date &gt;= CURRENT_DATE)
+        </if>
+        ORDER BY doc.update_time DESC, chunk.sort_no ASC
+        LIMIT #{request.topN}
+    </select>
+</mapper>

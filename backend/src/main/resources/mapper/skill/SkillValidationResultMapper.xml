@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.skill.mapper.SkillValidationResultMapper">
+    <insert id="batchInsert">
+        INSERT INTO ai_skill_validation_result (run_id, test_case_id, answer_text, hit_chunks, score, is_pass, fail_reason) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.runId}, #{item.testCaseId}, #{item.answerText}, #{item.hitChunks}, #{item.score}, #{item.isPass}, #{item.failReason})
+        </foreach>
+    </insert>
+    <select id="queryByRunId" resultType="com.example.lecturesystem.modules.skill.vo.SkillValidationResultVO">
+        SELECT rst.id, rst.test_case_id, tc.question_text, rst.answer_text, rst.hit_chunks, rst.score, rst.is_pass, rst.fail_reason
+        FROM ai_skill_validation_result rst
+        LEFT JOIN ai_skill_test_case tc ON tc.id = rst.test_case_id
+        WHERE rst.run_id=#{runId}
+        ORDER BY rst.id ASC
+    </select>
+</mapper>

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.aipermission.mapper.UserKnowledgePermissionMapper">
+
+    <resultMap id="UserKnowledgePermissionEntityMap" type="com.example.lecturesystem.modules.aipermission.entity.UserKnowledgePermissionEntity">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="canView" column="can_view"/>
+        <result property="canUpload" column="can_upload"/>
+        <result property="canTrainSkill" column="can_train_skill"/>
+        <result property="canAnalyze" column="can_analyze"/>
+        <result property="status" column="status"/>
+        <result property="grantTime" column="grant_time"/>
+        <result property="grantUser" column="grant_user"/>
+    </resultMap>
+
+    <select id="queryList" resultType="com.example.lecturesystem.modules.aipermission.vo.UserKnowledgePermissionListItemVO">
+        SELECT perm.id, perm.user_id, usr.username, usr.real_name,
+               perm.base_id, kb.base_name,
+               perm.can_view, perm.can_upload, perm.can_train_skill, perm.can_analyze,
+               perm.status, perm.grant_time
+        FROM ai_user_knowledge_permission perm
+        INNER JOIN sys_user usr ON usr.id = perm.user_id AND usr.is_deleted = FALSE
+        INNER JOIN ai_knowledge_base kb ON kb.id = perm.base_id AND kb.is_deleted = FALSE
+        WHERE 1 = 1
+        <if test="request.userId != null">
+            AND perm.user_id = #{request.userId}
+        </if>
+        <if test="request.baseId != null">
+            AND perm.base_id = #{request.baseId}
+        </if>
+        <if test="request.status != null">
+            AND perm.status = #{request.status}
+        </if>
+        ORDER BY perm.grant_time DESC, perm.id DESC
+    </select>
+
+    <select id="queryActiveByUserId" resultType="com.example.lecturesystem.modules.aipermission.vo.UserKnowledgePermissionListItemVO">
+        SELECT perm.id, perm.user_id, usr.username, usr.real_name,
+               perm.base_id, kb.base_name,
+               perm.can_view, perm.can_upload, perm.can_train_skill, perm.can_analyze,
+               perm.status, perm.grant_time
+        FROM ai_user_knowledge_permission perm
+        INNER JOIN sys_user usr ON usr.id = perm.user_id AND usr.is_deleted = FALSE
+        INNER JOIN ai_knowledge_base kb ON kb.id = perm.base_id AND kb.is_deleted = FALSE
+        WHERE perm.user_id = #{userId}
+          AND perm.status = 1
+        ORDER BY perm.grant_time DESC, perm.id DESC
+    </select>
+
+    <select id="findByUserIdAndBaseId" resultMap="UserKnowledgePermissionEntityMap">
+        SELECT id, user_id, base_id, can_view, can_upload, can_train_skill, can_analyze,
+               status, grant_time, grant_user
+        FROM ai_user_knowledge_permission
+        WHERE user_id = #{userId}
+          AND base_id = #{baseId}
+    </select>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.aipermission.entity.UserKnowledgePermissionEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_user_knowledge_permission (
+            user_id, base_id, can_view, can_upload, can_train_skill, can_analyze,
+            status, grant_time, grant_user
+        ) VALUES (
+            #{userId}, #{baseId}, #{canView}, #{canUpload}, #{canTrainSkill}, #{canAnalyze},
+            #{status}, #{grantTime}, #{grantUser}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.example.lecturesystem.modules.aipermission.entity.UserKnowledgePermissionEntity">
+        UPDATE ai_user_knowledge_permission
+        SET can_view = #{canView},
+            can_upload = #{canUpload},
+            can_train_skill = #{canTrainSkill},
+            can_analyze = #{canAnalyze},
+            status = #{status},
+            grant_time = #{grantTime},
+            grant_user = #{grantUser}
+        WHERE id = #{id}
+    </update>
+
+    <select id="countCanView" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_user_knowledge_permission
+        WHERE user_id = #{userId}
+          AND base_id = #{baseId}
+          AND status = 1
+          AND can_view = TRUE
+    </select>
+
+    <select id="countCanUpload" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_user_knowledge_permission
+        WHERE user_id = #{userId}
+          AND base_id = #{baseId}
+          AND status = 1
+          AND can_upload = TRUE
+    </select>
+
+    <select id="countCanAnalyze" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_user_knowledge_permission
+        WHERE user_id = #{userId}
+          AND base_id = #{baseId}
+          AND status = 1
+          AND can_analyze = TRUE
+    </select>
+</mapper>

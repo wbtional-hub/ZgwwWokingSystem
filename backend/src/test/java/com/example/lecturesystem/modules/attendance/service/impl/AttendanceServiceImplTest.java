@@ -143,15 +143,92 @@ public class AttendanceServiceImplTest {
         request.setAddress("远处位置");
         request.setLongitude(new BigDecimal("116.407428"));
         request.setLatitude(new BigDecimal("39.919230"));
+        request.setAccuracyMeters(35);
 
         Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
 
         Assert.assertEquals(Boolean.FALSE, result.get("success"));
         Assert.assertEquals(Boolean.FALSE, result.get("allowCheckIn"));
         Assert.assertEquals(AttendanceCheckInStatus.OUT_OF_RANGE, result.get("status"));
-        Assert.assertEquals("超出单位打卡范围", result.get("reason"));
-        Assert.assertEquals("超出单位打卡范围", result.get("failReason"));
+        Assert.assertEquals("OUT", result.get("decisionBranch"));
+        Assert.assertTrue(String.valueOf(result.get("reason")).contains("当前位置距离打卡点"));
+        Assert.assertTrue(String.valueOf(result.get("reason")).contains("允许半径 200 米"));
+        Assert.assertEquals(result.get("reason"), result.get("failReason"));
         Assert.assertEquals(0, attendanceMapper.data.size());
+    }
+
+    @Test
+    public void checkInShouldAppendAccuracyHintWhenAccuracyIsWorseThanRadius() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        attendanceMapper.unitNames.put(2L, "平台单位");
+        attendanceMapper.attendanceLocations.put(2L, attendanceLocation(2L, "平台主打卡点", "116.397428", "39.909230", 120));
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        mockLoginUser(3L, false);
+        CheckInRequest request = new CheckInRequest();
+        request.setAddress("室内漂移位置");
+        request.setLongitude(new BigDecimal("116.401428"));
+        request.setLatitude(new BigDecimal("39.913230"));
+        request.setAccuracyMeters(180);
+
+        Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
+
+        Assert.assertEquals(AttendanceCheckInStatus.LOCATION_WEAK, result.get("status"));
+        Assert.assertEquals("WEAK", result.get("decisionBranch"));
+        Assert.assertTrue(String.valueOf(result.get("reason")).contains("当前定位质量较差"));
+    }
+
+    @Test
+    public void checkInShouldReturnLocationInvalidWhenAccuracyIsClearlyInvalid() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        attendanceMapper.unitNames.put(2L, "平台单位");
+        attendanceMapper.attendanceLocations.put(2L, attendanceLocation(2L, "平台主打卡点", "116.397428", "39.909230", 100));
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        mockLoginUser(3L, false);
+        CheckInRequest request = new CheckInRequest();
+        request.setAddress("粗定位");
+        request.setLongitude(new BigDecimal("73.000000"));
+        request.setLatitude(new BigDecimal("3.000000"));
+        request.setAccuracyMeters(1520580);
+
+        Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
+
+        Assert.assertEquals(AttendanceCheckInStatus.LOCATION_INVALID, result.get("status"));
+        Assert.assertEquals("INVALID", result.get("decisionBranch"));
+        Assert.assertTrue(String.valueOf(result.get("reason")).contains("当前定位无效"));
+    }
+
+    @Test
+    public void checkInShouldAllowIndoorToleranceWhenAccuracyIsReasonable() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        attendanceMapper.unitNames.put(2L, "平台单位");
+        attendanceMapper.attendanceLocations.put(2L, attendanceLocation(2L, "平台主打卡点", "116.397428", "39.909230", 100));
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        mockLoginUser(3L, false);
+        CheckInRequest request = new CheckInRequest();
+        request.setAddress("室内弱漂移");
+        request.setLongitude(new BigDecimal("116.398000"));
+        request.setLatitude(new BigDecimal("39.910100"));
+        request.setAccuracyMeters(60);
+
+        Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
+
+        Assert.assertEquals(Boolean.TRUE, result.get("success"));
+        Assert.assertEquals(AttendanceCheckInStatus.CHECK_IN_SUCCESS, result.get("status"));
+        Assert.assertEquals("WEAK_SUCCESS", result.get("decisionBranch"));
+        Assert.assertEquals(Boolean.TRUE, result.get("weakToleranceApplied"));
+        Assert.assertEquals(1, attendanceMapper.data.size());
     }
 
     @Test

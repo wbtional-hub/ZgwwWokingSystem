@@ -29,6 +29,7 @@ public interface StatisticsMapper {
                                               @Param("status") String status,
                                               @Param("treePathPrefix") String treePathPrefix);
 
-    List<StatisticsTrendVO> queryTrend(@Param("unitName") String unitName,
+    List<StatisticsTrendVO> queryTrend(@Param("weekNo") String weekNo,
+                                       @Param("unitName") String unitName,
                                        @Param("treePathPrefix") String treePathPrefix);
 }

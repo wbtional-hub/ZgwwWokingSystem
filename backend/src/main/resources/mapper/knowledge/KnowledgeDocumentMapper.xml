@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.knowledge.mapper.KnowledgeDocumentMapper">
+
+    <resultMap id="KnowledgeDocumentEntityMap" type="com.example.lecturesystem.modules.knowledge.entity.KnowledgeDocumentEntity">
+        <id property="id" column="id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="categoryId" column="category_id"/>
+        <result property="docTitle" column="doc_title"/>
+        <result property="sourceType" column="source_type"/>
+        <result property="fileName" column="file_name"/>
+        <result property="filePath" column="file_path"/>
+        <result property="docType" column="doc_type"/>
+        <result property="policyRegion" column="policy_region"/>
+        <result property="policyLevel" column="policy_level"/>
+        <result property="effectiveDate" column="effective_date"/>
+        <result property="expireDate" column="expire_date"/>
+        <result property="keywords" column="keywords"/>
+        <result property="summary" column="summary"/>
+        <result property="parseStatus" column="parse_status"/>
+        <result property="status" column="status"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="createUser" column="create_user"/>
+        <result property="updateUser" column="update_user"/>
+        <result property="isDeleted" column="is_deleted"/>
+    </resultMap>
+
+    <resultMap id="KnowledgeDocumentListMap" type="com.example.lecturesystem.modules.knowledge.vo.KnowledgeDocumentListItemVO">
+        <id property="id" column="id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="categoryId" column="category_id"/>
+        <result property="docTitle" column="doc_title"/>
+        <result property="fileName" column="file_name"/>
+        <result property="docType" column="doc_type"/>
+        <result property="policyRegion" column="policy_region"/>
+        <result property="policyLevel" column="policy_level"/>
+        <result property="effectiveDate" column="effective_date"/>
+        <result property="expireDate" column="expire_date"/>
+        <result property="parseStatus" column="parse_status"/>
+        <result property="status" column="status"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <resultMap id="KnowledgeDocumentDetailMap" type="com.example.lecturesystem.modules.knowledge.vo.KnowledgeDocumentDetailVO">
+        <id property="id" column="id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="categoryId" column="category_id"/>
+        <result property="docTitle" column="doc_title"/>
+        <result property="sourceType" column="source_type"/>
+        <result property="fileName" column="file_name"/>
+        <result property="filePath" column="file_path"/>
+        <result property="docType" column="doc_type"/>
+        <result property="policyRegion" column="policy_region"/>
+        <result property="policyLevel" column="policy_level"/>
+        <result property="effectiveDate" column="effective_date"/>
+        <result property="expireDate" column="expire_date"/>
+        <result property="keywords" column="keywords"/>
+        <result property="summary" column="summary"/>
+        <result property="parseStatus" column="parse_status"/>
+        <result property="status" column="status"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <select id="queryList" resultMap="KnowledgeDocumentListMap">
+        SELECT id, base_id, category_id, doc_title, file_name, doc_type, policy_region, policy_level,
+               effective_date, expire_date, parse_status, status, update_time
+        FROM ai_knowledge_document
+        WHERE is_deleted = FALSE
+        <if test="request.baseId != null">
+            AND base_id = #{request.baseId}
+        </if>
+        <if test="request.categoryId != null">
+            AND category_id = #{request.categoryId}
+        </if>
+        <if test="request.keywords != null and request.keywords != ''">
+            AND (
+                doc_title LIKE CONCAT('%', #{request.keywords}, '%')
+                OR keywords LIKE CONCAT('%', #{request.keywords}, '%')
+            )
+        </if>
+        <if test="request.policyRegion != null and request.policyRegion != ''">
+            AND policy_region LIKE CONCAT('%', #{request.policyRegion}, '%')
+        </if>
+        <if test="request.status != null">
+            AND status = #{request.status}
+        </if>
+        <if test="request.parseStatus != null and request.parseStatus != ''">
+            AND parse_status = #{request.parseStatus}
+        </if>
+        ORDER BY update_time DESC, id DESC
+    </select>
+
+    <select id="findById" resultMap="KnowledgeDocumentEntityMap">
+        SELECT id, base_id, category_id, doc_title, source_type, file_name, file_path, doc_type,
+               policy_region, policy_level, effective_date, expire_date, keywords, summary,
+               parse_status, status, create_time, update_time, create_user, update_user, is_deleted
+        FROM ai_knowledge_document
+        WHERE id = #{id}
+          AND is_deleted = FALSE
+    </select>
+
+    <select id="queryDetail" resultMap="KnowledgeDocumentDetailMap">
+        SELECT id, base_id, category_id, doc_title, source_type, file_name, file_path, doc_type,
+               policy_region, policy_level, effective_date, expire_date, keywords, summary,
+               parse_status, status, create_time, update_time
+        FROM ai_knowledge_document
+        WHERE id = #{id}
+          AND is_deleted = FALSE
+    </select>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.knowledge.entity.KnowledgeDocumentEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_knowledge_document (
+            base_id, category_id, doc_title, source_type, file_name, file_path, doc_type,
+            policy_region, policy_level, effective_date, expire_date, keywords, summary,
+            parse_status, status, create_time, update_time, create_user, update_user, is_deleted
+        ) VALUES (
+            #{baseId}, #{categoryId}, #{docTitle}, #{sourceType}, #{fileName}, #{filePath}, #{docType},
+            #{policyRegion}, #{policyLevel}, #{effectiveDate}, #{expireDate}, #{keywords}, #{summary},
+            #{parseStatus}, #{status}, #{createTime}, #{updateTime}, #{createUser}, #{updateUser}, #{isDeleted}
+        )
+    </insert>
+</mapper>

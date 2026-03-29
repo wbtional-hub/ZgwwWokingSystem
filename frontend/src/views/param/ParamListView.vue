@@ -46,11 +46,16 @@
     <section class="panel">
       <div class="panel-title">参数列表</div>
       <div class="panel-hint">共 {{ state.list.length }} 条参数记录</div>
+      <div class="panel-hint">当前筛选工作面：{{ querySummaryText }}</div>
 
       <van-loading v-if="state.loading" class="state-block" size="24px" vertical>加载中...</van-loading>
       <van-empty v-else-if="!state.list.length" description="暂无参数数据">
         <template #default>
           <div class="panel-hint">可先新增一条参数，保存后会立即出现在列表中。</div>
+          <div class="panel-hint">当前筛选工作面：{{ querySummaryText }}</div>
+          <div v-if="hasQueryFilters" class="action-row">
+            <van-button size="small" plain type="primary" :disabled="pageBusy" @click="handleReset">清空当前筛选</van-button>
+          </div>
         </template>
       </van-empty>
 
@@ -120,6 +125,21 @@ const state = reactive({
 
 const pageBusy = computed(() => {
   return state.loading || state.submitting || state.deletingId !== null || state.togglingId !== null
+})
+
+const hasQueryFilters = computed(() => {
+  return Boolean(state.queryForm.keywords || state.queryForm.status !== '')
+})
+
+const querySummaryText = computed(() => {
+  const parts = []
+  if (state.queryForm.keywords) {
+    parts.push(`关键词 ${state.queryForm.keywords}`)
+  }
+  if (state.queryForm.status !== '') {
+    parts.push(`状态 ${Number(state.queryForm.status) === 1 ? '启用' : '停用'}`)
+  }
+  return parts.join(' / ') || '全部关键词 / 全部状态'
 })
 
 function ensureSuccess(response, fallback = '请求失败') {

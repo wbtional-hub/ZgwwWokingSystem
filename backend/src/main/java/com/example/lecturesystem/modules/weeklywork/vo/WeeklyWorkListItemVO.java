@@ -1,6 +1,7 @@
 package com.example.lecturesystem.modules.weeklywork.vo;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class WeeklyWorkListItemVO {
     private Long id;
@@ -13,8 +14,20 @@ public class WeeklyWorkListItemVO {
     private String workPlan;
     private String workContent;
     private String remark;
+    private String currentApprovalNode;
+    private Long currentHandlerUserId;
+    private String currentHandlerUserName;
+    private Integer currentFlowOrder;
+    private Long finalApproverUserId;
+    private String lastReturnTarget;
+    private String lastReturnComment;
+    private String lastReviewByName;
+    private LocalDateTime lastReviewTime;
     private LocalDateTime submitTime;
+    private LocalDateTime approvedTime;
     private LocalDateTime createTime;
+    private Boolean reviewedByCurrentUser;
+    private List<WeeklyWorkFlowNodeVO> flowNodes;
 
     public Long getId() {
         return id;
@@ -96,6 +109,78 @@ public class WeeklyWorkListItemVO {
         this.remark = remark;
     }
 
+    public String getCurrentApprovalNode() {
+        return currentApprovalNode;
+    }
+
+    public void setCurrentApprovalNode(String currentApprovalNode) {
+        this.currentApprovalNode = currentApprovalNode;
+    }
+
+    public Long getCurrentHandlerUserId() {
+        return currentHandlerUserId;
+    }
+
+    public void setCurrentHandlerUserId(Long currentHandlerUserId) {
+        this.currentHandlerUserId = currentHandlerUserId;
+    }
+
+    public String getCurrentHandlerUserName() {
+        return currentHandlerUserName;
+    }
+
+    public void setCurrentHandlerUserName(String currentHandlerUserName) {
+        this.currentHandlerUserName = currentHandlerUserName;
+    }
+
+    public Integer getCurrentFlowOrder() {
+        return currentFlowOrder;
+    }
+
+    public void setCurrentFlowOrder(Integer currentFlowOrder) {
+        this.currentFlowOrder = currentFlowOrder;
+    }
+
+    public Long getFinalApproverUserId() {
+        return finalApproverUserId;
+    }
+
+    public void setFinalApproverUserId(Long finalApproverUserId) {
+        this.finalApproverUserId = finalApproverUserId;
+    }
+
+    public String getLastReturnTarget() {
+        return lastReturnTarget;
+    }
+
+    public void setLastReturnTarget(String lastReturnTarget) {
+        this.lastReturnTarget = lastReturnTarget;
+    }
+
+    public String getLastReturnComment() {
+        return lastReturnComment;
+    }
+
+    public void setLastReturnComment(String lastReturnComment) {
+        this.lastReturnComment = lastReturnComment;
+    }
+
+    public String getLastReviewByName() {
+        return lastReviewByName;
+    }
+
+    public void setLastReviewByName(String lastReviewByName) {
+        this.lastReviewByName = lastReviewByName;
+    }
+
+    public LocalDateTime getLastReviewTime() {
+        return lastReviewTime;
+    }
+
+    public void setLastReviewTime(LocalDateTime lastReviewTime) {
+        this.lastReviewTime = lastReviewTime;
+    }
+
     public LocalDateTime getSubmitTime() {
         return submitTime;
     }
@@ -104,11 +189,35 @@ public class WeeklyWorkListItemVO {
         this.submitTime = submitTime;
     }
 
+    public LocalDateTime getApprovedTime() {
+        return approvedTime;
+    }
+
+    public void setApprovedTime(LocalDateTime approvedTime) {
+        this.approvedTime = approvedTime;
+    }
+
     public LocalDateTime getCreateTime() {
         return createTime;
     }
 
     public void setCreateTime(LocalDateTime createTime) {
         this.createTime = createTime;
+    }
+
+    public Boolean getReviewedByCurrentUser() {
+        return reviewedByCurrentUser;
+    }
+
+    public void setReviewedByCurrentUser(Boolean reviewedByCurrentUser) {
+        this.reviewedByCurrentUser = reviewedByCurrentUser;
+    }
+
+    public List<WeeklyWorkFlowNodeVO> getFlowNodes() {
+        return flowNodes;
+    }
+
+    public void setFlowNodes(List<WeeklyWorkFlowNodeVO> flowNodes) {
+        this.flowNodes = flowNodes;
     }
 }

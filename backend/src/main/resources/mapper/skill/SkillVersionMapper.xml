@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.skill.mapper.SkillVersionMapper">
+    <resultMap id="SkillVersionEntityMap" type="com.example.lecturesystem.modules.skill.entity.SkillVersionEntity">
+        <id property="id" column="id"/>
+        <result property="skillId" column="skill_id"/>
+        <result property="versionNo" column="version_no"/>
+        <result property="providerConfigId" column="provider_config_id"/>
+        <result property="modelCode" column="model_code"/>
+        <result property="systemPrompt" column="system_prompt"/>
+        <result property="taskPrompt" column="task_prompt"/>
+        <result property="outputTemplate" column="output_template"/>
+        <result property="forbiddenRules" column="forbidden_rules"/>
+        <result property="citationRules" column="citation_rules"/>
+        <result property="validationStatus" column="validation_status"/>
+        <result property="publishStatus" column="publish_status"/>
+        <result property="score" column="score"/>
+        <result property="createTime" column="create_time"/>
+        <result property="createUser" column="create_user"/>
+    </resultMap>
+
+    <select id="findById" resultMap="SkillVersionEntityMap">SELECT * FROM ai_skill_version WHERE id=#{id}</select>
+    <select id="findBySkillIdAndVersionNo" resultMap="SkillVersionEntityMap">SELECT * FROM ai_skill_version WHERE skill_id=#{skillId} AND version_no=#{versionNo}</select>
+    <select id="queryDetail" resultType="com.example.lecturesystem.modules.skill.vo.SkillVersionDetailVO">
+        SELECT ver.id, ver.skill_id, ver.version_no, ver.provider_config_id, ver.model_code, ver.system_prompt, ver.task_prompt,
+               ver.output_template, ver.forbidden_rules, ver.citation_rules, ver.validation_status, ver.publish_status, ver.score, ver.create_time,
+               bind.base_id, kb.base_name
+        FROM ai_skill_version ver
+        LEFT JOIN ai_skill_kb_binding bind ON bind.skill_version_id = ver.id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = bind.base_id AND kb.is_deleted = FALSE
+        WHERE ver.id = #{id}
+    </select>
+    <select id="queryLatestPublishedBySkillId" resultType="com.example.lecturesystem.modules.skill.vo.SkillVersionDetailVO">
+        SELECT ver.id, ver.skill_id, ver.version_no, ver.provider_config_id, ver.model_code, ver.system_prompt, ver.task_prompt,
+               ver.output_template, ver.forbidden_rules, ver.citation_rules, ver.validation_status, ver.publish_status, ver.score, ver.create_time,
+               bind.base_id, kb.base_name
+        FROM ai_skill_version ver
+        LEFT JOIN ai_skill_kb_binding bind ON bind.skill_version_id = ver.id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = bind.base_id AND kb.is_deleted = FALSE
+        WHERE ver.skill_id = #{skillId} AND ver.publish_status = 'PUBLISHED'
+        ORDER BY ver.create_time DESC, ver.id DESC LIMIT 1
+    </select>
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.skill.entity.SkillVersionEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_skill_version (skill_id, version_no, provider_config_id, model_code, system_prompt, task_prompt, output_template, forbidden_rules, citation_rules, validation_status, publish_status, score, create_time, create_user)
+        VALUES (#{skillId}, #{versionNo}, #{providerConfigId}, #{modelCode}, #{systemPrompt}, #{taskPrompt}, #{outputTemplate}, #{forbiddenRules}, #{citationRules}, #{validationStatus}, #{publishStatus}, #{score}, #{createTime}, #{createUser})
+    </insert>
+    <update id="update" parameterType="com.example.lecturesystem.modules.skill.entity.SkillVersionEntity">
+        UPDATE ai_skill_version SET provider_config_id=#{providerConfigId}, model_code=#{modelCode}, system_prompt=#{systemPrompt}, task_prompt=#{taskPrompt}, output_template=#{outputTemplate}, forbidden_rules=#{forbiddenRules}, citation_rules=#{citationRules}
+        WHERE id=#{id}
+    </update>
+    <update id="markPublished">
+        UPDATE ai_skill_version SET publish_status = CASE WHEN id = #{skillVersionId} THEN 'PUBLISHED' ELSE 'ARCHIVED' END WHERE skill_id = #{skillId}
+    </update>
+    <update id="updateValidation">
+        UPDATE ai_skill_version SET validation_status=#{validationStatus}, score=#{score} WHERE id=#{id}
+    </update>
+</mapper>

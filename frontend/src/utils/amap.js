@@ -1,6 +1,7 @@
 import request from '@/utils/request'
 
 const AMAP_CALLBACK_NAME = '__unitAttendanceLocationAmapInit__'
+const AMAP_SCRIPT_ID = 'unit-attendance-location-amap-sdk'
 
 let amapLoadPromise
 let amapConfigPromise
@@ -67,7 +68,12 @@ export async function loadAmapSdk() {
   }
 
   amapLoadPromise = new Promise((resolve, reject) => {
-    window[AMAP_CALLBACK_NAME] = () => {
+    const resolveWithSdk = () => {
+      if (!window.AMap) {
+        amapLoadPromise = null
+        reject(new Error('地图 SDK 已回调，但 AMap 对象不可用'))
+        return
+      }
       console.info('[AMap] SDK loaded', {
         version: window.AMap?.v || window.AMap?.version || 'unknown'
       })
@@ -75,7 +81,24 @@ export async function loadAmapSdk() {
       delete window[AMAP_CALLBACK_NAME]
     }
 
+    window[AMAP_CALLBACK_NAME] = () => {
+      resolveWithSdk()
+    }
+
+    const existingScript = document.getElementById(AMAP_SCRIPT_ID)
+    if (existingScript) {
+      existingScript.addEventListener('load', resolveWithSdk, { once: true })
+      existingScript.addEventListener('error', () => {
+        console.error('[AMap] SDK script load failed')
+        amapLoadPromise = null
+        reject(new Error('地图 SDK 加载失败，请检查网络或 Key 配置'))
+        delete window[AMAP_CALLBACK_NAME]
+      }, { once: true })
+      return
+    }
+
     const script = document.createElement('script')
+    script.id = AMAP_SCRIPT_ID
     script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(config.key)}&plugin=AMap.Geocoder,AMap.Geolocation&callback=${AMAP_CALLBACK_NAME}`
     script.async = true
     script.onerror = () => {

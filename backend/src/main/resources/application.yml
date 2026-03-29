@@ -1,6 +1,13 @@
 server:
   port: 8080
-
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+  tomcat:
+    uri-encoding: UTF-8
+#172.24.16.1  127.0.0.1
 spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5432}/${DB_NAME:lecture_team}

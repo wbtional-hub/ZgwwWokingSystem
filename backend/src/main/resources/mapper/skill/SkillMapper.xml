@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.skill.mapper.SkillMapper">
+    <resultMap id="SkillEntityMap" type="com.example.lecturesystem.modules.skill.entity.SkillEntity">
+        <id property="id" column="id"/>
+        <result property="skillCode" column="skill_code"/>
+        <result property="skillName" column="skill_name"/>
+        <result property="domainType" column="domain_type"/>
+        <result property="skillType" column="skill_type"/>
+        <result property="description" column="description"/>
+        <result property="status" column="status"/>
+        <result property="ownerUserId" column="owner_user_id"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="createUser" column="create_user"/>
+        <result property="updateUser" column="update_user"/>
+        <result property="isDeleted" column="is_deleted"/>
+    </resultMap>
+
+    <sql id="SkillListColumns">
+        sk.id, sk.skill_code, sk.skill_name, sk.domain_type, sk.skill_type, sk.description, sk.status,
+        sk.owner_user_id, sk.update_time,
+        ver.id AS published_version_id, ver.version_no AS published_version_no, ver.publish_status,
+        bind.base_id, kb.base_name
+    </sql>
+
+    <sql id="SkillJoins">
+        LEFT JOIN ai_skill_version ver ON ver.skill_id = sk.id AND ver.publish_status = 'PUBLISHED'
+        LEFT JOIN ai_skill_kb_binding bind ON bind.skill_version_id = ver.id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = bind.base_id AND kb.is_deleted = FALSE
+    </sql>
+
+    <sql id="SkillFilters">
+        <if test="request.keywords != null and request.keywords != ''">
+            AND (sk.skill_code LIKE CONCAT('%', #{request.keywords}, '%') OR sk.skill_name LIKE CONCAT('%', #{request.keywords}, '%'))
+        </if>
+        <if test="request.domainType != null and request.domainType != ''">
+            AND sk.domain_type = #{request.domainType}
+        </if>
+        <if test="request.status != null">
+            AND sk.status = #{request.status}
+        </if>
+        <if test="request.publishStatus != null and request.publishStatus != ''">
+            AND ver.publish_status = #{request.publishStatus}
+        </if>
+    </sql>
+
+    <select id="queryList" resultType="com.example.lecturesystem.modules.skill.vo.SkillListItemVO">
+        SELECT <include refid="SkillListColumns"/>
+        FROM ai_skill sk
+        <include refid="SkillJoins"/>
+        WHERE sk.is_deleted = FALSE
+        <include refid="SkillFilters"/>
+        ORDER BY sk.update_time DESC, sk.id DESC
+    </select>
+
+    <select id="queryPublishedList" resultType="com.example.lecturesystem.modules.skill.vo.SkillListItemVO">
+        SELECT <include refid="SkillListColumns"/>
+        FROM ai_skill sk
+        INNER JOIN ai_skill_version ver ON ver.skill_id = sk.id AND ver.publish_status = 'PUBLISHED'
+        LEFT JOIN ai_skill_kb_binding bind ON bind.skill_version_id = ver.id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = bind.base_id AND kb.is_deleted = FALSE
+        WHERE sk.is_deleted = FALSE AND sk.status = 1
+        <if test="request.keywords != null and request.keywords != ''">
+            AND (sk.skill_code LIKE CONCAT('%', #{request.keywords}, '%') OR sk.skill_name LIKE CONCAT('%', #{request.keywords}, '%'))
+        </if>
+        <if test="request.domainType != null and request.domainType != ''">
+            AND sk.domain_type = #{request.domainType}
+        </if>
+        ORDER BY sk.update_time DESC, sk.id DESC
+    </select>
+
+    <select id="findById" resultMap="SkillEntityMap">
+        SELECT * FROM ai_skill WHERE id = #{id} AND is_deleted = FALSE
+    </select>
+    <select id="findByCode" resultMap="SkillEntityMap">
+        SELECT * FROM ai_skill WHERE skill_code = #{skillCode} AND is_deleted = FALSE
+    </select>
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.skill.entity.SkillEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_skill (skill_code, skill_name, domain_type, skill_type, description, status, owner_user_id, create_time, update_time, create_user, update_user, is_deleted)
+        VALUES (#{skillCode}, #{skillName}, #{domainType}, #{skillType}, #{description}, #{status}, #{ownerUserId}, #{createTime}, #{updateTime}, #{createUser}, #{updateUser}, #{isDeleted})
+    </insert>
+    <update id="update" parameterType="com.example.lecturesystem.modules.skill.entity.SkillEntity">
+        UPDATE ai_skill SET skill_code=#{skillCode}, skill_name=#{skillName}, domain_type=#{domainType}, skill_type=#{skillType}, description=#{description}, status=#{status}, update_time=#{updateTime}, update_user=#{updateUser}
+        WHERE id=#{id} AND is_deleted=FALSE
+    </update>
+    <update id="updateStatus">
+        UPDATE ai_skill SET status=#{status}, update_time=#{updateTime}, update_user=#{updateUser} WHERE id=#{id} AND is_deleted=FALSE
+    </update>
+</mapper>

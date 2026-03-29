@@ -11,6 +11,8 @@ public class AttendanceQueryRequest implements TreePathScopedRequest {
     private String checkInStatus;
     private Long userId;
     private Boolean abnormalOnly;
+    private Integer pageNo = 1;
+    private Integer pageSize = 10;
 
     public String getTreePathPrefix() {
         return treePathPrefix;
@@ -74,5 +76,27 @@ public class AttendanceQueryRequest implements TreePathScopedRequest {
 
     public void setAbnormalOnly(Boolean abnormalOnly) {
         this.abnormalOnly = abnormalOnly;
+    }
+
+    public Integer getPageNo() {
+        return pageNo;
+    }
+
+    public void setPageNo(Integer pageNo) {
+        this.pageNo = pageNo;
+    }
+
+    public Integer getPageSize() {
+        return pageSize;
+    }
+
+    public void setPageSize(Integer pageSize) {
+        this.pageSize = pageSize;
+    }
+
+    public int getOffset() {
+        int normalizedPageNo = pageNo == null || pageNo < 1 ? 1 : pageNo;
+        int normalizedPageSize = pageSize == null || pageSize < 1 ? 10 : pageSize;
+        return (normalizedPageNo - 1) * normalizedPageSize;
     }
 }

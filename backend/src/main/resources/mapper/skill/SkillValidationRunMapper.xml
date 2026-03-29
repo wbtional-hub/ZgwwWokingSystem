@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.skill.mapper.SkillValidationRunMapper">
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.skill.entity.SkillValidationRunEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_skill_validation_run (skill_id, skill_version_id, provider_config_id, model_code, run_status, pass_rate, citation_rate, avg_score, start_time, finish_time, create_time)
+        VALUES (#{skillId}, #{skillVersionId}, #{providerConfigId}, #{modelCode}, #{runStatus}, #{passRate}, #{citationRate}, #{avgScore}, #{startTime}, #{finishTime}, #{createTime})
+    </insert>
+    <update id="update" parameterType="com.example.lecturesystem.modules.skill.entity.SkillValidationRunEntity">
+        UPDATE ai_skill_validation_run SET provider_config_id=#{providerConfigId}, model_code=#{modelCode}, run_status=#{runStatus}, pass_rate=#{passRate}, citation_rate=#{citationRate}, avg_score=#{avgScore}, start_time=#{startTime}, finish_time=#{finishTime} WHERE id=#{id}
+    </update>
+    <select id="queryDetail" resultType="com.example.lecturesystem.modules.skill.vo.SkillValidationDetailVO">
+        SELECT id AS run_id, skill_id, skill_version_id, run_status, pass_rate, citation_rate, avg_score, start_time, finish_time FROM ai_skill_validation_run WHERE id=#{runId}
+    </select>
+</mapper>

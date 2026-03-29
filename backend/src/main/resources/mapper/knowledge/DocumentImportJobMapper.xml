@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.knowledge.mapper.DocumentImportJobMapper">
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.knowledge.entity.DocumentImportJobEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_document_import_job (
+            base_id, category_id, file_name, job_status, total_chunks, success_chunks,
+            error_message, start_time, finish_time, create_time, create_user
+        ) VALUES (
+            #{baseId}, #{categoryId}, #{fileName}, #{jobStatus}, #{totalChunks}, #{successChunks},
+            #{errorMessage}, #{startTime}, #{finishTime}, #{createTime}, #{createUser}
+        )
+    </insert>
+
+    <update id="updateResult" parameterType="com.example.lecturesystem.modules.knowledge.entity.DocumentImportJobEntity">
+        UPDATE ai_document_import_job
+        SET job_status = #{jobStatus},
+            total_chunks = #{totalChunks},
+            success_chunks = #{successChunks},
+            error_message = #{errorMessage},
+            start_time = #{startTime},
+            finish_time = #{finishTime}
+        WHERE id = #{id}
+    </update>
+</mapper>

@@ -1,6 +1,8 @@
 package com.example.lecturesystem.common;
 
 import com.example.lecturesystem.modules.operationlog.service.OperationLogService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -9,6 +11,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
     private final OperationLogService operationLogService;
 
     public GlobalExceptionHandler(OperationLogService operationLogService) {
@@ -22,10 +25,25 @@ public class GlobalExceptionHandler {
                 : "参数校验失败");
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ApiResponse<String> handleIllegalArgument(IllegalArgumentException ex) {
+        return ApiResponse.fail(resolveFriendlyMessage(ex, "请求参数有误"));
+    }
+
     @ExceptionHandler(Exception.class)
     public ApiResponse<String> handleException(Exception ex) {
         logPermissionDenied(ex);
-        return ApiResponse.fail(ex.getMessage());
+        log.error("Unhandled exception", ex);
+        return ApiResponse.fail(resolveFriendlyMessage(ex, "操作失败，请稍后重试"));
+    }
+
+    private String resolveFriendlyMessage(Exception ex, String fallback) {
+        String message = ex.getMessage();
+        if (message == null) {
+            return fallback;
+        }
+        String trimmed = message.trim();
+        return trimmed.isEmpty() ? fallback : trimmed;
     }
 
     private void logPermissionDenied(Exception ex) {

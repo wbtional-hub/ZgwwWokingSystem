@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.aiconfig.mapper.ProviderModelMapper">
+
+    <select id="queryByProviderId" resultType="com.example.lecturesystem.modules.aiconfig.vo.ProviderModelVO">
+        SELECT id, model_code, model_name, model_type, support_knowledge, support_skill_train,
+               support_agent_chat, support_analysis, status
+        FROM ai_provider_model
+        WHERE provider_config_id = #{providerConfigId}
+        ORDER BY model_code ASC
+    </select>
+
+    <delete id="deleteByProviderId">
+        DELETE FROM ai_provider_model
+        WHERE provider_config_id = #{providerConfigId}
+    </delete>
+
+    <insert id="batchInsert">
+        INSERT INTO ai_provider_model (
+            provider_config_id, model_code, model_name, model_type, support_knowledge,
+            support_skill_train, support_agent_chat, support_analysis, status, create_time
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+                #{item.providerConfigId}, #{item.modelCode}, #{item.modelName}, #{item.modelType}, #{item.supportKnowledge},
+                #{item.supportSkillTrain}, #{item.supportAgentChat}, #{item.supportAnalysis}, #{item.status}, #{item.createTime}
+            )
+        </foreach>
+    </insert>
+</mapper>

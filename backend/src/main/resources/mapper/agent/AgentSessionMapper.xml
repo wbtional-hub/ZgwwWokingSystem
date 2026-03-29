@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AgentSessionMapper">
+    <resultMap id="AgentSessionEntityMap" type="com.example.lecturesystem.modules.agent.entity.AgentSessionEntity">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="skillId" column="skill_id"/>
+        <result property="skillVersionId" column="skill_version_id"/>
+        <result property="providerConfigId" column="provider_config_id"/>
+        <result property="modelCode" column="model_code"/>
+        <result property="baseId" column="base_id"/>
+        <result property="sessionTitle" column="session_title"/>
+        <result property="status" column="status"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <sql id="MessageSummaryJoinSql">
+        LEFT JOIN (
+            SELECT session_id,
+                   COUNT(1) AS message_count,
+                   MAX(create_time) AS last_message_time,
+                   SUM(CASE WHEN message_role = 'assistant' THEN 1 ELSE 0 END) AS assistant_message_count,
+                   SUM(CASE WHEN message_role = 'assistant' AND cited_chunk_ids IS NOT NULL AND cited_chunk_ids &lt;&gt; '' THEN 1 ELSE 0 END) AS cited_message_count
+            FROM ai_agent_message
+            GROUP BY session_id
+        ) msg ON msg.session_id = s.id
+    </sql>
+
+    <sql id="SessionJoinSql">
+        FROM ai_agent_session s
+        LEFT JOIN sys_user usr ON usr.id = s.user_id
+        LEFT JOIN ai_skill sk ON sk.id = s.skill_id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = s.base_id
+        <include refid="MessageSummaryJoinSql"/>
+    </sql>
+
+    <sql id="SessionWhereSql">
+        WHERE 1 = 1
+        <if test="request.userId != null">AND s.user_id = #{request.userId}</if>
+        <if test="request.skillId != null">AND s.skill_id = #{request.skillId}</if>
+        <if test="request.status != null and request.status != ''">AND s.status = #{request.status}</if>
+        <if test="request.startDate != null">AND DATE(s.create_time) &gt;= #{request.startDate}</if>
+        <if test="request.endDate != null">AND DATE(s.create_time) &lt;= #{request.endDate}</if>
+        <if test="request.keywords != null and request.keywords != ''">
+            AND (
+                s.session_title LIKE CONCAT('%', #{request.keywords}, '%')
+                OR sk.skill_name LIKE CONCAT('%', #{request.keywords}, '%')
+                OR kb.base_name LIKE CONCAT('%', #{request.keywords}, '%')
+                OR usr.real_name LIKE CONCAT('%', #{request.keywords}, '%')
+                OR usr.username LIKE CONCAT('%', #{request.keywords}, '%')
+            )
+        </if>
+    </sql>
+
+    <sql id="MonthlyWhereSql">
+        WHERE 1 = 1
+        <if test="request.userId != null">AND s.user_id = #{request.userId}</if>
+        <if test="request.skillId != null">AND s.skill_id = #{request.skillId}</if>
+        <if test="request.status != null and request.status != ''">AND s.status = #{request.status}</if>
+        <if test="request.keywords != null and request.keywords != ''">
+            AND (
+                s.session_title LIKE CONCAT('%', #{request.keywords}, '%')
+                OR sk.skill_name LIKE CONCAT('%', #{request.keywords}, '%')
+                OR kb.base_name LIKE CONCAT('%', #{request.keywords}, '%')
+                OR usr.real_name LIKE CONCAT('%', #{request.keywords}, '%')
+                OR usr.username LIKE CONCAT('%', #{request.keywords}, '%')
+            )
+        </if>
+        <if test="request.year != null">AND EXTRACT(YEAR FROM s.create_time) = #{request.year}</if>
+    </sql>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.agent.entity.AgentSessionEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_agent_session (user_id, skill_id, skill_version_id, provider_config_id, model_code, base_id, session_title, status, create_time)
+        VALUES (#{userId}, #{skillId}, #{skillVersionId}, #{providerConfigId}, #{modelCode}, #{baseId}, #{sessionTitle}, #{status}, #{createTime})
+    </insert>
+
+    <update id="updateTitle">
+        UPDATE ai_agent_session SET session_title = #{sessionTitle} WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE ai_agent_session SET status = #{status} WHERE id = #{id}
+    </update>
+
+    <select id="queryList" resultType="com.example.lecturesystem.modules.agent.vo.AgentSessionVO">
+        SELECT s.id, s.user_id, usr.username, usr.real_name,
+               s.skill_id, s.skill_version_id, s.base_id,
+               sk.skill_name, kb.base_name,
+               s.model_code, s.session_title, s.status,
+               COALESCE(msg.message_count, 0) AS message_count,
+               msg.last_message_time,
+               s.create_time
+        <include refid="SessionJoinSql"/>
+        <include refid="SessionWhereSql"/>
+        ORDER BY COALESCE(msg.last_message_time, s.create_time) DESC, s.id DESC
+    </select>
+
+    <select id="queryDailyTrend" resultType="com.example.lecturesystem.modules.agent.vo.AgentTrendPointVO">
+        SELECT TO_CHAR(DATE(s.create_time), 'YYYY-MM-DD') AS label,
+               COUNT(1) AS value
+        FROM ai_agent_session s
+        LEFT JOIN sys_user usr ON usr.id = s.user_id
+        LEFT JOIN ai_skill sk ON sk.id = s.skill_id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = s.base_id
+        WHERE 1 = 1
+        <if test="request.userId != null">AND s.user_id = #{request.userId}</if>
+        <if test="request.skillId != null">AND s.skill_id = #{request.skillId}</if>
+        <if test="request.status != null and request.status != ''">AND s.status = #{request.status}</if>
+        <if test="request.startDate != null">AND DATE(s.create_time) &gt;= #{request.startDate}</if>
+        <if test="request.endDate != null">AND DATE(s.create_time) &lt;= #{request.endDate}</if>
+        <if test="request.keywords != null and request.keywords != ''">
+            AND (
+                s.session_title LIKE CONCAT('%', #{request.keywords}, '%')
+                OR sk.skill_name LIKE CONCAT('%', #{request.keywords}, '%')
+                OR kb.base_name LIKE CONCAT('%', #{request.keywords}, '%')
+                OR usr.real_name LIKE CONCAT('%', #{request.keywords}, '%')
+                OR usr.username LIKE CONCAT('%', #{request.keywords}, '%')
+            )
+        </if>
+        GROUP BY DATE(s.create_time)
+        ORDER BY DATE(s.create_time) ASC
+    </select>
+
+    <select id="querySkillRanking" resultType="com.example.lecturesystem.modules.agent.vo.AgentRankItemVO">
+        SELECT COALESCE(sk.skill_name, 'unknown skill') AS label,
+               COUNT(1) AS session_count,
+               COALESCE(SUM(msg.message_count), 0) AS message_count
+        FROM ai_agent_session s
+        LEFT JOIN sys_user usr ON usr.id = s.user_id
+        LEFT JOIN ai_skill sk ON sk.id = s.skill_id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = s.base_id
+        <include refid="MessageSummaryJoinSql"/>
+        <include refid="SessionWhereSql"/>
+        GROUP BY sk.skill_name
+        ORDER BY COUNT(1) DESC, COALESCE(SUM(msg.message_count), 0) DESC
+        LIMIT 5
+    </select>
+
+    <select id="queryUserRanking" resultType="com.example.lecturesystem.modules.agent.vo.AgentRankItemVO">
+        SELECT COALESCE(usr.real_name, usr.username, 'unknown user') AS label,
+               COUNT(1) AS session_count,
+               COALESCE(SUM(msg.message_count), 0) AS message_count
+        FROM ai_agent_session s
+        LEFT JOIN sys_user usr ON usr.id = s.user_id
+        LEFT JOIN ai_skill sk ON sk.id = s.skill_id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = s.base_id
+        <include refid="MessageSummaryJoinSql"/>
+        <include refid="SessionWhereSql"/>
+        GROUP BY usr.real_name, usr.username
+        ORDER BY COUNT(1) DESC, COALESCE(SUM(msg.message_count), 0) DESC
+        LIMIT 5
+    </select>
+
+    <select id="queryMonthlySummary" resultType="com.example.lecturesystem.modules.agent.vo.AgentMonthlySummaryVO">
+        SELECT COUNT(1) AS total_session_count,
+               COALESCE(SUM(COALESCE(msg.message_count, 0)), 0) AS total_message_count,
+               COALESCE(SUM(COALESCE(msg.assistant_message_count, 0)), 0) AS assistant_message_count,
+               COALESCE(SUM(COALESCE(msg.cited_message_count, 0)), 0) AS cited_message_count
+        FROM ai_agent_session s
+        LEFT JOIN sys_user usr ON usr.id = s.user_id
+        LEFT JOIN ai_skill sk ON sk.id = s.skill_id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = s.base_id
+        <include refid="MessageSummaryJoinSql"/>
+        <include refid="MonthlyWhereSql"/>
+    </select>
+
+    <select id="queryMonthlyTrend" resultType="com.example.lecturesystem.modules.agent.vo.AgentTrendPointVO">
+        SELECT TO_CHAR(DATE_TRUNC('month', s.create_time), 'YYYY-MM') AS label,
+               COUNT(1) AS value
+        FROM ai_agent_session s
+        LEFT JOIN sys_user usr ON usr.id = s.user_id
+        LEFT JOIN ai_skill sk ON sk.id = s.skill_id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = s.base_id
+        <include refid="MonthlyWhereSql"/>
+        GROUP BY DATE_TRUNC('month', s.create_time)
+        ORDER BY DATE_TRUNC('month', s.create_time) ASC
+    </select>
+
+    <select id="queryMonthlySkillRanking" resultType="com.example.lecturesystem.modules.agent.vo.AgentRankItemVO">
+        SELECT COALESCE(sk.skill_name, 'unknown skill') AS label,
+               COUNT(1) AS session_count,
+               COALESCE(SUM(msg.message_count), 0) AS message_count
+        FROM ai_agent_session s
+        LEFT JOIN sys_user usr ON usr.id = s.user_id
+        LEFT JOIN ai_skill sk ON sk.id = s.skill_id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = s.base_id
+        <include refid="MessageSummaryJoinSql"/>
+        <include refid="MonthlyWhereSql"/>
+        GROUP BY sk.skill_name
+        ORDER BY COUNT(1) DESC, COALESCE(SUM(msg.message_count), 0) DESC
+        LIMIT 8
+    </select>
+
+    <select id="queryMonthlyBaseRanking" resultType="com.example.lecturesystem.modules.agent.vo.AgentRankItemVO">
+        SELECT COALESCE(kb.base_name, 'unknown knowledge base') AS label,
+               COUNT(1) AS session_count,
+               COALESCE(SUM(msg.message_count), 0) AS message_count
+        FROM ai_agent_session s
+        LEFT JOIN sys_user usr ON usr.id = s.user_id
+        LEFT JOIN ai_skill sk ON sk.id = s.skill_id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = s.base_id
+        <include refid="MessageSummaryJoinSql"/>
+        <include refid="MonthlyWhereSql"/>
+        GROUP BY kb.base_name
+        ORDER BY COUNT(1) DESC, COALESCE(SUM(msg.message_count), 0) DESC
+        LIMIT 8
+    </select>
+
+    <select id="queryMonthlyUserRanking" resultType="com.example.lecturesystem.modules.agent.vo.AgentRankItemVO">
+        SELECT COALESCE(usr.real_name, usr.username, 'unknown user') AS label,
+               COUNT(1) AS session_count,
+               COALESCE(SUM(msg.message_count), 0) AS message_count
+        FROM ai_agent_session s
+        LEFT JOIN sys_user usr ON usr.id = s.user_id
+        LEFT JOIN ai_skill sk ON sk.id = s.skill_id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = s.base_id
+        <include refid="MessageSummaryJoinSql"/>
+        <include refid="MonthlyWhereSql"/>
+        GROUP BY usr.real_name, usr.username
+        ORDER BY COUNT(1) DESC, COALESCE(SUM(msg.message_count), 0) DESC
+        LIMIT 8
+    </select>
+
+    <select id="queryMonthlyExpertRanking" resultType="com.example.lecturesystem.modules.agent.vo.AgentExpertMetricVO">
+        SELECT CONCAT(COALESCE(usr.real_name, usr.username, 'unknown user'), ' / ', COALESCE(sk.skill_name, 'unknown skill')) AS label,
+               own.expert_level,
+               COUNT(1) AS session_count,
+               COALESCE(SUM(msg.message_count), 0) AS message_count,
+               COALESCE(SUM(msg.assistant_message_count), 0) AS assistant_message_count,
+               COALESCE(SUM(msg.cited_message_count), 0) AS cited_message_count,
+               CASE WHEN COALESCE(SUM(msg.assistant_message_count), 0) = 0 THEN 0
+                    ELSE ROUND(COALESCE(SUM(msg.cited_message_count), 0) * 100.0 / SUM(msg.assistant_message_count), 2)
+               END AS citation_hit_rate
+        FROM ai_agent_session s
+        INNER JOIN ai_skill_owner own ON own.user_id = s.user_id AND own.skill_id = s.skill_id AND own.status = 1
+        LEFT JOIN sys_user usr ON usr.id = s.user_id
+        LEFT JOIN ai_skill sk ON sk.id = s.skill_id
+        LEFT JOIN ai_knowledge_base kb ON kb.id = s.base_id
+        <include refid="MessageSummaryJoinSql"/>
+        <include refid="MonthlyWhereSql"/>
+        GROUP BY usr.real_name, usr.username, sk.skill_name, own.expert_level
+        ORDER BY citation_hit_rate DESC, COUNT(1) DESC, COALESCE(SUM(msg.message_count), 0) DESC
+        LIMIT 8
+    </select>
+
+    <select id="findById" resultMap="AgentSessionEntityMap">
+        SELECT * FROM ai_agent_session WHERE id = #{id}
+    </select>
+
+    <select id="queryDetail" resultType="com.example.lecturesystem.modules.agent.vo.AgentSessionVO">
+        SELECT s.id, s.user_id, usr.username, usr.real_name,
+               s.skill_id, s.skill_version_id, s.base_id,
+               sk.skill_name, kb.base_name,
+               s.model_code, s.session_title, s.status,
+               COALESCE(msg.message_count, 0) AS message_count,
+               msg.last_message_time,
+               s.create_time
+        <include refid="SessionJoinSql"/>
+        WHERE s.id = #{id}
+    </select>
+</mapper>

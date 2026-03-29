@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.aipermission.mapper.UserAiPermissionMapper">
+
+    <resultMap id="UserAiPermissionEntityMap" type="com.example.lecturesystem.modules.aipermission.entity.UserAiPermissionEntity">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="providerConfigId" column="provider_config_id"/>
+        <result property="canManageProvider" column="can_manage_provider"/>
+        <result property="canUseAi" column="can_use_ai"/>
+        <result property="canTrainSkill" column="can_train_skill"/>
+        <result property="canPublishSkill" column="can_publish_skill"/>
+        <result property="canUseAgent" column="can_use_agent"/>
+        <result property="canRunAnalysis" column="can_run_analysis"/>
+        <result property="status" column="status"/>
+        <result property="grantTime" column="grant_time"/>
+        <result property="grantUser" column="grant_user"/>
+    </resultMap>
+
+    <select id="queryList" resultType="com.example.lecturesystem.modules.aipermission.vo.UserAiPermissionListItemVO">
+        SELECT perm.id, perm.user_id, usr.username, usr.real_name,
+               perm.provider_config_id, cfg.provider_name,
+               perm.can_manage_provider, perm.can_use_ai, perm.can_train_skill,
+               perm.can_publish_skill, perm.can_use_agent, perm.can_run_analysis,
+               perm.status, perm.grant_time
+        FROM ai_user_ai_permission perm
+        INNER JOIN sys_user usr ON usr.id = perm.user_id AND usr.is_deleted = FALSE
+        INNER JOIN ai_provider_config cfg ON cfg.id = perm.provider_config_id AND cfg.is_deleted = FALSE
+        WHERE 1 = 1
+        <if test="request.userId != null">
+            AND perm.user_id = #{request.userId}
+        </if>
+        <if test="request.providerConfigId != null">
+            AND perm.provider_config_id = #{request.providerConfigId}
+        </if>
+        <if test="request.status != null">
+            AND perm.status = #{request.status}
+        </if>
+        ORDER BY perm.grant_time DESC, perm.id DESC
+    </select>
+
+    <select id="queryActiveByUserId" resultType="com.example.lecturesystem.modules.aipermission.vo.UserAiPermissionListItemVO">
+        SELECT perm.id, perm.user_id, usr.username, usr.real_name,
+               perm.provider_config_id, cfg.provider_name,
+               perm.can_manage_provider, perm.can_use_ai, perm.can_train_skill,
+               perm.can_publish_skill, perm.can_use_agent, perm.can_run_analysis,
+               perm.status, perm.grant_time
+        FROM ai_user_ai_permission perm
+        INNER JOIN sys_user usr ON usr.id = perm.user_id AND usr.is_deleted = FALSE
+        INNER JOIN ai_provider_config cfg ON cfg.id = perm.provider_config_id AND cfg.is_deleted = FALSE
+        WHERE perm.user_id = #{userId}
+          AND perm.status = 1
+        ORDER BY perm.grant_time DESC, perm.id DESC
+    </select>
+
+    <select id="findByUserIdAndProviderId" resultMap="UserAiPermissionEntityMap">
+        SELECT id, user_id, provider_config_id, can_manage_provider, can_use_ai, can_train_skill,
+               can_publish_skill, can_use_agent, can_run_analysis, status, grant_time, grant_user
+        FROM ai_user_ai_permission
+        WHERE user_id = #{userId}
+          AND provider_config_id = #{providerConfigId}
+    </select>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.aipermission.entity.UserAiPermissionEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_user_ai_permission (
+            user_id, provider_config_id, can_manage_provider, can_use_ai, can_train_skill,
+            can_publish_skill, can_use_agent, can_run_analysis, status, grant_time, grant_user
+        ) VALUES (
+            #{userId}, #{providerConfigId}, #{canManageProvider}, #{canUseAi}, #{canTrainSkill},
+            #{canPublishSkill}, #{canUseAgent}, #{canRunAnalysis}, #{status}, #{grantTime}, #{grantUser}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.example.lecturesystem.modules.aipermission.entity.UserAiPermissionEntity">
+        UPDATE ai_user_ai_permission
+        SET can_manage_provider = #{canManageProvider},
+            can_use_ai = #{canUseAi},
+            can_train_skill = #{canTrainSkill},
+            can_publish_skill = #{canPublishSkill},
+            can_use_agent = #{canUseAgent},
+            can_run_analysis = #{canRunAnalysis},
+            status = #{status},
+            grant_time = #{grantTime},
+            grant_user = #{grantUser}
+        WHERE id = #{id}
+    </update>
+
+    <select id="countManageProvider" resultType="int">
+        SELECT COUNT(1) FROM ai_user_ai_permission WHERE user_id = #{userId} AND status = 1 AND can_manage_provider = TRUE
+    </select>
+    <select id="countCanTrainSkill" resultType="int">
+        SELECT COUNT(1) FROM ai_user_ai_permission WHERE user_id = #{userId} AND status = 1 AND can_train_skill = TRUE
+    </select>
+    <select id="countCanPublishSkill" resultType="int">
+        SELECT COUNT(1) FROM ai_user_ai_permission WHERE user_id = #{userId} AND status = 1 AND can_publish_skill = TRUE
+    </select>
+    <select id="countCanUseAgent" resultType="int">
+        SELECT COUNT(1) FROM ai_user_ai_permission WHERE user_id = #{userId} AND status = 1 AND can_use_agent = TRUE
+    </select>
+    <select id="countCanUseAi" resultType="int">
+        SELECT COUNT(1) FROM ai_user_ai_permission WHERE user_id = #{userId} AND status = 1 AND can_use_ai = TRUE
+    </select>
+</mapper>

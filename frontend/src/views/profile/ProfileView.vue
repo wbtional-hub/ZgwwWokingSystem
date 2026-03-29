@@ -1,17 +1,17 @@
 <template>
-  <AppPageShell title="个人中心" description="个人中心已补齐当前账号资料展示，可直接查看当前登录身份和角色信息。">
+  <AppPageShell title="个人中心" description="查看当前账号、AI 能力授权和专家身份。">
     <template #actions>
       <div class="action-row">
         <van-button type="primary" @click="copyUsername">复制账号</van-button>
-        <van-button plain type="success" @click="copyUserId">复制用户ID</van-button>
+        <van-button plain type="success" @click="copyUserId">复制用户 ID</van-button>
       </div>
     </template>
 
-    <PageSkeletonSection title="当前账号" description="个人中心先补齐最常用的当前账号资料，进入页面即可确认登录身份。">
+    <PageSkeletonSection title="当前账号" description="快速确认当前登录身份和基础信息。">
       当前登录账号：{{ profile.username }}，角色：{{ profile.roleLabel }}。
     </PageSkeletonSection>
 
-    <PageSkeletonSection title="资料概览" description="个人中心先提供最小可用资料卡片，方便验收当前账号上下文是否正确。">
+    <PageSkeletonSection title="资料概览" description="展示当前登录用户的最常用资料。">
       <div class="profile-grid">
         <div class="profile-card">
           <div class="profile-label">姓名</div>
@@ -32,12 +32,42 @@
       </div>
     </PageSkeletonSection>
 
-    <PageSkeletonSection title="当前说明" description="当前阶段先保留个人中心的最小说明，后续再继续补资料维护和密码修改。">
-      {{ profileHint }}
+    <PageSkeletonSection title="AI 授权概览" description="展示当前用户拥有的 AI、知识库和技能授权数量。">
+      <div class="profile-grid" data-guide="profile-ai-summary">
+        <div class="profile-card">
+          <div class="profile-label">AI 接入授权</div>
+          <div class="profile-value">{{ permissionSummary.aiCount }}</div>
+        </div>
+        <div class="profile-card">
+          <div class="profile-label">知识库授权</div>
+          <div class="profile-value">{{ permissionSummary.knowledgeCount }}</div>
+        </div>
+        <div class="profile-card">
+          <div class="profile-label">技能授权</div>
+          <div class="profile-value">{{ permissionSummary.skillCount }}</div>
+        </div>
+        <div class="profile-card">
+          <div class="profile-label">专家身份</div>
+          <div class="profile-value">{{ state.expertList.length }}</div>
+        </div>
+      </div>
     </PageSkeletonSection>
 
-    <PageSkeletonSection title="账号状态" description="个人中心补齐当前登录状态说明，方便快速确认是否处于有效登录和对应角色工作面。">
-      <div class="status-list">
+    <PageSkeletonSection title="专家身份" description="展示当前账号已绑定的专家技能。">
+      <van-loading v-if="state.loadingExperts" class="state-block" size="24px" vertical>加载中...</van-loading>
+      <van-empty v-else-if="!state.expertList.length" description="当前还没有专家身份" />
+      <div v-else class="expert-grid" data-guide="profile-expert-summary">
+        <div v-for="item in state.expertList" :key="item.id" class="expert-card">
+          <div class="expert-title">{{ item.skillName }}</div>
+          <div class="meta-line">专家等级：{{ item.expertLevel || '-' }}</div>
+          <div class="meta-line">版本：{{ item.versionNo || '-' }}</div>
+          <div class="meta-line">状态：{{ Number(item.status) === 1 ? '启用' : '停用' }}</div>
+        </div>
+      </div>
+    </PageSkeletonSection>
+
+    <PageSkeletonSection title="当前状态" description="帮助你快速确认当前账号的可用范围。">
+      <div class="status-list" data-guide="profile-ai-status">
         <div class="status-item">
           <span class="status-name">登录状态</span>
           <span class="status-value">{{ loginStateText }}</span>
@@ -47,7 +77,7 @@
           <span class="status-value">{{ menuScopeText }}</span>
         </div>
         <div class="status-item">
-          <span class="status-name">默认工作面</span>
+          <span class="status-name">AI 工作台</span>
           <span class="status-value">{{ workbenchText }}</span>
         </div>
       </div>
@@ -56,13 +86,20 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, reactive } from 'vue'
 import { showToast } from 'vant'
 import AppPageShell from '@/components/layout/AppPageShell.vue'
 import PageSkeletonSection from '@/components/layout/PageSkeletonSection.vue'
+import { queryCurrentAiPermission } from '@/api/ai'
+import { queryExpertList } from '@/api/expert'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
+const state = reactive({
+  permissions: null,
+  expertList: [],
+  loadingExperts: false
+})
 
 const profile = computed(() => {
   const userInfo = userStore.userInfo || {}
@@ -75,16 +112,41 @@ const profile = computed(() => {
   }
 })
 
-const profileHint = computed(() =>
-  profile.value.roleLabel === '管理员'
-    ? '当前账号为管理员，可继续从首页或左侧菜单进入用户、单位、组织等管理主线。'
-    : '当前账号为普通用户，可继续进入签到、周报、评分结果等个人工作面。'
-)
+const permissionSummary = computed(() => ({
+  aiCount: (state.permissions?.aiPermissions || []).length,
+  knowledgeCount: (state.permissions?.knowledgePermissions || []).length,
+  skillCount: (state.permissions?.skillPermissions || []).length
+}))
+
 const loginStateText = computed(() => (userStore.token ? '已登录' : '未登录'))
 const menuScopeText = computed(() => (profile.value.roleLabel === '管理员' ? '全部后台模块' : '个人可用模块'))
-const workbenchText = computed(() =>
-  profile.value.roleLabel === '管理员' ? '用户管理 / 单位管理 / 组织架构' : '签到管理 / 周报管理 / 工作评分'
-)
+const workbenchText = computed(() => {
+  const canUseAgent = Boolean(state.permissions?.admin || (state.permissions?.aiPermissions || []).some((item) => item.canUseAgent))
+  return canUseAgent ? '可使用' : '未授权'
+})
+
+function ensureSuccess(response, fallback = '请求失败') {
+  if (!response || response.code !== 0) {
+    throw new Error(response?.message || fallback)
+  }
+  return response.data
+}
+
+async function fetchPermissions() {
+  state.permissions = ensureSuccess(await queryCurrentAiPermission(), '权限信息加载失败')
+}
+
+async function fetchExperts() {
+  state.loadingExperts = true
+  try {
+    const data = ensureSuccess(await queryExpertList({ status: 1 }), '专家身份加载失败')
+    state.expertList = Array.isArray(data) ? data : []
+  } catch (error) {
+    showToast(error.message || '专家身份加载失败')
+  } finally {
+    state.loadingExperts = false
+  }
+}
 
 async function copyText(value, successText) {
   try {
@@ -100,8 +162,16 @@ function copyUsername() {
 }
 
 function copyUserId() {
-  copyText(profile.value.userId, '用户ID已复制')
+  copyText(profile.value.userId, '用户 ID 已复制')
 }
+
+onMounted(async () => {
+  try {
+    await Promise.all([fetchPermissions(), fetchExperts()])
+  } catch (error) {
+    showToast(error.message || '个人中心加载失败')
+  }
+})
 </script>
 
 <style scoped>
@@ -111,25 +181,29 @@ function copyUserId() {
   gap: 8px;
 }
 
-.profile-grid {
+.profile-grid,
+.expert-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
-.profile-card {
+.profile-card,
+.expert-card {
   border-radius: 12px;
   border: 1px solid #e5e7eb;
   padding: 16px;
   background: #f9fafb;
 }
 
-.profile-label {
+.profile-label,
+.meta-line {
   color: #6b7280;
   font-size: 13px;
 }
 
-.profile-value {
+.profile-value,
+.expert-title {
   margin-top: 10px;
   color: #111827;
   font-size: 18px;
@@ -165,8 +239,13 @@ function copyUserId() {
   text-align: right;
 }
 
+.state-block {
+  padding: 20px 0;
+}
+
 @media (max-width: 900px) {
-  .profile-grid {
+  .profile-grid,
+  .expert-grid {
     grid-template-columns: 1fr;
   }
 

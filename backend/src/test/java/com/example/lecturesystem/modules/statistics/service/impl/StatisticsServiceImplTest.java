@@ -21,8 +21,10 @@ import com.example.lecturesystem.modules.statistics.vo.StatisticsTrendVO;
 import com.example.lecturesystem.modules.user.entity.UserEntity;
 import com.example.lecturesystem.modules.workscore.vo.WorkScoreListItemVO;
 import com.example.lecturesystem.modules.weeklywork.dto.WeeklyWorkQueryRequest;
+import com.example.lecturesystem.modules.weeklywork.entity.WeeklyWorkApprovalLogEntity;
 import com.example.lecturesystem.modules.weeklywork.entity.WeeklyWorkEntity;
 import com.example.lecturesystem.modules.weeklywork.mapper.WeeklyWorkMapper;
+import com.example.lecturesystem.modules.weeklywork.vo.WeeklyWorkApprovalLogVO;
 import com.example.lecturesystem.modules.weeklywork.vo.WeeklyWorkListItemVO;
 import org.junit.After;
 import org.junit.Assert;
@@ -140,7 +142,7 @@ public class StatisticsServiceImplTest {
         }
 
         @Override
-        public List<StatisticsTrendVO> queryTrend(String unitName, String treePathPrefix) {
+        public List<StatisticsTrendVO> queryTrend(String weekNo, String unitName, String treePathPrefix) {
             return List.of();
         }
     }
@@ -268,13 +270,31 @@ public class StatisticsServiceImplTest {
         }
 
         @Override
-        public int markSubmitted(Long id, LocalDateTime submitTime) {
+        public int markSubmitted(Long id,
+                                 String status,
+                                 String currentApprovalNode,
+                                 Long currentHandlerUserId,
+                                 String currentHandlerUserName,
+                                 Integer currentFlowOrder,
+                                 Long finalApproverUserId,
+                                 LocalDateTime approvedTime,
+                                 LocalDateTime submitTime) {
             return 0;
         }
 
         @Override
-        public int updateStatus(Long id, String status) {
+        public int updateApproval(WeeklyWorkEntity entity) {
             return 0;
+        }
+
+        @Override
+        public int insertApprovalLog(WeeklyWorkApprovalLogEntity entity) {
+            return 0;
+        }
+
+        @Override
+        public List<WeeklyWorkApprovalLogVO> queryApprovalLogs(Long weeklyWorkId) {
+            return List.of();
         }
 
         @Override

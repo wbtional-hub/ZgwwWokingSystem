@@ -1,14 +1,17 @@
 <template>
   <AppPageShell title="考勤管理" description="当前页已接入最小可用考勤工作流：列表、查询、打卡、补录编辑和删除。">
+    <template #title-extra>
+      <PageHelp page-key="attendance" />
+    </template>
     <template #actions>
-      <div class="action-row">
+      <div class="action-row" data-guide="attendance-checkin">
         <van-button type="primary" :loading="state.checkingIn" :disabled="pageBusy" @click="handleCheckIn">立即打卡</van-button>
         <van-button plain type="success" :loading="state.exporting" :disabled="pageBusy || !state.list.length" @click="handleExport">导出记录</van-button>
         <van-button plain type="primary" :loading="state.loading" :disabled="pageBusy" @click="fetchList">刷新列表</van-button>
       </div>
     </template>
 
-    <section class="panel">
+    <section class="panel" data-guide="attendance-query">
       <div class="panel-title">查询区</div>
       <div class="query-grid">
         <van-field v-model.trim="state.queryForm.keywords" label="姓名/账号" placeholder="请输入姓名或账号" :disabled="pageBusy" />
@@ -41,6 +44,23 @@
       <div class="panel-actions">
         <van-button size="small" type="primary" :loading="state.loading" :disabled="pageBusy" @click="handleSearch">查询</van-button>
         <van-button size="small" plain :disabled="pageBusy" @click="handleReset">重置</van-button>
+      </div>
+      <div class="query-context-card">
+        <div class="summary-label">当前查询工作面</div>
+        <div class="attendance-meta">快捷时间：{{ activeQuickRangeLabel }}</div>
+        <div class="attendance-meta">时间范围：{{ listRangeText }}</div>
+        <div class="attendance-meta">筛选条件：{{ listFilterSummary || '未附加关键词/组织/异常筛选' }}</div>
+        <div class="attendance-meta">联动状态：{{ listLinkageSummary || '无异常用户/趋势日期联动' }}</div>
+        <div v-if="state.abnormalSelection.activeUserId || state.trendDateLinkage.selectedDate" class="panel-actions">
+          <van-button size="small" plain type="primary" :disabled="pageBusy" @click="handleClearAbnormalSelection">
+            清除当前联动
+          </van-button>
+        </div>
+        <div v-if="hasResettableQueryConditions" class="panel-actions">
+          <van-button size="small" plain :disabled="pageBusy" @click="handleReset">
+            清空当前查询条件
+          </van-button>
+        </div>
       </div>
     </section>
 
@@ -78,7 +98,7 @@
       </template>
     </section>
 
-    <section class="panel">
+    <section class="panel" data-guide="attendance-abnormal">
       <div class="panel-title">异常用户 Top10</div>
       <div class="panel-hint">按当前时间范围和数据权限统计异常次数与异常率，点击用户可直接回筛异常记录。</div>
       <div class="attendance-meta">当前统计范围：{{ abnormalMonitorRangeText }}</div>
@@ -256,9 +276,27 @@
       <div class="location-card">
         <div class="attendance-meta">结果：{{ state.checkInResult.success === null ? '未打卡' : state.checkInResult.success ? '打卡成功' : '打卡失败' }}</div>
         <div class="attendance-meta">动作：{{ state.checkInResult.action || '-' }}</div>
+        <div class="attendance-meta">定位阶段：{{ state.checkInVisualization.stageText || '-' }}</div>
+        <div class="attendance-meta">可用定位：{{ state.checkInVisualization.stageText ? (state.checkInVisualization.hasUsableLocation ? '已获取' : '未获取') : '-' }}</div>
         <div class="attendance-meta">距离：{{ state.checkInResult.distanceMeters == null ? '-' : `${state.checkInResult.distanceMeters}米` }}</div>
         <div class="attendance-meta">允许打卡：{{ state.checkInResult.allowCheckIn === null ? '-' : state.checkInResult.allowCheckIn ? '是' : '否' }}</div>
         <div class="attendance-meta">原因：{{ state.checkInResult.reason || '-' }}</div>
+        <div class="attendance-meta">判定分支：{{ state.checkInVisualization.decisionBranch || '-' }}</div>
+        <div class="attendance-meta">弱定位容错：{{ state.checkInVisualization.weakToleranceApplied ? '已命中' : '未命中' }}</div>
+      </div>
+      <div class="panel-title panel-title-sub">定位可视化地图</div>
+      <div class="panel-hint">当前地图仅展示最终提交定位点。红色表示打卡点与允许范围，蓝色表示最终提交定位与定位精度范围，重叠关系仅用于辅助诊断，不直接决定放行。</div>
+      <div v-if="state.checkInVisualization.error" class="attendance-guide">{{ state.checkInVisualization.error }}</div>
+      <div ref="checkInMapRef" class="attendance-map"></div>
+      <div class="diagnostic-grid">
+        <div class="attendance-meta">当前定位经纬度：{{ checkInCurrentCoordinateText }}</div>
+        <div class="attendance-meta">打卡点经纬度：{{ checkInTargetCoordinateText }}</div>
+        <div class="attendance-meta">允许半径：{{ checkInAllowedRadiusText }}</div>
+        <div class="attendance-meta">accuracy：{{ checkInAccuracyText }}</div>
+        <div class="attendance-meta">当前距离：{{ checkInDistanceText }}</div>
+        <div class="attendance-meta">是否重叠：{{ checkInOverlapText }}</div>
+        <div class="attendance-meta">当前判定结果：{{ checkInDecisionText }}</div>
+        <div v-if="state.checkInResult.status === ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID" class="attendance-guide">当前定位无效，若地图仍能看到位置，仅作诊断参考，请检查权限或定位服务。</div>
       </div>
     </section>
 
@@ -356,9 +394,15 @@
           <div class="panel-hint">可直接点击“立即打卡”，或在上方表单补录一条考勤。</div>
           <div class="attendance-meta">当前查询范围：{{ listRangeText }}</div>
           <div v-if="listFilterSummary" class="attendance-meta">当前筛选摘要：{{ listFilterSummary }}</div>
+          <div v-if="listLinkageSummary" class="attendance-meta">当前联动：{{ listLinkageSummary }}</div>
           <div v-if="state.abnormalSelection.activeUserId || state.trendDateLinkage.selectedDate" class="panel-actions">
             <van-button size="small" plain type="primary" :disabled="pageBusy" @click="handleClearAbnormalSelection">
               恢复异常联动前筛选
+            </van-button>
+          </div>
+          <div v-if="hasResettableQueryConditions" class="panel-actions">
+            <van-button size="small" plain :disabled="pageBusy" @click="handleReset">
+              清空当前查询条件
             </van-button>
           </div>
         </template>
@@ -423,11 +467,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
 import AppPageShell from '@/components/layout/AppPageShell.vue'
+import PageHelp from '@/components/PageHelp.vue'
 import { queryUserPageApi } from '@/api/user'
 import { useUserStore } from '@/stores/user'
+import { loadAmapSdk } from '@/utils/amap'
 import {
   ATTENDANCE_CHECK_IN_STATUS,
   ATTENDANCE_STATUS_OPTIONS,
@@ -452,6 +498,18 @@ const QUICK_RANGE_OPTIONS = [
   { key: 'last7Days', label: '近7天' },
   { key: 'thisMonth', label: '本月' }
 ]
+const GEOLOCATION_SAMPLE_COUNT = 3
+const GEOLOCATION_TIMEOUT_MS = 8000
+const INVALID_ACCURACY_METERS = 1000
+const WEAK_ACCURACY_FLOOR_METERS = 80
+const CHECK_IN_MAP_DEFAULT_ZOOM = 14
+const CHECK_IN_MAP_COLORS = {
+  target: '#dc2626',
+  current: '#2563eb',
+  line: '#0f766e'
+}
+
+const checkInMapRef = ref(null)
 
 const state = reactive({
   loading: false,
@@ -503,6 +561,8 @@ const state = reactive({
     unitName: '',
     locationName: '',
     address: '',
+    latitude: null,
+    longitude: null,
     radiusMeters: null,
     allowCheckIn: false,
     status: '',
@@ -515,6 +575,26 @@ const state = reactive({
     status: '',
     distanceMeters: null,
     reason: ''
+  },
+  checkInVisualization: {
+    rawLatitude: null,
+    rawLongitude: null,
+    convertedLatitude: null,
+    convertedLongitude: null,
+    submitLatitude: null,
+    submitLongitude: null,
+    targetLatitude: null,
+    targetLongitude: null,
+    radiusMeters: null,
+    accuracyMeters: null,
+    localDistanceMeters: null,
+    overlap: false,
+    decisionBranch: '',
+    weakToleranceApplied: false,
+    error: '',
+    stageText: '',
+    hasUsableLocation: false,
+    sampleTimestamp: null
   },
   userPicker: {
     loading: false,
@@ -533,6 +613,10 @@ const state = reactive({
   },
   form: createEmptyForm()
 })
+
+let checkInMapInstance = null
+let checkInAmap = null
+let checkInMapElements = null
 
 const pageBusy = computed(() => {
   return state.loading || state.summaryLoading || state.abnormalLoading || state.trendLoading || state.userSummaryLoading || state.saving || state.checkingIn || state.exporting || state.abnormalExporting || state.deletingId !== null
@@ -678,6 +762,452 @@ function formatPercent(value) {
     return '0.0%'
   }
   return `${Number(value).toFixed(1)}%`
+}
+
+function roundCoordinate(value) {
+  if (value == null || Number.isNaN(Number(value))) {
+    return null
+  }
+  return Number(Number(value).toFixed(6))
+}
+
+function calculateDistanceMeters(latitude1, longitude1, latitude2, longitude2) {
+  const values = [latitude1, longitude1, latitude2, longitude2].map(item => Number(item))
+  if (values.some(item => Number.isNaN(item))) {
+    return null
+  }
+  const [lat1, lng1, lat2, lng2] = values
+  const earthRadiusMeters = 6371000
+  const latDistance = ((lat2 - lat1) * Math.PI) / 180
+  const lngDistance = ((lng2 - lng1) * Math.PI) / 180
+  const sinLat = Math.sin(latDistance / 2)
+  const sinLng = Math.sin(lngDistance / 2)
+  const a = sinLat * sinLat + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * sinLng * sinLng
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return Math.round(earthRadiusMeters * c)
+}
+
+function outOfChina(longitude, latitude) {
+  return longitude < 72.004 || longitude > 137.8347 || latitude < 0.8293 || latitude > 55.8271
+}
+
+function transformLatitude(longitude, latitude) {
+  let result = -100 + 2 * longitude + 3 * latitude + 0.2 * latitude * latitude + 0.1 * longitude * latitude + 0.2 * Math.sqrt(Math.abs(longitude))
+  result += ((20 * Math.sin(6 * longitude * Math.PI) + 20 * Math.sin(2 * longitude * Math.PI)) * 2) / 3
+  result += ((20 * Math.sin(latitude * Math.PI) + 40 * Math.sin((latitude / 3) * Math.PI)) * 2) / 3
+  result += ((160 * Math.sin((latitude / 12) * Math.PI) + 320 * Math.sin((latitude * Math.PI) / 30)) * 2) / 3
+  return result
+}
+
+function transformLongitude(longitude, latitude) {
+  let result = 300 + longitude + 2 * latitude + 0.1 * longitude * longitude + 0.1 * longitude * latitude + 0.1 * Math.sqrt(Math.abs(longitude))
+  result += ((20 * Math.sin(6 * longitude * Math.PI) + 20 * Math.sin(2 * longitude * Math.PI)) * 2) / 3
+  result += ((20 * Math.sin(longitude * Math.PI) + 40 * Math.sin((longitude / 3) * Math.PI)) * 2) / 3
+  result += ((150 * Math.sin((longitude / 12) * Math.PI) + 300 * Math.sin((longitude / 30) * Math.PI)) * 2) / 3
+  return result
+}
+
+function wgs84ToGcj02(longitude, latitude) {
+  const lng = Number(longitude)
+  const lat = Number(latitude)
+  if (Number.isNaN(lng) || Number.isNaN(lat) || outOfChina(lng, lat)) {
+    return { longitude: lng, latitude: lat }
+  }
+  const a = 6378245.0
+  const ee = 0.00669342162296594323
+  let dLat = transformLatitude(lng - 105.0, lat - 35.0)
+  let dLng = transformLongitude(lng - 105.0, lat - 35.0)
+  const radLat = (lat / 180.0) * Math.PI
+  let magic = Math.sin(radLat)
+  magic = 1 - ee * magic * magic
+  const sqrtMagic = Math.sqrt(magic)
+  dLat = (dLat * 180.0) / (((a * (1 - ee)) / (magic * sqrtMagic)) * Math.PI)
+  dLng = (dLng * 180.0) / ((a / sqrtMagic) * Math.cos(radLat) * Math.PI)
+  return {
+    longitude: lng + dLng,
+    latitude: lat + dLat
+  }
+}
+
+function buildOutOfRangeReason(distanceMeters, radiusMeters, accuracyMeters) {
+  if (distanceMeters == null || radiusMeters == null) {
+    return '超出单位打卡范围'
+  }
+  let reason = `当前位置距离打卡点 ${distanceMeters} 米，允许半径 ${radiusMeters} 米`
+  if (accuracyMeters != null && accuracyMeters > radiusMeters) {
+    reason += `；当前定位精度约 ${accuracyMeters} 米，请尽量在室外空旷区域重试`
+  }
+  return reason
+}
+
+function buildInvalidLocationReason(accuracyMeters) {
+  if (accuracyMeters != null) {
+    return `未获取到可用定位，当前定位精度约 ${accuracyMeters} 米，请检查定位权限或定位服务后重试`
+  }
+  return '未获取到可用定位，请检查定位权限或定位服务后重试'
+}
+
+function buildWeakLocationReason(accuracyMeters) {
+  if (accuracyMeters != null) {
+    return `当前定位质量较差，定位精度约 ${accuracyMeters} 米，室内信号可能较弱，建议稍等定位稳定或靠窗后重试`
+  }
+  return '当前定位质量较差，室内信号可能较弱，建议稍等定位稳定或靠窗后重试'
+}
+
+function isInvalidGeolocationSample(position) {
+  const latitude = Number(position?.coords?.latitude)
+  const longitude = Number(position?.coords?.longitude)
+  const accuracyMeters = position?.coords?.accuracy == null ? null : Math.round(Number(position.coords.accuracy))
+  if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
+    return true
+  }
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    return true
+  }
+  if (Math.abs(latitude) < 0.000001 && Math.abs(longitude) < 0.000001) {
+    return true
+  }
+  return accuracyMeters != null && accuracyMeters > INVALID_ACCURACY_METERS
+}
+
+function isWeakAccuracy(accuracyMeters, radiusMeters) {
+  if (accuracyMeters == null) {
+    return false
+  }
+  return accuracyMeters > Math.max(Number(radiusMeters) || 0, WEAK_ACCURACY_FLOOR_METERS)
+}
+
+function buildCheckInDiagnostics(position) {
+  const rawLatitude = Number(position?.coords?.latitude)
+  const rawLongitude = Number(position?.coords?.longitude)
+  const accuracyMeters = position?.coords?.accuracy == null ? null : Math.round(Number(position.coords.accuracy))
+  const timestamp = Number(position?.timestamp || Date.now())
+  const targetLatitude = Number(state.locationInfo.latitude)
+  const targetLongitude = Number(state.locationInfo.longitude)
+  const radiusMeters = state.locationInfo.radiusMeters == null ? null : Number(state.locationInfo.radiusMeters)
+  const rawDistanceMeters = calculateDistanceMeters(rawLatitude, rawLongitude, targetLatitude, targetLongitude)
+  const converted = wgs84ToGcj02(rawLongitude, rawLatitude)
+  const convertedDistanceMeters = calculateDistanceMeters(converted.latitude, converted.longitude, targetLatitude, targetLongitude)
+  const useConverted = rawDistanceMeters != null
+    && convertedDistanceMeters != null
+    && convertedDistanceMeters < rawDistanceMeters
+  const submitLatitude = roundCoordinate(useConverted ? converted.latitude : rawLatitude)
+  const submitLongitude = roundCoordinate(useConverted ? converted.longitude : rawLongitude)
+  const localDistanceMeters = calculateDistanceMeters(submitLatitude, submitLongitude, targetLatitude, targetLongitude)
+  const overlap = localDistanceMeters != null
+    && radiusMeters != null
+    && accuracyMeters != null
+    && localDistanceMeters <= radiusMeters + accuracyMeters
+  return {
+    rawLatitude: roundCoordinate(rawLatitude),
+    rawLongitude: roundCoordinate(rawLongitude),
+    convertedLatitude: roundCoordinate(converted.latitude),
+    convertedLongitude: roundCoordinate(converted.longitude),
+    submitLatitude,
+    submitLongitude,
+    targetLatitude: roundCoordinate(targetLatitude),
+    targetLongitude: roundCoordinate(targetLongitude),
+    radiusMeters,
+    accuracyMeters,
+    timestamp,
+    rawDistanceMeters,
+    convertedDistanceMeters,
+    localDistanceMeters,
+    overlap,
+    coordinateSource: useConverted ? 'gcj02-adjusted' : 'browser-raw'
+  }
+}
+
+function compareCheckInDiagnostics(current, next) {
+  const currentWeak = isWeakAccuracy(current.accuracyMeters, current.radiusMeters)
+  const nextWeak = isWeakAccuracy(next.accuracyMeters, next.radiusMeters)
+  if (currentWeak !== nextWeak) {
+    return currentWeak ? 1 : -1
+  }
+  const currentAccuracy = current.accuracyMeters ?? Number.POSITIVE_INFINITY
+  const nextAccuracy = next.accuracyMeters ?? Number.POSITIVE_INFINITY
+  if (currentAccuracy !== nextAccuracy) {
+    return currentAccuracy - nextAccuracy
+  }
+  const currentTimestamp = current.timestamp ?? 0
+  const nextTimestamp = next.timestamp ?? 0
+  if (currentTimestamp !== nextTimestamp) {
+    return nextTimestamp - currentTimestamp
+  }
+  const currentDistance = current.localDistanceMeters ?? Number.POSITIVE_INFINITY
+  const nextDistance = next.localDistanceMeters ?? Number.POSITIVE_INFINITY
+  return currentDistance - nextDistance
+}
+
+function isLocalhostHost(hostname) {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+}
+
+function isPrivateIpv4Host(hostname) {
+  return /^10\./.test(hostname)
+    || /^192\.168\./.test(hostname)
+    || /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+}
+
+function buildLocationEnvironmentDiagnostics() {
+  const { protocol, hostname, href } = window.location
+  return {
+    userAgent: navigator.userAgent,
+    url: href,
+    protocol,
+    hostname,
+    isHttps: protocol === 'https:',
+    isLocalhost: isLocalhostHost(hostname),
+    isIntranet: isLocalhostHost(hostname) || isPrivateIpv4Host(hostname) || (!hostname.includes('.') && hostname !== '')
+  }
+}
+
+function resetCheckInVisualizationSubmission() {
+  updateCheckInVisualization({
+    rawLatitude: null,
+    rawLongitude: null,
+    convertedLatitude: null,
+    convertedLongitude: null,
+    submitLatitude: null,
+    submitLongitude: null,
+    accuracyMeters: null,
+    localDistanceMeters: null,
+    overlap: false,
+    decisionBranch: '',
+    weakToleranceApplied: false,
+    error: '',
+    stageText: '',
+    hasUsableLocation: false,
+    sampleTimestamp: null
+  })
+}
+
+function getCurrentPositionOnce() {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: GEOLOCATION_TIMEOUT_MS,
+      maximumAge: 0
+    })
+  })
+}
+
+async function collectBestGeolocationDiagnostics() {
+  const samples = []
+  let lastError = null
+  console.info('[attendance geolocation environment]', buildLocationEnvironmentDiagnostics())
+  updateCheckInVisualization({
+    stageText: '正在获取定位...',
+    hasUsableLocation: false,
+    error: ''
+  })
+  for (let index = 0; index < GEOLOCATION_SAMPLE_COUNT; index += 1) {
+    try {
+      const position = await getCurrentPositionOnce()
+      const diagnostics = buildCheckInDiagnostics(position)
+      diagnostics.sampleIndex = index + 1
+      diagnostics.invalidSample = isInvalidGeolocationSample(position)
+      diagnostics.weakSample = isWeakAccuracy(diagnostics.accuracyMeters, diagnostics.radiusMeters)
+      samples.push(diagnostics)
+      console.info('[attendance geolocation sample]', {
+        sampleIndex: diagnostics.sampleIndex,
+        timestamp: diagnostics.timestamp,
+        latitude: diagnostics.rawLatitude,
+        longitude: diagnostics.rawLongitude,
+        accuracyMeters: diagnostics.accuracyMeters,
+        convertedLatitude: diagnostics.convertedLatitude,
+        convertedLongitude: diagnostics.convertedLongitude,
+        converted: diagnostics.coordinateSource === 'gcj02-adjusted',
+        localDistanceMeters: diagnostics.localDistanceMeters,
+        invalidSample: diagnostics.invalidSample,
+        weakSample: diagnostics.weakSample
+      })
+    } catch (error) {
+      lastError = error
+      console.warn('[attendance geolocation sample error]', {
+        sampleIndex: index + 1,
+        code: error?.code,
+        message: error?.message || ''
+      })
+      if (error?.code === 1) {
+        throw error
+      }
+    }
+  }
+  updateCheckInVisualization({
+    stageText: '正在校验定位质量...'
+  })
+  const validSamples = samples.filter(item => !item.invalidSample)
+  if (!validSamples.length) {
+    return {
+      diagnostics: null,
+      samples,
+      invalidReason: buildInvalidLocationReason(samples[0]?.accuracyMeters ?? null),
+      lastError
+    }
+  }
+  validSamples.sort(compareCheckInDiagnostics)
+  console.info('[attendance geolocation selected sample]', {
+    selected: validSamples[0],
+    sampleCount: samples.length
+  })
+  return {
+    diagnostics: validSamples[0],
+    samples,
+    invalidReason: '',
+    lastError
+  }
+}
+
+function updateCheckInVisualization(payload = {}) {
+  state.checkInVisualization.rawLatitude = payload.rawLatitude ?? state.checkInVisualization.rawLatitude ?? null
+  state.checkInVisualization.rawLongitude = payload.rawLongitude ?? state.checkInVisualization.rawLongitude ?? null
+  state.checkInVisualization.convertedLatitude = payload.convertedLatitude ?? state.checkInVisualization.convertedLatitude ?? null
+  state.checkInVisualization.convertedLongitude = payload.convertedLongitude ?? state.checkInVisualization.convertedLongitude ?? null
+  state.checkInVisualization.submitLatitude = payload.submitLatitude ?? state.checkInVisualization.submitLatitude ?? null
+  state.checkInVisualization.submitLongitude = payload.submitLongitude ?? state.checkInVisualization.submitLongitude ?? null
+  state.checkInVisualization.targetLatitude = payload.targetLatitude ?? state.locationInfo.latitude ?? null
+  state.checkInVisualization.targetLongitude = payload.targetLongitude ?? state.locationInfo.longitude ?? null
+  state.checkInVisualization.radiusMeters = payload.radiusMeters ?? state.locationInfo.radiusMeters ?? null
+  state.checkInVisualization.accuracyMeters = payload.accuracyMeters ?? state.checkInVisualization.accuracyMeters ?? null
+  state.checkInVisualization.localDistanceMeters = payload.localDistanceMeters ?? state.checkInVisualization.localDistanceMeters ?? null
+  state.checkInVisualization.overlap = payload.overlap == null ? Boolean(state.checkInVisualization.overlap) : Boolean(payload.overlap)
+  state.checkInVisualization.decisionBranch = payload.decisionBranch ?? state.checkInVisualization.decisionBranch ?? ''
+  state.checkInVisualization.weakToleranceApplied = payload.weakToleranceApplied == null ? Boolean(state.checkInVisualization.weakToleranceApplied) : Boolean(payload.weakToleranceApplied)
+  state.checkInVisualization.error = payload.error ?? ''
+  state.checkInVisualization.stageText = payload.stageText ?? state.checkInVisualization.stageText ?? ''
+  state.checkInVisualization.hasUsableLocation = payload.hasUsableLocation == null ? Boolean(state.checkInVisualization.hasUsableLocation) : Boolean(payload.hasUsableLocation)
+  state.checkInVisualization.sampleTimestamp = payload.sampleTimestamp ?? state.checkInVisualization.sampleTimestamp ?? null
+}
+
+function resetCheckInVisualizationTarget() {
+  state.checkInVisualization.targetLatitude = state.locationInfo.latitude ?? null
+  state.checkInVisualization.targetLongitude = state.locationInfo.longitude ?? null
+  state.checkInVisualization.radiusMeters = state.locationInfo.radiusMeters ?? null
+}
+
+async function ensureCheckInMapReady() {
+  if (!checkInMapRef.value) {
+    return null
+  }
+  if (checkInMapInstance && checkInAmap) {
+    return checkInMapInstance
+  }
+  try {
+    checkInAmap = await loadAmapSdk()
+    if (!checkInMapRef.value) {
+      return null
+    }
+    checkInMapInstance = new checkInAmap.Map(checkInMapRef.value, {
+      zoom: CHECK_IN_MAP_DEFAULT_ZOOM,
+      center: [118.091519, 24.478829],
+      mapStyle: 'amap://styles/normal',
+      viewMode: '2D'
+    })
+    checkInMapElements = {
+      targetMarker: new checkInAmap.Marker({
+        anchor: 'bottom-center',
+        label: { content: '打卡点', direction: 'top' }
+      }),
+      currentMarker: new checkInAmap.Marker({
+        anchor: 'bottom-center',
+        label: { content: '当前位置', direction: 'top' }
+      }),
+      targetCircle: new checkInAmap.Circle({
+        strokeColor: CHECK_IN_MAP_COLORS.target,
+        strokeOpacity: 0.9,
+        strokeWeight: 2,
+        fillColor: CHECK_IN_MAP_COLORS.target,
+        fillOpacity: 0.08
+      }),
+      currentCircle: new checkInAmap.Circle({
+        strokeColor: CHECK_IN_MAP_COLORS.current,
+        strokeOpacity: 0.9,
+        strokeWeight: 2,
+        fillColor: CHECK_IN_MAP_COLORS.current,
+        fillOpacity: 0.08
+      }),
+      line: new checkInAmap.Polyline({
+        strokeColor: CHECK_IN_MAP_COLORS.line,
+        strokeWeight: 3,
+        strokeOpacity: 0.85
+      })
+    }
+    checkInMapInstance.add([
+      checkInMapElements.targetCircle,
+      checkInMapElements.currentCircle,
+      checkInMapElements.line,
+      checkInMapElements.targetMarker,
+      checkInMapElements.currentMarker
+    ])
+    return checkInMapInstance
+  } catch (error) {
+    state.checkInVisualization.error = error.message || '定位地图加载失败'
+    return null
+  }
+}
+
+function toggleCheckInOverlay(overlay, visible) {
+  if (!checkInMapInstance || !overlay) {
+    return
+  }
+  if (visible) {
+    checkInMapInstance.add(overlay)
+  } else {
+    checkInMapInstance.remove(overlay)
+  }
+}
+
+async function syncCheckInMap() {
+  await nextTick()
+  const instance = await ensureCheckInMapReady()
+  if (!instance || !checkInMapElements) {
+    return
+  }
+  const targetReady = state.locationInfo.latitude != null && state.locationInfo.longitude != null
+  const currentReady = state.checkInVisualization.submitLatitude != null && state.checkInVisualization.submitLongitude != null
+  const fitTargets = []
+
+  if (targetReady) {
+    const targetCenter = [Number(state.locationInfo.longitude), Number(state.locationInfo.latitude)]
+    checkInMapElements.targetMarker.setPosition(targetCenter)
+    checkInMapElements.targetCircle.setCenter(targetCenter)
+    checkInMapElements.targetCircle.setRadius(Number(state.locationInfo.radiusMeters || 0))
+    toggleCheckInOverlay(checkInMapElements.targetMarker, true)
+    toggleCheckInOverlay(checkInMapElements.targetCircle, true)
+    fitTargets.push(checkInMapElements.targetMarker, checkInMapElements.targetCircle)
+  } else {
+    toggleCheckInOverlay(checkInMapElements.targetMarker, false)
+    toggleCheckInOverlay(checkInMapElements.targetCircle, false)
+  }
+
+  if (currentReady) {
+    const currentCenter = [Number(state.checkInVisualization.submitLongitude), Number(state.checkInVisualization.submitLatitude)]
+    checkInMapElements.currentMarker.setPosition(currentCenter)
+    checkInMapElements.currentCircle.setCenter(currentCenter)
+    checkInMapElements.currentCircle.setRadius(Number(state.checkInVisualization.accuracyMeters || 0))
+    toggleCheckInOverlay(checkInMapElements.currentMarker, true)
+    toggleCheckInOverlay(checkInMapElements.currentCircle, true)
+    fitTargets.push(checkInMapElements.currentMarker, checkInMapElements.currentCircle)
+    if (targetReady) {
+      checkInMapElements.line.setPath([
+        [Number(state.locationInfo.longitude), Number(state.locationInfo.latitude)],
+        currentCenter
+      ])
+      toggleCheckInOverlay(checkInMapElements.line, true)
+      fitTargets.push(checkInMapElements.line)
+    } else {
+      toggleCheckInOverlay(checkInMapElements.line, false)
+    }
+  } else {
+    toggleCheckInOverlay(checkInMapElements.currentMarker, false)
+    toggleCheckInOverlay(checkInMapElements.currentCircle, false)
+    toggleCheckInOverlay(checkInMapElements.line, false)
+  }
+
+  if (fitTargets.length) {
+    instance.setFitView(fitTargets, false, [28, 28, 28, 28])
+  }
 }
 
 function riskLevelLabel(level) {
@@ -864,6 +1394,11 @@ const listRangeText = computed(() => {
   return formatRangeText(state.queryForm.dateFrom || undefined, state.queryForm.dateTo || undefined)
 })
 
+const activeQuickRangeLabel = computed(() => {
+  const matched = QUICK_RANGE_OPTIONS.find((item) => isQuickRangeActive(item.key))
+  return matched ? matched.label : '自定义'
+})
+
 const listPageSummary = computed(() => {
   if (!state.total || !state.list.length) {
     return ''
@@ -889,6 +1424,40 @@ const listFilterSummary = computed(() => {
   }
   return parts.join(' / ')
 })
+
+const hasResettableQueryConditions = computed(() => {
+  return Boolean(
+    state.queryForm.keywords ||
+    state.queryForm.unitName ||
+    state.queryForm.checkInStatus ||
+    state.queryForm.userId ||
+    state.queryForm.abnormalOnly ||
+    state.queryForm.dateFrom ||
+    state.queryForm.dateTo ||
+    state.abnormalSelection.activeUserId ||
+    state.trendDateLinkage.selectedDate
+  )
+})
+
+const checkInCurrentCoordinateText = computed(() => {
+  if (state.checkInVisualization.submitLatitude == null || state.checkInVisualization.submitLongitude == null) {
+    return '-'
+  }
+  return `${formatCoordinate(state.checkInVisualization.submitLatitude)}, ${formatCoordinate(state.checkInVisualization.submitLongitude)}`
+})
+
+const checkInTargetCoordinateText = computed(() => {
+  if (state.locationInfo.latitude == null || state.locationInfo.longitude == null) {
+    return '-'
+  }
+  return `${formatCoordinate(state.locationInfo.latitude)}, ${formatCoordinate(state.locationInfo.longitude)}`
+})
+
+const checkInAllowedRadiusText = computed(() => state.locationInfo.radiusMeters == null ? '-' : `${state.locationInfo.radiusMeters}米`)
+const checkInAccuracyText = computed(() => state.checkInVisualization.accuracyMeters == null ? '-' : `${state.checkInVisualization.accuracyMeters}米`)
+const checkInDistanceText = computed(() => state.checkInVisualization.localDistanceMeters == null ? '-' : `${state.checkInVisualization.localDistanceMeters}米`)
+const checkInOverlapText = computed(() => state.checkInVisualization.submitLatitude == null ? '-' : (state.checkInVisualization.overlap ? '是' : '否'))
+const checkInDecisionText = computed(() => state.checkInResult.status || state.checkInVisualization.decisionBranch || '-')
 
 async function fetchList() {
   if (!validateQueryDateRange()) {
@@ -978,20 +1547,27 @@ async function fetchCurrentLocation() {
     state.locationInfo.unitName = data.unitName || ''
     state.locationInfo.locationName = data.locationName || ''
     state.locationInfo.address = data.address || ''
+    state.locationInfo.latitude = data.latitude ?? null
+    state.locationInfo.longitude = data.longitude ?? null
     state.locationInfo.radiusMeters = data.radiusMeters ?? null
     state.locationInfo.allowCheckIn = Boolean(data.allowCheckIn)
     state.locationInfo.status = data.status || ''
     state.locationInfo.reason = data.reason || ''
+    resetCheckInVisualizationTarget()
   } catch (error) {
     state.locationInfo.unitName = ''
     state.locationInfo.locationName = ''
     state.locationInfo.address = ''
+    state.locationInfo.latitude = null
+    state.locationInfo.longitude = null
     state.locationInfo.radiusMeters = null
     state.locationInfo.allowCheckIn = false
     state.locationInfo.status = ''
     state.locationInfo.reason = error.message || '打卡点信息加载失败'
+    resetCheckInVisualizationTarget()
   } finally {
     state.locationLoading = false
+    syncCheckInMap()
   }
 }
 
@@ -1192,6 +1768,12 @@ function inferCheckInStatusFromErrorMessage(message) {
   if (!message) {
     return ''
   }
+  if (message.includes('定位无效')) {
+    return ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
+  }
+  if (message.includes('定位质量较差') || message.includes('室内信号')) {
+    return ATTENDANCE_CHECK_IN_STATUS.LOCATION_WEAK
+  }
   if (message.includes('未配置打卡点') || message.includes('配置不完整')) {
     return ATTENDANCE_CHECK_IN_STATUS.LOCATION_NOT_CONFIGURED
   }
@@ -1218,55 +1800,145 @@ async function handleCheckIn() {
     state.checkInResult.status = ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
     state.checkInResult.distanceMeters = null
     state.checkInResult.reason = '当前环境不支持定位'
+    updateCheckInVisualization({
+      stageText: '未获取到可用定位',
+      hasUsableLocation: false,
+      error: '当前环境不支持定位'
+    })
     showToast('当前环境不支持定位')
     return
   }
   state.checkingIn = true
+  resetCheckInVisualizationSubmission()
   try {
-    let position
     try {
-      position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 })
+      const collected = await collectBestGeolocationDiagnostics()
+      if (!collected.diagnostics) {
+        updateCheckInVisualization({
+          ...(collected.samples[collected.samples.length - 1] || {}),
+          error: collected.invalidReason || '未获取到可用定位，请检查定位服务后重试',
+          decisionBranch: 'INVALID',
+          overlap: false,
+          weakToleranceApplied: false,
+          stageText: '未获取到可用定位',
+          hasUsableLocation: false,
+          sampleTimestamp: collected.samples[collected.samples.length - 1]?.timestamp ?? null
+        })
+        state.checkInResult.success = false
+        state.checkInResult.allowCheckIn = false
+        state.checkInResult.action = ''
+        state.checkInResult.status = ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
+        state.checkInResult.distanceMeters = null
+        state.checkInResult.reason = collected.invalidReason || '未获取到可用定位，请检查定位服务后重试'
+        showToast(state.checkInResult.reason)
+        return
+      }
+      const diagnostics = collected.diagnostics
+      updateCheckInVisualization({
+        ...diagnostics,
+        error: '',
+        stageText: '正在提交打卡...',
+        hasUsableLocation: true,
+        sampleTimestamp: diagnostics.timestamp ?? null
       })
+      console.info('[attendance check-in submit diagnostics]', {
+        environment: buildLocationEnvironmentDiagnostics(),
+        selectedTimestamp: diagnostics.timestamp,
+        rawLatitude: diagnostics.rawLatitude,
+        rawLongitude: diagnostics.rawLongitude,
+        convertedLatitude: diagnostics.convertedLatitude,
+        convertedLongitude: diagnostics.convertedLongitude,
+        coordinateSource: diagnostics.coordinateSource,
+        converted: diagnostics.coordinateSource === 'gcj02-adjusted',
+        targetLatitude: diagnostics.targetLatitude,
+        targetLongitude: diagnostics.targetLongitude,
+        radiusMeters: diagnostics.radiusMeters,
+        accuracyMeters: diagnostics.accuracyMeters,
+        localDistanceMeters: diagnostics.localDistanceMeters,
+        overlap: diagnostics.overlap,
+        submitLatitude: diagnostics.submitLatitude,
+        submitLongitude: diagnostics.submitLongitude
+      })
+      const response = await checkInApi({
+        address: `浏览器定位 ${diagnostics.submitLatitude}, ${diagnostics.submitLongitude}`,
+        latitude: diagnostics.submitLatitude,
+        longitude: diagnostics.submitLongitude,
+        accuracyMeters: diagnostics.accuracyMeters
+      })
+      const result = response.data || {}
+      console.info('[attendance check-in response]', {
+        ...diagnostics,
+        responseDistanceMeters: result.distanceMeters ?? null,
+        responseRadiusMeters: result.radiusMeters ?? state.locationInfo.radiusMeters ?? null,
+        responseStatus: result.status || '',
+        responseReason: result.failReason || result.reason || ''
+      })
+      updateCheckInVisualization({
+        ...diagnostics,
+        localDistanceMeters: result.distanceMeters ?? diagnostics.localDistanceMeters,
+        decisionBranch: result.decisionBranch || '',
+        weakToleranceApplied: Boolean(result.weakToleranceApplied),
+        error: '',
+        stageText: result.success ? '已获取到可用定位，打卡已提交' : '已获取到可用定位，已完成业务校验',
+        hasUsableLocation: true,
+        sampleTimestamp: diagnostics.timestamp ?? null
+      })
+      state.checkInResult.success = Boolean(result.success)
+      state.checkInResult.allowCheckIn = Boolean(result.allowCheckIn)
+      state.checkInResult.action = result.action || ''
+      state.checkInResult.status = result.status || ''
+      state.checkInResult.distanceMeters = result.distanceMeters ?? null
+      if (result.status === ATTENDANCE_CHECK_IN_STATUS.OUT_OF_RANGE) {
+        state.checkInResult.reason = buildOutOfRangeReason(result.distanceMeters ?? diagnostics.localDistanceMeters, result.radiusMeters ?? diagnostics.radiusMeters, diagnostics.accuracyMeters)
+      } else if (result.status === ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID) {
+        state.checkInResult.reason = buildInvalidLocationReason(diagnostics.accuracyMeters)
+      } else if (result.status === ATTENDANCE_CHECK_IN_STATUS.LOCATION_WEAK) {
+        state.checkInResult.reason = buildWeakLocationReason(diagnostics.accuracyMeters)
+      } else {
+        state.checkInResult.reason = result.failReason || result.reason || ''
+      }
+      await Promise.all([fetchList(), fetchCurrentLocation()])
+      if (result.success) {
+        showToast(result.action === 'CHECK_OUT' ? '下班时间已补齐' : '上班打卡成功')
+      } else {
+        showToast(state.checkInResult.reason || result.reason || '打卡失败')
+      }
     } catch (error) {
       state.checkInResult.success = false
       state.checkInResult.allowCheckIn = false
       state.checkInResult.action = ''
-      state.checkInResult.status = ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
+      state.checkInResult.status = error?.code === 1 ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID : ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
       state.checkInResult.distanceMeters = null
-      state.checkInResult.reason = error?.code === 1 ? '定位权限被拒绝' : '定位失败，请重试'
+      state.checkInResult.reason = error?.code === 1 ? '定位权限被拒绝，请检查浏览器定位权限' : '定位失败，请检查定位服务后重试'
+      updateCheckInVisualization({
+        decisionBranch: error?.code === 1 ? 'INVALID' : 'LOCATION_ERROR',
+        error: state.checkInResult.reason,
+        stageText: '未获取到可用定位',
+        hasUsableLocation: false
+      })
       showToast(state.checkInResult.reason)
       return
-    }
-    const response = await checkInApi({
-      address: `浏览器定位 ${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`,
-      latitude: Number(position.coords.latitude.toFixed(6)),
-      longitude: Number(position.coords.longitude.toFixed(6))
-    })
-    const result = response.data || {}
-    state.checkInResult.success = Boolean(result.success)
-    state.checkInResult.allowCheckIn = Boolean(result.allowCheckIn)
-    state.checkInResult.action = result.action || ''
-    state.checkInResult.status = result.status || ''
-    state.checkInResult.distanceMeters = result.distanceMeters ?? null
-    state.checkInResult.reason = result.failReason || result.reason || ''
-    await Promise.all([fetchList(), fetchCurrentLocation()])
-    if (result.success) {
-      showToast(result.action === 'CHECK_OUT' ? '下班时间已补齐' : '上班打卡成功')
-    } else {
-      showToast(result.reason || '打卡失败')
     }
   } catch (error) {
     const message = resolveCheckInRequestErrorMessage(error)
     if (error?.response) {
       await Promise.all([fetchList(), fetchCurrentLocation()])
     }
+    console.warn('[attendance check-in error]', {
+      message,
+      status: error?.response?.status,
+      data: error?.response?.data
+    })
     state.checkInResult.success = false
     state.checkInResult.allowCheckIn = false
     state.checkInResult.action = ''
     state.checkInResult.status = inferCheckInStatusFromErrorMessage(message)
     state.checkInResult.distanceMeters = null
     state.checkInResult.reason = message
+    updateCheckInVisualization({
+      stageText: state.checkInVisualization.hasUsableLocation ? '已获取到可用定位，但提交失败' : state.checkInVisualization.stageText,
+      error: message
+    })
     if (!error?.response) {
       showToast(message)
     }
@@ -1502,6 +2174,33 @@ async function handleExportAbnormalRanks() {
 onMounted(() => {
   fetchCurrentLocation()
   fetchList()
+  nextTick(() => {
+    syncCheckInMap()
+  })
+})
+
+watch(
+  () => [
+    state.locationInfo.latitude,
+    state.locationInfo.longitude,
+    state.locationInfo.radiusMeters,
+    state.checkInVisualization.submitLatitude,
+    state.checkInVisualization.submitLongitude,
+    state.checkInVisualization.accuracyMeters
+  ],
+  () => {
+    syncCheckInMap()
+  },
+  { flush: 'post' }
+)
+
+onBeforeUnmount(() => {
+  if (checkInMapInstance) {
+    checkInMapInstance.destroy()
+    checkInMapInstance = null
+    checkInAmap = null
+    checkInMapElements = null
+  }
 })
 </script>
 
@@ -1572,6 +2271,34 @@ onMounted(() => {
   border-radius: 12px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
+}
+
+.query-context-card {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.panel-title-sub {
+  margin-top: 12px;
+}
+
+.attendance-map {
+  width: 100%;
+  height: 260px;
+  margin-top: 10px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #dbe3ee;
+  background: #eef4fb;
+}
+
+.diagnostic-grid {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
 }
 
 .selected-user-card {

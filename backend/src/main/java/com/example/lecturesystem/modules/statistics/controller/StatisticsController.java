@@ -41,7 +41,8 @@ public class StatisticsController {
     }
 
     @GetMapping("/trend")
-    public ApiResponse<?> trend(@RequestParam(required = false) String unitName) {
-        return ApiResponse.success(statisticsService.trend(unitName));
+    public ApiResponse<?> trend(@RequestParam(required = false) String weekNo,
+                                @RequestParam(required = false) String unitName) {
+        return ApiResponse.success(statisticsService.trend(weekNo, unitName));
     }
 }

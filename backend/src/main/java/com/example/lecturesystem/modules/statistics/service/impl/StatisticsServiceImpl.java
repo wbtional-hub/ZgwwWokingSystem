@@ -88,8 +88,12 @@ public class StatisticsServiceImpl implements StatisticsService {
     }
 
     @Override
-    public Object trend(String unitName) {
-        return statisticsMapper.queryTrend(normalizeText(unitName), currentTreePathPrefix());
+    public Object trend(String weekNo, String unitName) {
+        return statisticsMapper.queryTrend(
+                normalizeWeekNo(weekNo),
+                normalizeText(unitName),
+                currentTreePathPrefix()
+        );
     }
 
     private Object legacyOverview() {

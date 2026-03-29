@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AgentMessageMapper">
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.agent.entity.AgentMessageEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_agent_message (session_id, message_role, message_text, cited_chunk_ids, create_time)
+        VALUES (#{sessionId}, #{messageRole}, #{messageText}, #{citedChunkIds}, #{createTime})
+    </insert>
+    <select id="queryBySessionId" resultType="com.example.lecturesystem.modules.agent.vo.AgentMessageVO">
+        SELECT id, message_role, message_text, cited_chunk_ids, create_time
+        FROM ai_agent_message
+        WHERE session_id = #{sessionId}
+        ORDER BY create_time ASC, id ASC
+    </select>
+</mapper>

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.expert.mapper.SkillOwnerMapper">
+    <resultMap id="SkillOwnerEntityMap" type="com.example.lecturesystem.modules.expert.entity.SkillOwnerEntity">
+        <id property="id" column="id"/>
+        <result property="skillId" column="skill_id"/>
+        <result property="skillVersionId" column="skill_version_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="expertLevel" column="expert_level"/>
+        <result property="status" column="status"/>
+        <result property="grantTime" column="grant_time"/>
+    </resultMap>
+
+    <select id="queryList" resultType="com.example.lecturesystem.modules.expert.vo.SkillOwnerListItemVO">
+        SELECT own.id,
+               own.user_id,
+               usr.username,
+               usr.real_name,
+               own.skill_id,
+               sk.skill_name,
+               own.skill_version_id,
+               ver.version_no,
+               own.expert_level,
+               own.status,
+               own.grant_time
+        FROM ai_skill_owner own
+        INNER JOIN sys_user usr ON usr.id = own.user_id AND usr.is_deleted = FALSE
+        INNER JOIN ai_skill sk ON sk.id = own.skill_id AND sk.is_deleted = FALSE
+        INNER JOIN ai_skill_version ver ON ver.id = own.skill_version_id
+        WHERE 1 = 1
+        <if test="request.userId != null">AND own.user_id = #{request.userId}</if>
+        <if test="request.skillId != null">AND own.skill_id = #{request.skillId}</if>
+        <if test="request.status != null">AND own.status = #{request.status}</if>
+        ORDER BY own.grant_time DESC, own.id DESC
+    </select>
+
+    <select id="findByUserIdAndSkillId" resultMap="SkillOwnerEntityMap">
+        SELECT id, skill_id, skill_version_id, user_id, expert_level, status, grant_time
+        FROM ai_skill_owner WHERE user_id = #{userId} AND skill_id = #{skillId}
+    </select>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.expert.entity.SkillOwnerEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_skill_owner (skill_id, skill_version_id, user_id, expert_level, status, grant_time)
+        VALUES (#{skillId}, #{skillVersionId}, #{userId}, #{expertLevel}, #{status}, #{grantTime})
+    </insert>
+
+    <update id="update" parameterType="com.example.lecturesystem.modules.expert.entity.SkillOwnerEntity">
+        UPDATE ai_skill_owner
+        SET skill_version_id = #{skillVersionId}, expert_level = #{expertLevel}, status = #{status}, grant_time = #{grantTime}
+        WHERE id = #{id}
+    </update>
+</mapper>

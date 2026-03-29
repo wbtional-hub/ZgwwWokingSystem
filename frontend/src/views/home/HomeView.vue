@@ -83,12 +83,14 @@ const displayName = computed(() => userStore.userInfo?.realName || userStore.use
 const roleCode = computed(() => userStore.userInfo?.role || (userStore.userInfo?.superAdmin ? 'ADMIN' : 'USER'))
 const roleLabel = computed(() => (roleCode.value === 'ADMIN' ? '管理员' : '普通用户'))
 const userIdText = computed(() => userStore.userInfo?.userId || '-')
-const visibleMenuCount = computed(() => (roleCode.value === 'ADMIN' ? 10 : 6))
+const adminModules = ['首页', '单位管理', '参数管理', '操作日志', '组织架构', '签到管理', '周报管理', '工作评分', '统计分析', '个人中心', '用户管理']
+const userModules = ['首页', '签到管理', '周报管理', '个人中心']
+const visibleMenuCount = computed(() => (roleCode.value === 'ADMIN' ? adminModules.length : userModules.length))
 const menuScopeText = computed(() => (roleCode.value === 'ADMIN' ? '可访问全部后台模块' : '仅访问个人可用模块'))
 const focusTip = computed(() =>
   roleCode.value === 'ADMIN'
     ? '建议优先从用户管理、单位管理或组织架构进入当前验收主线。'
-    : '建议优先进入签到、周报、评分结果和个人中心，完成个人侧日常闭环。'
+    : '建议优先进入签到、周报和个人中心，完成个人侧日常闭环。'
 )
 const shortcutItems = computed(() =>
   roleCode.value === 'ADMIN'
@@ -101,14 +103,13 @@ const shortcutItems = computed(() =>
     : [
         { path: '/attendance', title: '签到管理', description: '进入当前账号签到流程' },
         { path: '/weekly-work', title: '周报管理', description: '补录、暂存或提交周报' },
-        { path: '/scores', title: '工作评分', description: '查看个人评分结果' },
         { path: '/profile', title: '个人中心', description: '查看当前账号信息' }
       ]
 )
 const accessibleModules = computed(() =>
   roleCode.value === 'ADMIN'
-    ? ['首页', '单位管理', '参数管理', '操作日志', '组织架构', '签到管理', '周报管理', '工作评分', '统计分析', '个人中心', '用户管理']
-    : ['首页', '签到管理', '周报管理', '工作评分', '统计分析', '个人中心']
+    ? adminModules
+    : userModules
 )
 
 function formatDateTime(value) {

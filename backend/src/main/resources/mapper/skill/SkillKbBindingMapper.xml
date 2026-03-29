@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.skill.mapper.SkillKbBindingMapper">
+    <resultMap id="SkillKbBindingMap" type="com.example.lecturesystem.modules.skill.entity.SkillKbBindingEntity">
+        <id property="id" column="id"/>
+        <result property="skillId" column="skill_id"/>
+        <result property="skillVersionId" column="skill_version_id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="categoryId" column="category_id"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+    <select id="findBySkillVersionId" resultMap="SkillKbBindingMap">SELECT * FROM ai_skill_kb_binding WHERE skill_version_id=#{skillVersionId} ORDER BY id DESC LIMIT 1</select>
+    <delete id="deleteBySkillVersionId">DELETE FROM ai_skill_kb_binding WHERE skill_version_id=#{skillVersionId}</delete>
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.skill.entity.SkillKbBindingEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO ai_skill_kb_binding (skill_id, skill_version_id, base_id, category_id, create_time) VALUES (#{skillId}, #{skillVersionId}, #{baseId}, #{categoryId}, #{createTime})
+    </insert>
+</mapper>

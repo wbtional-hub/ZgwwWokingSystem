@@ -6,6 +6,7 @@ public class CheckInRequest {
     private String address;
     private BigDecimal latitude;
     private BigDecimal longitude;
+    private Integer accuracyMeters;
 
     public String getAddress() {
         return address;
@@ -29,5 +30,13 @@ public class CheckInRequest {
 
     public void setLongitude(BigDecimal longitude) {
         this.longitude = longitude;
+    }
+
+    public Integer getAccuracyMeters() {
+        return accuracyMeters;
+    }
+
+    public void setAccuracyMeters(Integer accuracyMeters) {
+        this.accuracyMeters = accuracyMeters;
     }
 }

@@ -1,0 +1,27 @@
+package com.example.lecturesystem.modules.knowledge.dto;
+
+import jakarta.validation.constraints.NotNull;
+
+public class ToggleKnowledgeBaseStatusRequest {
+    @NotNull(message = "知识库ID不能为空")
+    private Long id;
+
+    @NotNull(message = "状态不能为空")
+    private Integer status;
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public Integer getStatus() {
+        return status;
+    }
+
+    public void setStatus(Integer status) {
+        this.status = status;
+    }
+}

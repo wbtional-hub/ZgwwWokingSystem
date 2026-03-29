@@ -1,7 +1,7 @@
 <template>
   <div class="app-layout">
     <aside class="layout-sidebar">
-      <div class="layout-brand">讲师团日志管理系统</div>
+      <div class="layout-brand">讲师团工作管理系统</div>
       <nav class="layout-menu">
         <router-link
           v-for="item in menuItems"
@@ -36,34 +36,21 @@ import { computed } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { APP_MENU_ITEMS, buildAccessContext, filterMenuItems, findMenuItemByPath } from '@/constants/modules'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 
-const allMenuItems = [
-  { path: '/home', title: '首页', description: '系统欢迎页' },
-  { path: '/units', title: '单位管理', description: '单位模板页入口', adminOnly: true },
-  { path: '/params', title: '参数管理', description: '参数模板页入口', adminOnly: true },
-  { path: '/operation-logs', title: '操作日志', description: '日志模板页入口', adminOnly: true },
-  { path: '/org-tree', title: '组织架构', description: '组织树维护', adminOnly: true },
-  { path: '/attendance', title: '签到管理', description: '出勤签到' },
-  { path: '/weekly-work', title: '周报管理', description: '周工作填报' },
-  { path: '/scores', title: '工作评分', description: '每周评分结果' },
-  { path: '/statistics', title: '统计分析', description: '统计概览' },
-  { path: '/profile', title: '个人中心', description: '个人资料与账号信息' },
-  { path: '/users', title: '用户管理', description: '模板模块入口', adminOnly: true }
-]
+const accessContext = computed(() => buildAccessContext(userStore.userInfo))
+const isAdmin = computed(() => accessContext.value.isAdmin)
 
-const isAdmin = computed(() => {
-  const role = userStore.userInfo?.role || (userStore.userInfo?.superAdmin ? 'ADMIN' : 'USER')
-  return role === 'ADMIN'
+const menuItems = computed(() => filterMenuItems(APP_MENU_ITEMS, accessContext.value))
+const currentPageTitle = computed(() => findMenuItemByPath(route.path)?.title || '后台管理')
+const welcomeText = computed(() => {
+  const name = userStore.userInfo?.realName || userStore.userInfo?.username || '用户'
+  return `${name}${isAdmin.value ? '（ADMIN）' : '（USER）'}`
 })
-
-const menuItems = computed(() => allMenuItems.filter((item) => !item.adminOnly || isAdmin.value))
-
-const currentPageTitle = computed(() => allMenuItems.find((item) => item.path === route.path)?.title || '后台管理')
-const welcomeText = computed(() => `你好，${userStore.userInfo?.realName || userStore.userInfo?.username || '管理员'}${isAdmin.value ? '（ADMIN）' : '（USER）'}`)
 
 async function handleLogout() {
   try {

@@ -34,7 +34,7 @@ public class WeeklyWorkController {
     }
 
     @GetMapping("/detail/{id}")
-    public ApiResponse<?> detail(@PathVariable Long id) {
+    public ApiResponse<?> detail(@PathVariable("id") Long id) {
         return ApiResponse.success(weeklyWorkService.detail(id));
     }
 

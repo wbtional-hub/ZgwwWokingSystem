@@ -11,5 +11,5 @@ public interface StatisticsService {
 
     Object yellowList(String weekNo, String unitName);
 
-    Object trend(String unitName);
+    Object trend(String weekNo, String unitName);
 }

@@ -11,7 +11,18 @@ public class WeeklyWorkEntity {
     private String workPlan;
     private String workContent;
     private String remark;
+    private String currentApprovalNode;
+    private Long currentHandlerUserId;
+    private String currentHandlerUserName;
+    private Integer currentFlowOrder;
+    private Long finalApproverUserId;
+    private String lastReturnTarget;
+    private String lastReturnComment;
+    private Long lastReviewBy;
+    private String lastReviewByName;
+    private LocalDateTime lastReviewTime;
     private LocalDateTime submitTime;
+    private LocalDateTime approvedTime;
     private LocalDateTime createTime;
 
     public Long getId() { return id; }
@@ -30,8 +41,30 @@ public class WeeklyWorkEntity {
     public void setWorkContent(String workContent) { this.workContent = workContent; }
     public String getRemark() { return remark; }
     public void setRemark(String remark) { this.remark = remark; }
+    public String getCurrentApprovalNode() { return currentApprovalNode; }
+    public void setCurrentApprovalNode(String currentApprovalNode) { this.currentApprovalNode = currentApprovalNode; }
+    public Long getCurrentHandlerUserId() { return currentHandlerUserId; }
+    public void setCurrentHandlerUserId(Long currentHandlerUserId) { this.currentHandlerUserId = currentHandlerUserId; }
+    public String getCurrentHandlerUserName() { return currentHandlerUserName; }
+    public void setCurrentHandlerUserName(String currentHandlerUserName) { this.currentHandlerUserName = currentHandlerUserName; }
+    public Integer getCurrentFlowOrder() { return currentFlowOrder; }
+    public void setCurrentFlowOrder(Integer currentFlowOrder) { this.currentFlowOrder = currentFlowOrder; }
+    public Long getFinalApproverUserId() { return finalApproverUserId; }
+    public void setFinalApproverUserId(Long finalApproverUserId) { this.finalApproverUserId = finalApproverUserId; }
+    public String getLastReturnTarget() { return lastReturnTarget; }
+    public void setLastReturnTarget(String lastReturnTarget) { this.lastReturnTarget = lastReturnTarget; }
+    public String getLastReturnComment() { return lastReturnComment; }
+    public void setLastReturnComment(String lastReturnComment) { this.lastReturnComment = lastReturnComment; }
+    public Long getLastReviewBy() { return lastReviewBy; }
+    public void setLastReviewBy(Long lastReviewBy) { this.lastReviewBy = lastReviewBy; }
+    public String getLastReviewByName() { return lastReviewByName; }
+    public void setLastReviewByName(String lastReviewByName) { this.lastReviewByName = lastReviewByName; }
+    public LocalDateTime getLastReviewTime() { return lastReviewTime; }
+    public void setLastReviewTime(LocalDateTime lastReviewTime) { this.lastReviewTime = lastReviewTime; }
     public LocalDateTime getSubmitTime() { return submitTime; }
     public void setSubmitTime(LocalDateTime submitTime) { this.submitTime = submitTime; }
+    public LocalDateTime getApprovedTime() { return approvedTime; }
+    public void setApprovedTime(LocalDateTime approvedTime) { this.approvedTime = approvedTime; }
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
 }

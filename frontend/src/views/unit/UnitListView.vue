@@ -21,12 +21,18 @@
     <div v-if="filteredUnits.length" class="summary-row">
       当前共 {{ filteredUnits.length }} 个单位，已启用 {{ enabledCount }} 个，停用 {{ disabledCount }} 个，已配置打卡点 {{ configuredLocationCount }} 个。
     </div>
+    <div v-if="hasKeyword && filteredUnits.length" class="summary-row">
+      当前关键词：{{ normalizedKeyword }}
+    </div>
     <div v-if="state.locationFeedback" class="feedback-row">{{ state.locationFeedback }}</div>
 
     <van-loading v-if="state.loading" class="page-loading" size="24px" vertical>单位列表加载中...</van-loading>
-    <van-empty v-else-if="!filteredUnits.length" description="当前没有可展示的单位数据">
+    <van-empty v-else-if="!filteredUnits.length" :description="emptyDescription">
       <template #default>
-        <div class="empty-tip">可先新增单位，后续在组织架构中为节点选择所属单位。</div>
+        <div class="empty-tip">{{ emptyHintText }}</div>
+        <van-button v-if="hasKeyword && hasUnits" size="small" plain type="primary" @click="handleClearKeyword">
+          清除搜索词
+        </van-button>
       </template>
     </van-empty>
 
@@ -97,7 +103,14 @@
       <van-picker :columns="statusColumns" @confirm="handleStatusConfirm" @cancel="state.statusPickerVisible = false" />
     </van-popup>
 
-    <van-popup v-model:show="state.locationDialogVisible" position="bottom" round @opened="handleLocationPopupOpened">
+    <van-popup
+      :show="state.locationDialogVisible"
+      position="bottom"
+      round
+      :close-on-click-overlay="!state.locationSubmitting"
+      @update:show="handleLocationDialogVisibilityChange"
+      @opened="handleLocationPopupOpened"
+    >
       <div class="dialog-body">
         <div class="dialog-title">打卡点设置</div>
         <div class="page-tip">当前单位：{{ state.locationForm.unitName || '-' }}</div>
@@ -182,15 +195,36 @@
               <div class="map-canvas-text">点击地图区域选点</div>
             </div>
           </div>
+        <div class="location-readonly-card popup-location-card">
+          <div class="location-card-title">当前选点摘要</div>
+          <div class="unit-meta">选点状态：{{ currentPointStatusText }}</div>
+          <div class="unit-meta">经度：{{ currentPointLongitudeText }}</div>
+          <div class="unit-meta">纬度：{{ currentPointLatitudeText }}</div>
+          <div class="unit-meta">地址：{{ state.locationForm.address || '-' }}</div>
+          <div class="unit-meta">当前打卡范围半径：{{ currentRadiusText }}</div>
+          <div class="unit-meta">视野说明：{{ currentViewportHintText }}</div>
+          <div class="unit-meta">{{ currentPointHintText }}</div>
+        </div>
           <div class="location-readonly-card popup-location-card">
-            <div class="location-card-title">当前选点摘要</div>
-            <div class="unit-meta">选点状态：{{ currentPointStatusText }}</div>
-            <div class="unit-meta">经度：{{ currentPointLongitudeText }}</div>
-            <div class="unit-meta">纬度：{{ currentPointLatitudeText }}</div>
-            <div class="unit-meta">地址：{{ state.locationForm.address || '-' }}</div>
-            <div class="unit-meta">当前打卡范围半径：{{ currentRadiusText }}</div>
-            <div class="unit-meta">视野说明：{{ currentViewportHintText }}</div>
-            <div class="unit-meta">{{ currentPointHintText }}</div>
+            <div class="location-card-title">待保存变更摘要</div>
+            <div class="unit-meta">{{ locationChangeSummaryText }}</div>
+            <div v-if="locationChangeDetails.length" class="location-change-list">
+              <div v-for="item in locationChangeDetails" :key="item.key" class="location-change-item">
+                <span class="location-change-item__label">{{ item.label }}</span>
+                <span class="location-change-item__value">{{ item.value }}</span>
+              </div>
+            </div>
+            <div v-if="hasPendingLocationChanges" class="location-change-actions">
+              <van-button
+                size="small"
+                plain
+                type="primary"
+                :disabled="state.locationSubmitting"
+                @click="handleRestoreLocationDraft"
+              >
+                {{ restoreLocationButtonText }}
+              </van-button>
+            </div>
           </div>
           <van-field v-model="state.locationForm.locationName" label="打卡点名称" placeholder="请输入打卡点名称" required />
           <van-field
@@ -206,7 +240,7 @@
           <van-field v-model="state.locationForm.address" label="地址" rows="2" autosize type="textarea" placeholder="选点后自动回填，可手动调整" />
 
           <div class="dialog-actions">
-            <van-button block plain @click="state.locationDialogVisible = false">取消</van-button>
+            <van-button block plain :disabled="state.locationSubmitting" @click="handleCloseLocationDialog">取消</van-button>
             <van-button block type="primary" native-type="submit" :loading="state.locationSubmitting">保存打卡点</van-button>
           </div>
         </van-form>
@@ -237,6 +271,10 @@ const statusColumns = [
 
 const DEFAULT_MAP_LONGITUDE = 118.091519
 const DEFAULT_MAP_LATITUDE = 24.478829
+const DEFAULT_MAP_ZOOM = 15
+const FOCUS_MAP_ZOOM = 16
+const SEARCH_RESULT_MAP_ZOOM = 17
+const DEFAULT_RADIUS_METERS = 100
 
 const state = reactive({
   loading: false,
@@ -276,7 +314,7 @@ const state = reactive({
     unitId: null,
     unitName: '',
     locationName: '',
-    radiusMeters: 100,
+    radiusMeters: DEFAULT_RADIUS_METERS,
     longitude: '',
     latitude: '',
     address: '',
@@ -301,6 +339,7 @@ let mapRangeLabelInstance = null
 let mapGeocoder = null
 let mapGeolocation = null
 let mapCreateCount = 0
+let mapInitialViewportSettled = false
 
 const filteredUnits = computed(() => {
   const keyword = state.keyword.trim()
@@ -311,10 +350,25 @@ const filteredUnits = computed(() => {
     String(item.unitName || '').includes(keyword) || String(item.unitCode || '').includes(keyword)
   )
 })
+const normalizedKeyword = computed(() => state.keyword.trim())
+const hasKeyword = computed(() => Boolean(normalizedKeyword.value))
+const hasUnits = computed(() => state.units.length > 0)
 
 const enabledCount = computed(() => filteredUnits.value.filter((item) => Number(item.status) === 1).length)
 const disabledCount = computed(() => filteredUnits.value.filter((item) => Number(item.status) !== 1).length)
 const configuredLocationCount = computed(() => filteredUnits.value.filter((item) => Boolean(item.attendanceLocationId)).length)
+const emptyDescription = computed(() => {
+  if (hasKeyword.value && hasUnits.value) {
+    return `未找到与“${normalizedKeyword.value}”匹配的单位`
+  }
+  return '当前没有可展示的单位数据'
+})
+const emptyHintText = computed(() => {
+  if (hasKeyword.value && hasUnits.value) {
+    return '可以清除搜索词后查看全部单位，或换一个单位名称/编码继续筛选。'
+  }
+  return '可先新增单位，后续在组织架构中为节点选择所属单位。'
+})
 
 const currentPointReady = computed(() => {
   const longitude = Number(state.locationForm.longitude)
@@ -356,6 +410,71 @@ const currentPointHintText = computed(() => {
     : '当前为轻量选点模式，可先定位当前位置，或点击区域完成选点；正式地图模式下可预览打卡半径圆、范围标签并自动调整视野，还支持拖拽 marker 微调位置与地址搜索定位。'
 })
 
+const locationChangeDetails = computed(() => {
+  const details = []
+  const currentName = String(state.locationDetail.locationName || '').trim()
+  const nextName = String(state.locationForm.locationName || '').trim()
+  if (currentName !== nextName) {
+    details.push({
+      key: 'name',
+      label: '打卡点名称',
+      value: `${currentName || '未设置'} -> ${nextName || '未设置'}`
+    })
+  }
+
+  const currentRadius = state.locationDetail.radiusMeters == null ? '' : String(state.locationDetail.radiusMeters)
+  const nextRadius = String(normalizeRadiusMeters(state.locationForm.radiusMeters))
+  if (currentRadius !== nextRadius) {
+    details.push({
+      key: 'radius',
+      label: '打卡半径',
+      value: `${currentRadius || '未设置'}米 -> ${nextRadius || '未设置'}米`
+    })
+  }
+
+  const currentLongitude = formatCoordinate(state.locationDetail.longitude)
+  const currentLatitude = formatCoordinate(state.locationDetail.latitude)
+  if (currentLongitude !== currentPointLongitudeText.value || currentLatitude !== currentPointLatitudeText.value) {
+    details.push({
+      key: 'point',
+      label: '打卡坐标',
+      value: `${currentLongitude}, ${currentLatitude} -> ${currentPointLongitudeText.value}, ${currentPointLatitudeText.value}`
+    })
+  }
+
+  const currentAddress = String(state.locationDetail.address || '').trim()
+  const nextAddress = String(state.locationForm.address || '').trim()
+  if (currentAddress !== nextAddress) {
+    details.push({
+      key: 'address',
+      label: '打卡地址',
+      value: `${currentAddress || '未设置'} -> ${nextAddress || '未设置'}`
+    })
+  }
+
+  return details
+})
+
+const locationChangeSummaryText = computed(() => {
+  if (!locationChangeDetails.value.length) {
+    return '当前选点与已保存打卡点一致，暂时没有待保存变更。'
+  }
+  return `当前共有 ${locationChangeDetails.value.length} 项待保存变更，保存后会同步回列表卡片与详情摘要。`
+})
+const hasPendingLocationChanges = computed(() => locationChangeDetails.value.length > 0)
+const hasSavedLocationDetail = computed(() => {
+  return Boolean(
+    state.locationDetail.locationName ||
+    state.locationDetail.address ||
+    state.locationDetail.longitude != null && state.locationDetail.longitude !== '' ||
+    state.locationDetail.latitude != null && state.locationDetail.latitude !== '' ||
+    state.locationDetail.radiusMeters != null
+  )
+})
+const restoreLocationButtonText = computed(() => {
+  return hasSavedLocationDetail.value ? '恢复到已保存' : '恢复到初始状态'
+})
+
 function ensureSuccess(response, fallback = '请求失败') {
   if (!response || response.code !== 0) {
     throw new Error(response?.message || fallback)
@@ -378,6 +497,84 @@ function normalizeKeyword() {
   state.keyword = state.keyword.trim()
 }
 
+function handleClearKeyword() {
+  state.keyword = ''
+}
+
+function handleRestoreLocationDraft() {
+  if (!hasPendingLocationChanges.value || state.locationSubmitting) {
+    return
+  }
+  if (hasSavedLocationDetail.value) {
+    state.locationForm.locationName = state.locationDetail.locationName || `${state.locationForm.unitName || '单位'}主打卡点`
+    state.locationForm.radiusMeters = normalizeRadiusMeters(state.locationDetail.radiusMeters)
+    state.locationForm.longitude = state.locationDetail.longitude == null || state.locationDetail.longitude === ''
+      ? ''
+      : String(state.locationDetail.longitude)
+    state.locationForm.latitude = state.locationDetail.latitude == null || state.locationDetail.latitude === ''
+      ? ''
+      : String(state.locationDetail.latitude)
+    state.locationForm.address = state.locationDetail.address || ''
+    state.locationForm.status = Number(state.locationDetail.status ?? 1)
+    state.mapSearchKeyword = state.locationDetail.address || ''
+    clearSearchCandidates()
+    if (state.locationDetail.longitude != null && state.locationDetail.latitude != null) {
+      fillLocation({
+        longitude: state.locationDetail.longitude,
+        latitude: state.locationDetail.latitude,
+        address: state.locationDetail.address || '已恢复到当前已保存打卡点',
+        tipText: '已恢复到当前已保存打卡点，可继续微调。'
+      })
+    } else {
+      state.mapMarker.visible = false
+      state.mapTip = '已恢复到当前已保存状态。'
+      syncSdkMarkerFromForm()
+    }
+    showToast('已恢复到当前已保存状态')
+    return
+  }
+
+  state.locationForm.locationName = `${state.locationForm.unitName || '单位'}主打卡点`
+  state.locationForm.radiusMeters = DEFAULT_RADIUS_METERS
+  state.locationForm.longitude = ''
+  state.locationForm.latitude = ''
+  state.locationForm.address = ''
+  state.locationForm.status = 1
+  state.mapSearchKeyword = ''
+  clearSearchCandidates()
+  state.mapMarker.visible = false
+  state.mapMarker.x = 50
+  state.mapMarker.y = 50
+  state.mapTip = '已恢复到初始状态，可重新定位或点击地图选点。'
+  syncSdkMarkerFromForm()
+  showToast('已恢复到初始状态')
+}
+
+async function handleLocationDialogVisibilityChange(value) {
+  if (value) {
+    state.locationDialogVisible = true
+    return
+  }
+  await handleCloseLocationDialog()
+}
+
+async function handleCloseLocationDialog() {
+  if (!state.locationDialogVisible || state.locationSubmitting) {
+    return
+  }
+  if (hasPendingLocationChanges.value) {
+    try {
+      await showConfirmDialog({
+        title: '放弃修改',
+        message: '当前打卡点还有未保存修改，确认直接关闭吗？'
+      })
+    } catch (error) {
+      return
+    }
+  }
+  state.locationDialogVisible = false
+}
+
 function openCreateDialog() {
   state.dialogMode = 'create'
   state.form.id = null
@@ -398,13 +595,14 @@ function openEditDialog(item) {
 
 async function openLocationDialog(item) {
   destroyMapRuntime('before-open')
+  mapInitialViewportSettled = false
   state.mapContainerKey += 1
   state.locationFeedback = ''
   state.locationDialogVisible = true
   state.locationForm.unitId = item.id
   state.locationForm.unitName = item.unitName || ''
   state.locationForm.locationName = `${item.unitName || '单位'}主打卡点`
-  state.locationForm.radiusMeters = 100
+  state.locationForm.radiusMeters = DEFAULT_RADIUS_METERS
   state.locationForm.longitude = ''
   state.locationForm.latitude = ''
   state.locationForm.address = ''
@@ -426,7 +624,7 @@ async function openLocationDialog(item) {
     if (data) {
       applyLocationDetail(data)
       state.locationForm.locationName = data.locationName || state.locationForm.locationName
-      state.locationForm.radiusMeters = Number(data.radiusMeters || 100)
+      state.locationForm.radiusMeters = normalizeRadiusMeters(data.radiusMeters)
       clearSearchCandidates()
       state.locationForm.status = Number(data.status ?? 1)
       if (data.longitude != null && data.latitude != null) {
@@ -450,6 +648,10 @@ async function openLocationDialog(item) {
 async function handleLocationPopupOpened() {
   if (!state.locationDialogVisible) {
     return
+  }
+  state.locationForm.radiusMeters = normalizeRadiusMeters(state.locationForm.radiusMeters)
+  if (!currentPointReady.value) {
+    applyDefaultLocationPreset()
   }
   await nextTick()
   await waitForMapContainerVisible()
@@ -568,6 +770,7 @@ function fillLocation({ longitude, latitude, address, x = 50, y = 50, tipText = 
 }
 
 function applyDefaultLocationPreset() {
+  state.locationForm.radiusMeters = normalizeRadiusMeters(state.locationForm.radiusMeters)
   fillLocation({
     longitude: DEFAULT_MAP_LONGITUDE,
     latitude: DEFAULT_MAP_LATITUDE,
@@ -618,10 +821,7 @@ function applySearchCandidate(item, tipText) {
   })
   state.mapSearchKeyword = item.formattedAddress || item.address || state.mapSearchKeyword
   state.mapSearchSelectedId = item.id
-  if (mapInstance) {
-    mapInstance.setCenter([item.longitude, item.latitude])
-    mapInstance.setZoom(17)
-  }
+  setMapViewport(item.longitude, item.latitude, SEARCH_RESULT_MAP_ZOOM)
 }
 
 function handleSearchKeywordInput(value) {
@@ -638,7 +838,20 @@ function handleUseSearchCandidate(item) {
 }
 
 function handleRadiusInput() {
+  state.locationForm.radiusMeters = normalizeRadiusMeters(state.locationForm.radiusMeters)
   syncSdkCircleFromForm()
+}
+
+function buildLocateUnavailableTip() {
+  return currentPointReady.value
+    ? '当前环境不支持浏览器定位，已保留当前选点，可手动点击地图或拖拽 marker 调整。'
+    : '当前环境不支持浏览器定位，已回退到默认中心点，可手动点击地图调整。'
+}
+
+function buildLocateFailedTip() {
+  return currentPointReady.value
+    ? '定位失败，已保留当前选点，可手动点击地图或拖拽 marker 调整。'
+    : '定位失败，已回退到默认中心点，可手动点击地图调整。'
 }
 
 async function handleSearchAddress() {
@@ -699,28 +912,29 @@ async function handleLocateCurrent() {
       const longitude = result.position.lng
       const latitude = result.position.lat
       const address = result.formattedAddress || await reverseGeocode(longitude, latitude)
-    fillLocation({
-      longitude,
-      latitude,
-      address: address || `当前位置 ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-      x: 50,
-      y: 50,
-      tipText: `已定位当前位置：经度 ${longitude.toFixed(6)}，纬度 ${latitude.toFixed(6)}`
-    })
-    state.mapSearchKeyword = address || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-    clearSearchCandidates()
-    if (mapInstance) {
-        mapInstance.setCenter([longitude, latitude])
-        mapInstance.setZoom(16)
-      }
+      fillLocation({
+        longitude,
+        latitude,
+        address: address || `当前位置 ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+        x: 50,
+        y: 50,
+        tipText: `已定位当前位置：经度 ${longitude.toFixed(6)}，纬度 ${latitude.toFixed(6)}`
+      })
+      state.mapSearchKeyword = address || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+      clearSearchCandidates()
+      setMapViewport(longitude, latitude, FOCUS_MAP_ZOOM)
       return
     } catch (error) {
-      state.mapTip = '地图定位失败，已切换浏览器定位。'
+      state.mapTip = '地图定位失败，已切换浏览器定位继续尝试。'
     } finally {
       state.locating = false
     }
   }
   if (!navigator.geolocation) {
+    if (!currentPointReady.value) {
+      applyDefaultLocationPreset()
+    }
+    state.mapTip = buildLocateUnavailableTip()
     showToast('当前环境不支持定位')
     return
   }
@@ -740,11 +954,12 @@ async function handleLocateCurrent() {
     })
     state.mapSearchKeyword = address || `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`
     clearSearchCandidates()
-    if (mapInstance) {
-      mapInstance.setCenter([position.coords.longitude, position.coords.latitude])
-      mapInstance.setZoom(16)
-    }
+    setMapViewport(position.coords.longitude, position.coords.latitude, FOCUS_MAP_ZOOM)
   } catch (error) {
+    if (!currentPointReady.value) {
+      applyDefaultLocationPreset()
+    }
+    state.mapTip = buildLocateFailedTip()
     showToast('定位失败，请手动点击地图选点')
   } finally {
     state.locating = false
@@ -792,7 +1007,7 @@ async function handleLocationSubmit() {
   const payload = {
     unitId: state.locationForm.unitId,
     locationName: state.locationForm.locationName.trim(),
-    radiusMeters: Number(state.locationForm.radiusMeters || 100),
+    radiusMeters: normalizeRadiusMeters(state.locationForm.radiusMeters),
     longitude: Number(state.locationForm.longitude),
     latitude: Number(state.locationForm.latitude),
     address: state.locationForm.address.trim(),
@@ -814,7 +1029,7 @@ async function handleLocationSubmit() {
     if (latestDetail) {
       applyLocationDetail(latestDetail)
       state.locationForm.locationName = latestDetail.locationName || state.locationForm.locationName
-      state.locationForm.radiusMeters = Number(latestDetail.radiusMeters || state.locationForm.radiusMeters || 100)
+      state.locationForm.radiusMeters = normalizeRadiusMeters(latestDetail.radiusMeters || state.locationForm.radiusMeters)
       state.locationForm.longitude = String(latestDetail.longitude ?? state.locationForm.longitude)
       state.locationForm.latitude = String(latestDetail.latitude ?? state.locationForm.latitude)
       state.locationForm.address = latestDetail.address || state.locationForm.address
@@ -859,10 +1074,11 @@ async function ensureMapReady() {
       containerHeight: mapContainerRef.value?.clientHeight || 0
     })
     mapInstance = new AMap.Map(mapContainerRef.value, {
-      zoom: 15,
+      zoom: DEFAULT_MAP_ZOOM,
       center: [DEFAULT_MAP_LONGITUDE, DEFAULT_MAP_LATITUDE],
       viewMode: '2D',
-      mapStyle: 'amap://styles/normal'
+      mapStyle: 'amap://styles/normal',
+      resizeEnable: true
     })
     mapCreateCount += 1
     mapInstance.on('complete', () => {
@@ -879,6 +1095,11 @@ async function ensureMapReady() {
       logMapDiagnostics('complete')
     })
     mapInstance.on('tilesloaded', () => {
+      ensureMapResized('tilesloaded')
+      if (!mapInitialViewportSettled) {
+        refreshInitialViewport('tilesloaded')
+        mapInitialViewportSettled = true
+      }
       logMapDiagnostics('tilesloaded')
     })
     mapMarkerInstance = new AMap.Marker({
@@ -925,7 +1146,7 @@ async function ensureMapReady() {
       })
       state.mapSearchKeyword = address || `地图选点 ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
       clearSearchCandidates()
-      mapInstance.setCenter([longitude, latitude])
+      setMapViewport(longitude, latitude, FOCUS_MAP_ZOOM)
     })
     mapMarkerInstance.on('dragend', async (event) => {
       const longitude = event.lnglat.getLng()
@@ -980,7 +1201,7 @@ async function ensureMapResized(reason = 'manual') {
   })
 }
 
-async function waitForMapContainerVisible(maxAttempts = 10) {
+async function waitForMapContainerVisible(maxAttempts = 20) {
   for (let index = 0; index < maxAttempts; index += 1) {
     await nextTick()
     const width = mapContainerRef.value?.clientWidth || 0
@@ -990,7 +1211,7 @@ async function waitForMapContainerVisible(maxAttempts = 10) {
       return true
     }
     await new Promise((resolve) => {
-      setTimeout(resolve, 30)
+      setTimeout(resolve, 50)
     })
   }
   console.warn('[UnitMap] container still not visible before init', {
@@ -1019,12 +1240,12 @@ function refreshInitialViewport(stage = 'manual') {
     return
   }
   const center = resolveCurrentViewportCenter()
-  const zoom = typeof mapInstance.getZoom === 'function' ? mapInstance.getZoom() : 15
-  if (typeof mapInstance.setZoomAndCenter === 'function') {
-    mapInstance.setZoomAndCenter(zoom, center)
+  const rawZoom = typeof mapInstance.getZoom === 'function' ? mapInstance.getZoom() : DEFAULT_MAP_ZOOM
+  const zoom = Number.isFinite(rawZoom) ? rawZoom : DEFAULT_MAP_ZOOM
+  if (!currentPointReady.value) {
+    setMapViewport(center[0], center[1], DEFAULT_MAP_ZOOM)
   } else {
-    mapInstance.setCenter(center)
-    mapInstance.setZoom(zoom)
+    setMapViewport(center[0], center[1], zoom)
   }
   console.info('[UnitMap] viewport refreshed', {
     stage,
@@ -1036,6 +1257,31 @@ function refreshInitialViewport(stage = 'manual') {
 function triggerLocationStyleRefresh(stage = 'manual') {
   syncSdkMarkerFromForm()
   refreshInitialViewport(stage)
+}
+
+function normalizeRadiusMeters(value) {
+  const radius = Number(value)
+  if (Number.isNaN(radius) || radius <= 0) {
+    return DEFAULT_RADIUS_METERS
+  }
+  return Math.round(radius)
+}
+
+function setMapViewport(longitude, latitude, zoom = DEFAULT_MAP_ZOOM) {
+  if (!mapInstance) {
+    return
+  }
+  const center = [Number(longitude), Number(latitude)]
+  if (center.some((item) => Number.isNaN(item))) {
+    return
+  }
+  const safeZoom = Number.isFinite(Number(zoom)) ? Number(zoom) : DEFAULT_MAP_ZOOM
+  if (typeof mapInstance.setZoomAndCenter === 'function') {
+    mapInstance.setZoomAndCenter(safeZoom, center)
+    return
+  }
+  mapInstance.setCenter(center)
+  mapInstance.setZoom(safeZoom)
 }
 
 function logMapDiagnostics(stage) {
@@ -1071,6 +1317,7 @@ function destroyMapRuntime(reason = 'manual-destroy') {
   mapRangeLabelInstance = null
   mapGeocoder = null
   mapGeolocation = null
+  mapInitialViewportSettled = false
   state.mapSdkReady = false
 }
 
@@ -1087,7 +1334,7 @@ function syncSdkMarkerFromForm() {
   }
   mapMarkerInstance.setPosition([longitude, latitude])
   mapMarkerInstance.show()
-  mapInstance.setCenter([longitude, latitude])
+  setMapViewport(longitude, latitude, FOCUS_MAP_ZOOM)
   syncSdkCircleFromForm()
 }
 
@@ -1106,7 +1353,7 @@ function syncSdkCircleFromForm() {
   if (Number.isNaN(radius) || radius <= 0) {
     mapCircleInstance.hide()
     mapRangeLabelInstance.hide()
-    mapInstance.setCenter([longitude, latitude])
+    setMapViewport(longitude, latitude, FOCUS_MAP_ZOOM)
     return
   }
   mapCircleInstance.setCenter([longitude, latitude])
@@ -1119,7 +1366,7 @@ function syncSdkCircleFromForm() {
     mapInstance.setFitView([mapMarkerInstance, mapCircleInstance], false, [60, 60, 60, 60])
     return
   }
-  mapInstance.setCenter([longitude, latitude])
+  setMapViewport(longitude, latitude, FOCUS_MAP_ZOOM)
 }
 
 async function reverseGeocode(longitude, latitude) {
@@ -1190,6 +1437,20 @@ watch(
       return
     }
     destroyMapRuntime('dialog-close')
+  }
+)
+
+watch(
+  () => [state.locationForm.longitude, state.locationForm.latitude, state.locationForm.radiusMeters],
+  () => {
+    if (!state.locationDialogVisible) {
+      return
+    }
+    state.locationForm.radiusMeters = normalizeRadiusMeters(state.locationForm.radiusMeters)
+    if (!state.mapSdkReady) {
+      return
+    }
+    syncSdkMarkerFromForm()
   }
 )
 
@@ -1272,6 +1533,37 @@ onBeforeUnmount(() => {
   color: #0f172a;
   font-size: 14px;
   font-weight: 600;
+}
+
+.location-change-list {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.location-change-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+}
+
+.location-change-item__label {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.location-change-item__value {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #0f172a;
+}
+
+.location-change-actions {
+  margin-top: 12px;
 }
 
 .popup-location-card {

@@ -32,11 +32,18 @@
     <section class="panel">
       <div class="panel-title">日志列表</div>
       <div class="panel-hint">共 {{ state.list.length }} 条日志记录</div>
+      <div class="panel-hint">当前查询工作面：{{ querySummaryText }}</div>
 
       <van-loading v-if="state.loading" class="state-block" size="24px" vertical>加载中...</van-loading>
       <van-empty v-else-if="!state.list.length" description="暂无操作日志">
         <template #default>
           <div class="panel-hint">完成用户新增、周报审核、考勤补录或评分计算后，这里会出现可追溯日志。</div>
+          <div class="panel-hint">当前查询工作面：{{ querySummaryText }}</div>
+          <div v-if="hasQueryFilters" class="panel-actions">
+            <van-button size="small" plain type="primary" :disabled="state.loading" @click="handleReset">
+              清空当前查询条件
+            </van-button>
+          </div>
         </template>
       </van-empty>
 
@@ -61,7 +68,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive } from 'vue'
+import { computed, onMounted, reactive } from 'vue'
 import { showToast } from 'vant'
 import AppPageShell from '@/components/layout/AppPageShell.vue'
 import { queryOperationLogListApi } from '@/api/operationlog'
@@ -75,6 +82,29 @@ const state = reactive({
     startTime: '',
     endTime: ''
   }
+})
+
+const hasQueryFilters = computed(() => {
+  return Boolean(
+    state.queryForm.moduleName ||
+    state.queryForm.operatorName ||
+    state.queryForm.startTime ||
+    state.queryForm.endTime
+  )
+})
+
+const querySummaryText = computed(() => {
+  const parts = []
+  if (state.queryForm.moduleName) {
+    parts.push(`模块 ${moduleLabel(state.queryForm.moduleName)}`)
+  }
+  if (state.queryForm.operatorName) {
+    parts.push(`操作人 ${state.queryForm.operatorName}`)
+  }
+  if (state.queryForm.startTime || state.queryForm.endTime) {
+    parts.push(`时间 ${formatRangeText(state.queryForm.startTime, state.queryForm.endTime)}`)
+  }
+  return parts.join(' / ') || '全部模块 / 全部操作人 / 全部时间'
 })
 
 function moduleLabel(value) {
@@ -107,6 +137,19 @@ function toBackendDateTime(value) {
 
 function formatDateTime(value) {
   return value ? String(value).replace('T', ' ') : '-'
+}
+
+function formatRangeText(startTime, endTime) {
+  if (startTime && endTime) {
+    return `${startTime.replace('T', ' ')} 至 ${endTime.replace('T', ' ')}`
+  }
+  if (startTime) {
+    return `${startTime.replace('T', ' ')} 起`
+  }
+  if (endTime) {
+    return `截至 ${endTime.replace('T', ' ')}`
+  }
+  return '全部时间'
 }
 
 async function fetchList() {

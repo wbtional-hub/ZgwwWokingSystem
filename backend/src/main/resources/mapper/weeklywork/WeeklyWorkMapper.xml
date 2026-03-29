@@ -13,7 +13,18 @@
         <result property="workPlan" column="work_plan"/>
         <result property="workContent" column="work_content"/>
         <result property="remark" column="remark"/>
+        <result property="currentApprovalNode" column="current_approval_node"/>
+        <result property="currentHandlerUserId" column="current_handler_user_id"/>
+        <result property="currentHandlerUserName" column="current_handler_user_name"/>
+        <result property="currentFlowOrder" column="current_flow_order"/>
+        <result property="finalApproverUserId" column="final_approver_user_id"/>
+        <result property="lastReturnTarget" column="last_return_target"/>
+        <result property="lastReturnComment" column="last_return_comment"/>
+        <result property="lastReviewBy" column="last_review_by"/>
+        <result property="lastReviewByName" column="last_review_by_name"/>
+        <result property="lastReviewTime" column="last_review_time"/>
         <result property="submitTime" column="submit_time"/>
+        <result property="approvedTime" column="approved_time"/>
         <result property="createTime" column="create_time"/>
     </resultMap>
 
@@ -28,26 +39,64 @@
         <result property="workPlan" column="work_plan"/>
         <result property="workContent" column="work_content"/>
         <result property="remark" column="remark"/>
+        <result property="currentApprovalNode" column="current_approval_node"/>
+        <result property="currentHandlerUserId" column="current_handler_user_id"/>
+        <result property="currentHandlerUserName" column="current_handler_user_name"/>
+        <result property="currentFlowOrder" column="current_flow_order"/>
+        <result property="finalApproverUserId" column="final_approver_user_id"/>
+        <result property="lastReturnTarget" column="last_return_target"/>
+        <result property="lastReturnComment" column="last_return_comment"/>
+        <result property="lastReviewByName" column="last_review_by_name"/>
+        <result property="lastReviewTime" column="last_review_time"/>
         <result property="submitTime" column="submit_time"/>
+        <result property="approvedTime" column="approved_time"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <resultMap id="WeeklyWorkApprovalLogMap" type="com.example.lecturesystem.modules.weeklywork.vo.WeeklyWorkApprovalLogVO">
+        <id property="id" column="id"/>
+        <result property="weeklyWorkId" column="weekly_work_id"/>
+        <result property="action" column="action"/>
+        <result property="fromNode" column="from_node"/>
+        <result property="toNode" column="to_node"/>
+        <result property="reviewerUserId" column="reviewer_user_id"/>
+        <result property="reviewerName" column="reviewer_name"/>
+        <result property="comment" column="comment"/>
         <result property="createTime" column="create_time"/>
     </resultMap>
 
     <select id="findByUserIdAndWeekNo" resultMap="WeeklyWorkEntityMap">
-        SELECT id, unit_id, user_id, week_no, status, work_plan, work_content, remark, submit_time, create_time
+        SELECT id, unit_id, user_id, week_no, status, work_plan, work_content, remark,
+               current_approval_node, current_handler_user_id, current_handler_user_name, current_flow_order,
+               final_approver_user_id, last_return_target, last_return_comment, last_review_by, last_review_by_name,
+               last_review_time, submit_time, approved_time, create_time
         FROM weekly_work
         WHERE user_id = #{userId}
           AND week_no = #{weekNo}
     </select>
 
     <select id="findById" resultMap="WeeklyWorkEntityMap">
-        SELECT id, unit_id, user_id, week_no, status, work_plan, work_content, remark, submit_time, create_time
+        SELECT id, unit_id, user_id, week_no, status, work_plan, work_content, remark,
+               current_approval_node, current_handler_user_id, current_handler_user_name, current_flow_order,
+               final_approver_user_id, last_return_target, last_return_comment, last_review_by, last_review_by_name,
+               last_review_time, submit_time, approved_time, create_time
         FROM weekly_work
         WHERE id = #{id}
     </select>
 
     <insert id="insert" parameterType="com.example.lecturesystem.modules.weeklywork.entity.WeeklyWorkEntity" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO weekly_work (unit_id, user_id, week_no, status, work_plan, work_content, remark)
-        VALUES (#{unitId}, #{userId}, #{weekNo}, #{status}, #{workPlan}, #{workContent}, #{remark})
+        INSERT INTO weekly_work (
+            unit_id, user_id, week_no, status, work_plan, work_content, remark,
+            current_approval_node, current_handler_user_id, current_handler_user_name, current_flow_order,
+            final_approver_user_id, last_return_target, last_return_comment, last_review_by, last_review_by_name,
+            last_review_time, approved_time
+        )
+        VALUES (
+            #{unitId}, #{userId}, #{weekNo}, #{status}, #{workPlan}, #{workContent}, #{remark},
+            #{currentApprovalNode}, #{currentHandlerUserId}, #{currentHandlerUserName}, #{currentFlowOrder},
+            #{finalApproverUserId}, #{lastReturnTarget}, #{lastReturnComment}, #{lastReviewBy}, #{lastReviewByName},
+            #{lastReviewTime}, #{approvedTime}
+        )
     </insert>
 
     <update id="updateDraft" parameterType="com.example.lecturesystem.modules.weeklywork.entity.WeeklyWorkEntity">
@@ -56,22 +105,66 @@
             work_plan = #{workPlan},
             work_content = #{workContent},
             remark = #{remark},
+            current_approval_node = #{currentApprovalNode},
+            current_handler_user_id = NULL,
+            current_handler_user_name = NULL,
+            current_flow_order = NULL,
+            final_approver_user_id = NULL,
+            approved_time = NULL,
             submit_time = NULL
         WHERE id = #{id}
     </update>
 
     <update id="markSubmitted">
         UPDATE weekly_work
-        SET status = 'SUBMITTED',
+        SET status = #{status},
+            current_approval_node = #{currentApprovalNode},
+            current_handler_user_id = #{currentHandlerUserId},
+            current_handler_user_name = #{currentHandlerUserName},
+            current_flow_order = #{currentFlowOrder},
+            final_approver_user_id = #{finalApproverUserId},
+            last_return_target = NULL,
+            last_return_comment = NULL,
+            last_review_by = NULL,
+            last_review_by_name = NULL,
+            last_review_time = NULL,
+            approved_time = #{approvedTime},
             submit_time = #{submitTime}
         WHERE id = #{id}
     </update>
 
-    <update id="updateStatus">
+    <update id="updateApproval" parameterType="com.example.lecturesystem.modules.weeklywork.entity.WeeklyWorkEntity">
         UPDATE weekly_work
-        SET status = #{status}
+        SET status = #{status},
+            current_approval_node = #{currentApprovalNode},
+            current_handler_user_id = #{currentHandlerUserId},
+            current_handler_user_name = #{currentHandlerUserName},
+            current_flow_order = #{currentFlowOrder},
+            final_approver_user_id = #{finalApproverUserId},
+            last_return_target = #{lastReturnTarget},
+            last_return_comment = #{lastReturnComment},
+            last_review_by = #{lastReviewBy},
+            last_review_by_name = #{lastReviewByName},
+            last_review_time = #{lastReviewTime},
+            approved_time = #{approvedTime}
         WHERE id = #{id}
     </update>
+
+    <insert id="insertApprovalLog" parameterType="com.example.lecturesystem.modules.weeklywork.entity.WeeklyWorkApprovalLogEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO weekly_work_approval_log (
+            weekly_work_id, action, from_node, to_node, reviewer_user_id, reviewer_name, comment
+        )
+        VALUES (
+            #{weeklyWorkId}, #{action}, #{fromNode}, #{toNode}, #{reviewerUserId}, #{reviewerName}, #{comment}
+        )
+    </insert>
+
+    <select id="queryApprovalLogs" resultMap="WeeklyWorkApprovalLogMap">
+        SELECT id, weekly_work_id, action, from_node, to_node, reviewer_user_id, reviewer_name, comment, create_time
+        FROM weekly_work_approval_log
+        WHERE weekly_work_id = #{weeklyWorkId}
+        ORDER BY create_time DESC, id DESC
+    </select>
 
     <select id="countDistinctSubmittedUsers" resultType="long">
         SELECT COUNT(DISTINCT w.user_id)
@@ -102,7 +195,17 @@
                w.work_plan,
                w.work_content,
                w.remark,
+               w.current_approval_node,
+               w.current_handler_user_id,
+               w.current_handler_user_name,
+               w.current_flow_order,
+               w.final_approver_user_id,
+               w.last_return_target,
+               w.last_return_comment,
+               w.last_review_by_name,
+               w.last_review_time,
                w.submit_time,
+               w.approved_time,
                w.create_time
         FROM weekly_work w
         INNER JOIN sys_user u ON u.id = w.user_id

@@ -1,5 +1,8 @@
 <template>
   <AppPageShell :title="pageShellTitle">
+    <template #title-extra>
+      <PageHelp page-key="weeklyWork" />
+    </template>
     <template #actions>
       <div class="action-row">
         <van-button
@@ -157,44 +160,25 @@
             <span v-if="item.status !== 'DRAFT'" class="report-compact-chip">{{ currentStageText(item) }}</span>
           </div>
           <div class="report-preview report-preview--mine task-text-block">任务概览：{{ summarizeTask(item) }}</div>
+          <div v-if="item.status !== 'DRAFT'" class="workflow-brief workflow-brief--calendar">
+            {{ workflowBriefText(item) }}
+          </div>
           <div class="calendar-record-card__actions">
             <van-button
-              v-if="showCardDetailAction(item)"
               size="small"
               plain
               type="primary"
               :disabled="pageBusy"
-              @click.stop="openDetail(item, { syncCurrent: true })"
+              @click.stop="handleCardPrimaryAction(item, { source: 'calendar' })"
             >
-              查看详情
-            </van-button>
-            <van-button
-              v-if="showCardEditAction(item)"
-              size="small"
-              plain
-              type="primary"
-              :disabled="pageBusy"
-              @click.stop="openEditForm(item)"
-            >
-              继续编辑
-            </van-button>
-            <van-button
-              v-if="showCardSubmitAction(item)"
-              size="small"
-              plain
-              type="primary"
-              :loading="submitTargetId === item.id"
-              :disabled="pageBusy || !canSubmit(item)"
-              @click.stop="handleSubmitFromList(item)"
-            >
-              提交到下一步
+              {{ cardPrimaryActionLabel(item, { source: 'calendar' }) }}
             </van-button>
           </div>
         </button>
       </div>
     </section>
 
-    <section v-if="isEditorPage" class="task-board">
+    <section v-if="isEditorPage" class="task-board" data-guide="weekly-task-board">
       <div class="editor-workbench">
         <div class="task-board__header">
           <div>
@@ -271,7 +255,7 @@
         </van-button>
       </div>
 
-      <div v-if="showEditorActionPanel" class="editor-action-panel">
+      <div v-if="showEditorActionPanel" class="editor-action-panel" data-guide="weekly-submit">
         <div class="editor-action-panel__info">
           <div class="editor-action-panel__title">当前周报操作</div>
           <div class="editor-action-panel__desc">先保存，再决定是否提交到下一步。</div>
@@ -352,14 +336,35 @@
         <div class="audit-mode-card__hint">
           {{ activeRecordTab === 'pending' ? '顶部已切换为审核摘要视角，继续通过详情页和审批操作区完成处理。' : '顶部保持审核回看视角，可连续查看已处理记录而不会误入编辑态。' }}
         </div>
+        <div class="audit-mode-card__actions">
+          <van-button
+            type="primary"
+            size="small"
+            :disabled="pageBusy"
+            @click="handleAuditFocusPrimaryAction"
+          >
+            {{ cardPrimaryActionLabel(auditFocusRecord) }}
+          </van-button>
+        </div>
       </div>
       <div v-else class="audit-mode-empty">
         <div class="audit-mode-empty__title">{{ activeRecordTab === 'pending' ? '暂无待审核记录' : '暂无已审核记录' }}</div>
         <div class="audit-mode-empty__desc">顶部已切换为审核模式，不再默认呈现填报编辑区。</div>
+        <div class="audit-mode-card__actions">
+          <van-button
+            plain
+            type="primary"
+            size="small"
+            :disabled="pageBusy"
+            @click="handleRecordTabChange('mine')"
+          >
+            返回我的填报
+          </van-button>
+        </div>
       </div>
     </section>
 
-    <section v-if="!isEditorPage" class="record-board">
+    <section v-if="!isEditorPage" class="record-board" data-guide="weekly-record-board">
       <div class="record-board__header">
         <div>
           <div class="panel-title">周报</div>
@@ -391,6 +396,27 @@
       >
         <div class="record-focus-banner__title">{{ currentViewBannerTitle }}</div>
         <div class="record-focus-banner__desc">{{ currentViewBannerDesc }}</div>
+      </div>
+
+      <div v-if="isAuditTab" class="audit-query-bar">
+        <van-field
+          v-model.trim="auditQueryKeyword"
+          placeholder="按周次、填报人、任务内容搜索当前列表"
+          :disabled="pageBusy"
+        />
+        <div class="audit-query-bar__summary">
+          <span>{{ auditQuerySummaryText }}</span>
+          <van-button
+            v-if="auditQueryKeyword"
+            size="small"
+            plain
+            type="primary"
+            :disabled="pageBusy"
+            @click="auditQueryKeyword = ''"
+          >
+            清空搜索
+          </van-button>
+        </div>
       </div>
 
       <div v-if="isAuditTab && currentTabRecords.length" class="audit-record-toggle">
@@ -449,22 +475,8 @@
                 </div>
                 <template v-else>
                   <div class="report-meta">任务数：{{ recordTaskCount(item) }}</div>
-                  <div class="report-stage-strip">
-                    <div class="report-stage-chip report-stage-chip--current">
-                      <span class="report-stage-chip__label">当前阶段</span>
-                      <strong class="report-stage-chip__value">{{ currentStageText(item) }}</strong>
-                    </div>
-                    <div class="report-stage-chip" :class="{ 'report-stage-chip--next': nextFlowStepText(item) !== '无下一步' }">
-                      <span class="report-stage-chip__label">下一步</span>
-                      <strong class="report-stage-chip__value">{{ nextFlowStepText(item) }}</strong>
-                    </div>
-                    <div class="report-stage-chip" :class="{ 'report-stage-chip--return': returnTargetText(item) !== '无退回目标' }">
-                      <span class="report-stage-chip__label">退回目标</span>
-                      <strong class="report-stage-chip__value">{{ returnTargetText(item) }}</strong>
-                    </div>
-                  </div>
-                  <div class="report-meta">当前状态：{{ statusLabel(item.status, item) }}</div>
-                  <div class="report-meta">当前流转目标：{{ currentFlowTargetText(item) }}</div>
+                  <div class="workflow-brief">{{ workflowBriefText(item) }}</div>
+                  <div class="workflow-chain">{{ flowChainSummary(item) }}</div>
                   <div class="report-flow-stepper">
                     <div
                       v-for="step in buildFlowNodes(item)"
@@ -485,44 +497,12 @@
               <template #footer>
                 <div class="card-actions">
                   <van-button
-                    v-if="showCardDetailAction(item)"
                     size="small"
-                    plain
                     type="primary"
                     :disabled="pageBusy"
-                    @click.stop="openDetail(item, { syncCurrent: activeRecordTab === 'mine' })"
+                    @click.stop="handleCardPrimaryAction(item)"
                   >
-                    查看详情
-                  </van-button>
-                  <van-button
-                    v-if="showCardEditAction(item)"
-                    size="small"
-                    plain
-                    type="primary"
-                    :disabled="pageBusy"
-                    @click.stop="openEditForm(item)"
-                  >
-                    继续编辑
-                  </van-button>
-                  <van-button
-                    v-if="showCardSubmitAction(item)"
-                    size="small"
-                    plain
-                    type="primary"
-                    :loading="submitTargetId === item.id"
-                    :disabled="pageBusy || !canSubmit(item)"
-                    @click.stop="handleSubmitFromList(item)"
-                  >
-                    提交到下一步
-                  </van-button>
-                  <van-button
-                    v-if="showCardReviewAction(item)"
-                    size="small"
-                    type="primary"
-                    :disabled="pageBusy || !canReview(item)"
-                    @click.stop="openDetail(item, { syncCurrent: false })"
-                  >
-                    立即审核
+                    {{ cardPrimaryActionLabel(item) }}
                   </van-button>
                 </div>
               </template>
@@ -543,7 +523,7 @@
       <div class="detail-panel">
         <div class="detail-header">
           <div class="detail-title">详情</div>
-          <van-button plain size="small" :disabled="detailLoading" @click="handleExitView">关闭</van-button>
+          <van-button plain size="small" :disabled="detailLoading || pageBusy" @click="handleExitView">关闭</van-button>
         </div>
         <div v-if="detailLoading" class="detail-loading-card">
           <van-loading size="24px" vertical class="state-block">{{ detailLoadingLabel }}</van-loading>
@@ -584,6 +564,10 @@
                 <span class="detail-summary-kv__value">{{ formatDateTime(resolveRecordUpdatedAt(detailRecord)) }}</span>
               </div>
             </div>
+            <div class="workflow-brief workflow-brief--detail">
+              {{ workflowBriefText(detailRecord) }}
+            </div>
+            <div class="workflow-chain workflow-chain--detail">{{ flowChainSummary(detailRecord) }}</div>
             <div v-if="shouldShowReturnSummary(detailRecord) && recordReturnSummary(detailRecord)" class="detail-summary-card__return">
               最近退回：{{ recordReturnSummary(detailRecord) }}
             </div>
@@ -644,6 +628,15 @@
             </div>
             <div class="approval-action-grid">
               <van-button
+                plain
+                type="primary"
+                size="large"
+                :disabled="pageBusy"
+                @click="handleExitView"
+              >
+                关闭
+              </van-button>
+              <van-button
                 v-if="canReview(detailRecord)"
                 type="primary"
                 size="large"
@@ -667,12 +660,35 @@
               </van-button>
             </div>
           </div>
+          <div v-else-if="isAuditTab" class="detail-block approval-action-card">
+            <div class="detail-label">操作</div>
+            <div class="approval-action-grid approval-action-grid--single">
+              <van-button
+                plain
+                type="primary"
+                size="large"
+                :disabled="pageBusy"
+                @click="handleExitView"
+              >
+                关闭
+              </van-button>
+            </div>
+          </div>
         </template>
         <div v-else class="detail-empty-card">
           <div class="detail-empty-card__title">当前没有可查看的周报详情</div>
           <div class="detail-empty-card__desc">
             {{ isAuditTab ? '当前分区暂无聚焦记录，切换其他记录或等待新的审批数据。' : '请先从我的填报中选择一条记录，或先新建周报。' }}
           </div>
+          <van-button
+            plain
+            type="primary"
+            size="small"
+            :disabled="pageBusy"
+            @click="handleExitView"
+          >
+            关闭
+          </van-button>
         </div>
       </div>
     </van-popup>
@@ -786,6 +802,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
 import { useRoute, useRouter } from 'vue-router'
 import AppPageShell from '@/components/layout/AppPageShell.vue'
+import PageHelp from '@/components/PageHelp.vue'
 import { queryOrgAncestors, queryOrgChildren } from '@/api/orgtree'
 import { useUserStore } from '@/stores/user'
 import {
@@ -905,6 +922,7 @@ const taskNatureOptions = [
 const isEditorPage = computed(() => route.path === '/weekly-work/editor')
 const routeRecordId = computed(() => Number(route.query.id || 0) || null)
 const routeDraftDate = computed(() => normalizeDateInput(route.query.date))
+const auditQueryKeyword = ref('')
 const pageShellTitle = computed(() => isEditorPage.value ? '周报编辑' : '周报总览')
 const showCreateEntry = computed(() => false)
 const showHeroSection = computed(() => false)
@@ -1085,14 +1103,54 @@ const showRecordGroupHint = computed(() => showAuditRecordTabs.value)
 const showFlowLegend = computed(() => showAuditRecordTabs.value || activeRecordTab.value !== 'mine')
 const showAuditRecordList = computed(() => isMineTab.value || auditRecordsExpanded.value)
 const auditRecordToggleLabel = computed(() => auditRecordsExpanded.value ? '收起记录' : '展开记录')
+
+function shouldExpandAuditRecords(tabKey) {
+  return tabKey === 'pending' || tabKey === 'processed'
+}
+
 const currentTabRecords = computed(() => {
+  const keyword = auditQueryKeyword.value.trim()
+  const filterAuditRecord = (item) => {
+    if (!keyword) {
+      return true
+    }
+    const haystacks = [
+      item?.weekNo,
+      item?.realName,
+      item?.username,
+      summarizeTask(item),
+      currentStageText(item),
+      recordReturnSummary(item)
+    ]
+    return haystacks.some((value) => String(value || '').includes(keyword))
+  }
   if (activeRecordTab.value === 'pending') {
-    return pendingReviewRecords.value
+    return pendingReviewRecords.value.filter(filterAuditRecord)
   }
   if (activeRecordTab.value === 'processed') {
-    return processedReviewRecords.value
+    return processedReviewRecords.value.filter(filterAuditRecord)
   }
   return myWeeklyRecords.value
+})
+const auditSourceRecordCount = computed(() => {
+  if (activeRecordTab.value === 'pending') {
+    return pendingReviewRecords.value.length
+  }
+  if (activeRecordTab.value === 'processed') {
+    return processedReviewRecords.value.length
+  }
+  return myWeeklyRecords.value.length
+})
+const auditQuerySummaryText = computed(() => {
+  if (!isAuditTab.value) {
+    return ''
+  }
+  if (!auditQueryKeyword.value.trim()) {
+    return activeRecordTab.value === 'pending'
+      ? `当前共 ${auditSourceRecordCount.value} 条待审核记录`
+      : `当前共 ${auditSourceRecordCount.value} 条已审核记录，默认收起列表`
+  }
+  return `关键词“${auditQueryKeyword.value.trim()}”命中 ${currentTabRecords.value.length} / ${auditSourceRecordCount.value} 条记录`
 })
 const showTransitionPlaceholder = computed(() => {
   return focusTransitioning.value || (isAuditTab.value && detailLoading.value)
@@ -2698,6 +2756,42 @@ function canSubmit(item) {
   )
 }
 
+function cardPrimaryActionLabel(item, options = {}) {
+  const source = options.source || 'list'
+  if (activeRecordTab.value === 'pending') {
+    return '进入审核'
+  }
+  if (activeRecordTab.value === 'processed') {
+    return '查看记录'
+  }
+  if (canEdit(item)) {
+    return source === 'calendar' ? '继续处理' : '继续处理'
+  }
+  return '查看详情'
+}
+
+function handleCardPrimaryAction(item, options = {}) {
+  if (!item || pageBusy.value) {
+    return
+  }
+  if (activeRecordTab.value === 'pending') {
+    openDetail(item, { syncCurrent: false })
+    return
+  }
+  if (canEdit(item)) {
+    openEditForm(item)
+    return
+  }
+  openDetail(item, { syncCurrent: activeRecordTab.value === 'mine' || options.source === 'calendar' })
+}
+
+function handleAuditFocusPrimaryAction() {
+  if (!auditFocusRecord.value) {
+    return
+  }
+  handleCardPrimaryAction(auditFocusRecord.value)
+}
+
 function showCardEditAction(item) {
   return activeRecordTab.value === 'mine' && canEdit(item)
 }
@@ -2895,6 +2989,21 @@ function flowChainSummary(record = null) {
     return '未生成审批链'
   }
   return nodes.map((node) => node.label || approvalNodeLabel(node, record)).join(' -> ')
+}
+
+function workflowBriefText(record = null) {
+  if (!record) {
+    return '当前未选择周报'
+  }
+  const segments = [`当前：${currentStageText(record)}`]
+  const nextStep = nextFlowStepText(record)
+  if (nextStep && nextStep !== '无下一步') {
+    segments.push(`下一步：${nextStep}`)
+  }
+  if (record.status === 'RETURNED') {
+    segments.push(`退回：${returnTargetText(record)}`)
+  }
+  return segments.join(' · ')
 }
 
 function flowNodeStateLabel(nodeOrState, record = null) {
@@ -3162,7 +3271,8 @@ function handleRecordTabChange(tabKey) {
   beginFocusTransition(tabKey === 'mine' ? '正在切换填报分区' : '正在切换审核分区')
   const nextFocusRecord = resolveFocusRecordForTab(tabKey)
   activeRecordTab.value = tabKey
-  auditRecordsExpanded.value = tabKey === 'mine'
+  auditQueryKeyword.value = ''
+  auditRecordsExpanded.value = shouldExpandAuditRecords(tabKey)
   activeRecordId.value = nextFocusRecord?.id ?? null
   if (!nextFocusRecord) {
     if (isAuditTab.value) {
@@ -3337,6 +3447,8 @@ async function syncPageStateFromRoute() {
   const targetDate = routeDraftDate.value || formatDateKey(new Date())
 
   activeRecordTab.value = routeTab
+  auditQueryKeyword.value = ''
+  auditRecordsExpanded.value = shouldExpandAuditRecords(routeTab)
   selectedCalendarDate.value = targetDate
   calendarCursor.value = getMonthStart(targetDate)
 
@@ -3389,6 +3501,18 @@ watch(
   () => route.fullPath,
   () => {
     syncPageStateFromRoute()
+  }
+)
+
+watch(
+  () => activeRecordTab.value,
+  (tabKey, previousTabKey) => {
+    if (tabKey === previousTabKey) {
+      return
+    }
+    if (tabKey === 'processed') {
+      auditRecordsExpanded.value = false
+    }
   }
 )
 
@@ -3689,6 +3813,14 @@ watch(showAuditRecordTabs, (visible) => {
   color: #64748b;
 }
 
+.audit-mode-card__actions {
+  margin-top: 12px;
+}
+
+.audit-mode-card__actions :deep(.van-button) {
+  min-width: 112px;
+}
+
 .audit-mode-empty {
   margin-top: 14px;
   padding: 16px;
@@ -3805,6 +3937,25 @@ watch(showAuditRecordTabs, (visible) => {
 
 .record-focus-banner__desc {
   margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #64748b;
+}
+
+.audit-query-bar {
+  margin-bottom: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid #dbe3ef;
+  background: linear-gradient(180deg, #f8fafc, #ffffff);
+}
+
+.audit-query-bar__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
   font-size: 12px;
   line-height: 1.6;
   color: #64748b;
@@ -4228,7 +4379,7 @@ watch(showAuditRecordTabs, (visible) => {
 }
 
 .card-actions {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .card-actions :deep(.van-button),
@@ -4423,6 +4574,36 @@ watch(showAuditRecordTabs, (visible) => {
   color: #334155;
 }
 
+.workflow-brief {
+  margin: 8px 0 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f8fafc, #ffffff);
+  border: 1px solid #dbe3ef;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #334155;
+}
+
+.workflow-brief--calendar {
+  margin-top: 8px;
+}
+
+.workflow-brief--detail {
+  margin-top: 12px;
+}
+
+.workflow-chain {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #64748b;
+}
+
+.workflow-chain--detail {
+  margin-top: 6px;
+}
+
 .task-text-block {
   white-space: pre-wrap;
   word-break: break-word;
@@ -4520,6 +4701,11 @@ watch(showAuditRecordTabs, (visible) => {
   font-size: 13px;
   line-height: 1.7;
   color: #64748b;
+}
+
+.detail-empty-card :deep(.van-button) {
+  margin-top: 12px;
+  min-width: 104px;
 }
 
 .detail-summary-card {
@@ -4697,6 +4883,10 @@ watch(showAuditRecordTabs, (visible) => {
   display: grid;
   gap: 10px;
   margin-top: 12px;
+}
+
+.approval-action-grid--single {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .approval-action-grid :deep(.van-button) {
@@ -5043,6 +5233,11 @@ watch(showAuditRecordTabs, (visible) => {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
+
+.calendar-record-card__actions :deep(.van-button),
+.card-actions :deep(.van-button) {
+  min-width: 104px;
 }
 
 .audit-mode-card--placeholder {

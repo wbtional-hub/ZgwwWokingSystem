@@ -1,13 +1,19 @@
 <template>
   <AppPageShell class="orgtree-page" title="组织架构" description="当前页已接入最小可用组织工作流：树展示、新增、编辑、删除和启停。">
+    <template #title-extra>
+      <PageHelp page-key="orgTree" />
+    </template>
     <template #actions>
-      <div class="hero-actions">
+      <div class="hero-actions" data-guide="org-module-permission">
         <van-button type="primary" :loading="state.loading" @click="refreshTree">刷新组织树</van-button>
         <van-button plain type="success" :disabled="!state.selectedNode" @click="openCreateDialog(state.selectedNode)">
           为当前节点新增下级
         </van-button>
         <van-button plain type="warning" :disabled="!state.selectedNode" @click="openEditDialog(state.selectedNode)">
           编辑当前节点
+        </van-button>
+        <van-button plain type="primary" :disabled="!state.selectedNode" @click="openModulePermissionDialog(state.selectedNode)">
+          配置可访问模块
         </van-button>
       </div>
     </template>
@@ -30,7 +36,7 @@
       <van-empty v-if="!state.tree.length" description="当前没有可展示的组织树数据" />
 
       <div v-else class="page-grid">
-        <section class="tree-panel">
+        <section class="tree-panel" data-guide="org-tree">
           <div class="panel-title">组织树</div>
           <div class="tree-list">
             <OrgTreeNodeItem
@@ -45,7 +51,7 @@
           </div>
         </section>
 
-        <section class="detail-panel">
+        <section class="detail-panel" data-guide="org-detail">
           <div class="panel-title">节点详情</div>
           <van-empty v-if="!state.selectedNode" description="请先在左侧选择一个节点" />
 
@@ -113,6 +119,7 @@
             <div class="detail-actions">
               <van-button block type="success" @click="openCreateDialog(state.selectedNode)">新增下级</van-button>
               <van-button block plain type="primary" @click="openEditDialog(state.selectedNode)">编辑节点</van-button>
+              <van-button block plain type="primary" @click="openModulePermissionDialog(state.selectedNode)">可访问模块</van-button>
               <van-button block plain type="warning" @click="openMoveDialog(state.selectedNode)">调整上级</van-button>
               <van-button
                 block
@@ -226,6 +233,38 @@
     <van-popup v-model:show="state.unitPickerVisible" position="bottom" round>
       <van-picker :columns="unitColumns" @confirm="handleUnitConfirm" @cancel="state.unitPickerVisible = false" />
     </van-popup>
+
+    <van-popup v-model:show="state.modulePermissionVisible" position="bottom" round>
+      <div class="popup-body">
+        <div class="popup-title">可访问模块配置</div>
+        <div class="popup-tip">当前用户：{{ state.modulePermissionUserLabel || '-' }}</div>
+        <div class="popup-tip subtle-tip">首页与个人中心保留为基础页，不参与本轮模块授权配置。</div>
+        <van-loading v-if="state.modulePermissionLoading" class="section-loading" size="18px">模块权限加载中...</van-loading>
+        <template v-else>
+          <van-checkbox-group v-model="state.modulePermissionForm.moduleCodes" class="module-permission-list">
+            <label
+              v-for="item in state.moduleDefinitions"
+              :key="item.moduleCode"
+              class="module-permission-card"
+            >
+              <van-checkbox :name="item.moduleCode" />
+              <div class="module-permission-card__content">
+                <div class="module-permission-card__title">
+                  <span>{{ item.moduleName }}</span>
+                  <span v-if="item.adminOnly" class="module-permission-card__tag">ADMIN</span>
+                </div>
+                <div class="module-permission-card__meta">{{ item.moduleCode }} · {{ item.routePath }}</div>
+              </div>
+            </label>
+          </van-checkbox-group>
+          <van-empty v-if="!state.moduleDefinitions.length" description="当前没有可配置模块" />
+        </template>
+        <div class="popup-actions">
+          <van-button block plain :disabled="state.modulePermissionSaving" @click="state.modulePermissionVisible = false">取消</van-button>
+          <van-button block type="primary" :loading="state.modulePermissionSaving" @click="submitModulePermissions">保存配置</van-button>
+        </div>
+      </div>
+    </van-popup>
   </AppPageShell>
 </template>
 
@@ -233,8 +272,16 @@
 import { computed, onMounted, reactive } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
 import AppPageShell from '@/components/layout/AppPageShell.vue'
+import PageHelp from '@/components/PageHelp.vue'
 import PageSkeletonSection from '@/components/layout/PageSkeletonSection.vue'
 import OrgTreeNodeItem from '@/components/orgtree/OrgTreeNodeItem.vue'
+import { useUserStore } from '@/stores/user'
+import {
+  queryCurrentUserModulePermissionsApi,
+  queryModuleDefinitionListApi,
+  queryUserModulePermissionsApi,
+  saveUserModulePermissionsApi
+} from '@/api/user-module-permission'
 import {
   createChildUser,
   deleteOrgNode,
@@ -246,6 +293,8 @@ import {
   toggleOrgNodeStatus,
   updateOrgNode
 } from '@/api/orgtree'
+
+const userStore = useUserStore()
 
 function ensureSuccess(response) {
   if (!response || response.code !== 0) {
@@ -303,6 +352,15 @@ const state = reactive({
   unitOptions: [],
   unitPickerMode: 'create',
   unitPickerVisible: false,
+  modulePermissionVisible: false,
+  modulePermissionLoading: false,
+  modulePermissionSaving: false,
+  modulePermissionUserLabel: '',
+  moduleDefinitions: [],
+  modulePermissionForm: {
+    userId: null,
+    moduleCodes: []
+  },
   moveForm: {
     userId: null,
     targetParentUserId: null
@@ -469,6 +527,27 @@ function openEditDialog(node) {
   state.editVisible = true
 }
 
+async function openModulePermissionDialog(node) {
+  const normalized = normalizeNode(node)
+  state.modulePermissionVisible = true
+  state.modulePermissionLoading = true
+  state.modulePermissionUserLabel = `${normalized.realName || normalized.username} · ${normalized.username}`
+  state.modulePermissionForm.userId = normalized.id
+  state.modulePermissionForm.moduleCodes = []
+  try {
+    if (!state.moduleDefinitions.length) {
+      state.moduleDefinitions = ensureSuccess(await queryModuleDefinitionListApi()) || []
+    }
+    const permissionData = ensureSuccess(await queryUserModulePermissionsApi(normalized.id)) || {}
+    state.modulePermissionForm.moduleCodes = Array.isArray(permissionData.moduleCodes) ? [...permissionData.moduleCodes] : []
+  } catch (error) {
+    state.modulePermissionVisible = false
+    showToast(error.message || '模块权限加载失败')
+  } finally {
+    state.modulePermissionLoading = false
+  }
+}
+
 function openMoveDialog(node) {
   const normalized = normalizeNode(node)
   state.moveForm.userId = normalized.id
@@ -602,6 +681,32 @@ async function submitMove() {
     showToast(error.message || '调整上级失败')
   } finally {
     state.submittingMove = false
+  }
+}
+
+async function submitModulePermissions() {
+  if (!state.modulePermissionForm.userId) {
+    showToast('请先选择节点')
+    return
+  }
+  state.modulePermissionSaving = true
+  try {
+    ensureSuccess(await saveUserModulePermissionsApi(state.modulePermissionForm.userId, {
+      userId: state.modulePermissionForm.userId,
+      moduleCodes: state.modulePermissionForm.moduleCodes
+    }))
+    if (Number(userStore.userInfo?.userId) === Number(state.modulePermissionForm.userId)) {
+      const currentPermissionData = ensureSuccess(await queryCurrentUserModulePermissionsApi()) || {}
+      userStore.setAccessContext({
+        moduleCodes: Array.isArray(currentPermissionData.moduleCodes) ? currentPermissionData.moduleCodes : []
+      })
+    }
+    state.modulePermissionVisible = false
+    showToast('模块权限保存成功')
+  } catch (error) {
+    showToast(error.message || '模块权限保存失败')
+  } finally {
+    state.modulePermissionSaving = false
   }
 }
 
@@ -828,6 +933,54 @@ function trimToNull(value) {
 
 .popup-body {
   padding: 16px;
+}
+
+.module-permission-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.module-permission-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.module-permission-card__content {
+  min-width: 0;
+}
+
+.module-permission-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.module-permission-card__meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6b7280;
+  word-break: break-all;
+}
+
+.module-permission-card__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .subtle-tip {

@@ -93,6 +93,7 @@
         INNER JOIN sys_user u ON u.id = s.user_id
         LEFT JOIN sys_org_unit su ON su.id = s.unit_id
         WHERE u.is_deleted = FALSE
+          AND s.week_no &lt;= #{weekNo}
         <if test="unitName != null and unitName != ''">
             AND su.unit_name LIKE CONCAT('%', #{unitName}, '%')
         </if>

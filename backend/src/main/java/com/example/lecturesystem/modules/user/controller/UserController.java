@@ -23,7 +23,7 @@ public class UserController {
     }
 
     @GetMapping("/users/{userId}")
-    public ApiResponse<?> detail(@PathVariable Long userId) {
+    public ApiResponse<?> detail(@PathVariable("userId") Long userId) {
         return ApiResponse.success(userService.detail(userId));
     }
 
@@ -33,14 +33,14 @@ public class UserController {
     }
 
     @PutMapping("/users/{userId}")
-    public ApiResponse<?> updateById(@PathVariable Long userId, @Validated @RequestBody UpdateUserRequest request) {
+    public ApiResponse<?> updateById(@PathVariable("userId") Long userId, @Validated @RequestBody UpdateUserRequest request) {
         request.setId(userId);
         userService.updateUser(request);
         return ApiResponse.success("ok");
     }
 
     @DeleteMapping("/users/{userId}")
-    public ApiResponse<?> delete(@PathVariable Long userId) {
+    public ApiResponse<?> delete(@PathVariable("userId") Long userId) {
         userService.deleteUser(userId);
         return ApiResponse.success("ok");
     }
@@ -54,7 +54,7 @@ public class UserController {
 
     // 兼容当前骨架里的旧接口，避免已有调用被破坏。
     @PostMapping("/user/reset-password/{userId}")
-    public ApiResponse<?> resetPassword(@PathVariable Long userId) {
+    public ApiResponse<?> resetPassword(@PathVariable("userId") Long userId) {
         userService.resetPassword(userId);
         return ApiResponse.success("ok");
     }

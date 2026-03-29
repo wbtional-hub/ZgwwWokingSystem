@@ -1,0 +1,14 @@
+package com.example.lecturesystem.modules.aipermission.dto;
+
+public class UserSkillPermissionQueryRequest {
+    private Long userId;
+    private Long skillId;
+    private Integer status;
+
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
+    public Long getSkillId() { return skillId; }
+    public void setSkillId(Long skillId) { this.skillId = skillId; }
+    public Integer getStatus() { return status; }
+    public void setStatus(Integer status) { this.status = status; }
+}

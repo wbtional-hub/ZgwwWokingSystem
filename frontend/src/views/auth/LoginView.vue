@@ -18,6 +18,8 @@ import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { loginApi } from '@/api/auth'
 import { useUserStore } from '@/stores/user'
+import { queryCurrentUserModulePermissionsApi } from '@/api/user-module-permission'
+import { buildAccessContext, findFirstAccessiblePath } from '@/constants/modules'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -39,15 +41,22 @@ const handleSubmit = async () => {
     if (res.code !== 0 || !res.data?.token) {
       throw new Error(res.message || '登录失败')
     }
-    localStorage.setItem('token', res.data.token)
-    localStorage.setItem('userInfo', JSON.stringify(res.data))
     userStore.setLogin(res.data)
+    const moduleResponse = await queryCurrentUserModulePermissionsApi()
+    if (moduleResponse.code !== 0) {
+      throw new Error(moduleResponse.message || '模块权限加载失败')
+    }
+    userStore.setAccessContext({
+      userInfo: res.data,
+      moduleCodes: Array.isArray(moduleResponse.data?.moduleCodes) ? moduleResponse.data.moduleCodes : []
+    })
     showToast('登录成功')
-    router.push('/home')
+    router.push(findFirstAccessiblePath(buildAccessContext(userStore.userInfo)))
   } catch (error) {
     const message = error.response?.data?.message || error.message || '登录失败'
     console.error('[login failed]', error.response?.data || error)
     showToast(message)
+    userStore.clearLogin()
   } finally {
     state.submitting = false
   }
