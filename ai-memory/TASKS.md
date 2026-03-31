@@ -3,6 +3,49 @@
 ## 高优先级任务
 
 ### 任务名称
+知识库页改成业主可维护工作面
+
+说明：
+已完成。知识库中心已改成更适合业主使用的一页式管理页：主表单不再手填编码，新增时由后端自动生成；列表中可直接看见名称、分类、简介、状态、当前使用标识与最近更新时间；支持新增、编辑、启停、删除确认和“设为当前使用”。当前工作知识库已从前端临时 `activeBaseId` 收口为后端持久化参数，避免刷新后丢失。
+
+涉及文件：
+- `frontend/src/views/knowledge/KnowledgeBaseListView.vue`
+- `frontend/src/api/knowledge.js`
+- `frontend/src/config/pageHelp.js`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/controller/KnowledgeController.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/service/KnowledgeService.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/service/impl/KnowledgeServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/dto/SaveKnowledgeBaseRequest.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/dto/SetCurrentKnowledgeBaseRequest.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/entity/KnowledgeBaseEntity.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/vo/KnowledgeBaseListItemVO.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/mapper/KnowledgeBaseMapper.java`
+- `backend/src/main/resources/mapper/knowledge/KnowledgeBaseMapper.xml`
+- `database/20260330_ai_knowledge_base_owner_friendly.sql`
+
+### 任务名称
+超级管理员直属新增不继承单位
+
+说明：
+已完成。组织架构页新增下级时，只有“超级管理员在自己节点下新增直属下级”这一种情况不再继承超级管理员单位，而是要求手动选择所属单位；其他用户或其他新增场景仍继续继承上级节点单位。
+
+涉及文件：
+- `frontend/src/views/orgtree/OrgTreeView.vue`
+- `backend/src/main/java/com/example/lecturesystem/modules/orgtree/service/impl/OrgTreeServiceImpl.java`
+
+### 任务名称
+组织架构页恢复设置单位能力
+
+说明：
+已完成。组织架构页继续保持新增下级自动继承上级单位且不可手改；编辑节点时“所属单位”已恢复为可选择、可编辑，且保存时会同步当前节点与全部下级节点的单位，避免子树单位归属不一致。
+
+涉及文件：
+- `frontend/src/views/orgtree/OrgTreeView.vue`
+- `backend/src/main/java/com/example/lecturesystem/modules/orgtree/service/impl/OrgTreeServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/orgtree/mapper/OrgTreeMapper.java`
+- `backend/src/main/resources/mapper/orgtree/OrgTreeMapper.xml`
+
+### 任务名称
 补齐用户模块前端基础交互
 
 说明：
@@ -601,3 +644,83 @@
 - `frontend/node_modules/.vite`
 - `ai-memory/DEV_MEMORY.md`
 - `ai-memory/TASKS.md`
+
+### 任务名称
+知识库模块新增网页导入与折叠反馈信息
+
+说明：
+已完成。知识库管理页已新增“网页导入”面板，支持选择知识库、输入单个网页地址、先抓取预览再确认导入；抓取成功后可回填并人工修正标题、摘要、正文，反馈信息区默认折叠，仅在需要排查时展开并可一键复制给 AI。后端已新增网页抓取预览与确认导入接口，使用 `HttpClient + jsoup` 做静态/半静态页面正文提取，并把导入结果复用到现有知识文档与切片模型；同时新增 SQL 以补充 `ai_knowledge_document.source_url / fetch_time` 字段。
+
+涉及文件：
+- `frontend/src/views/knowledge/KnowledgeBaseListView.vue`
+- `frontend/src/api/knowledge.js`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/controller/KnowledgeController.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/service/KnowledgeService.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/service/impl/KnowledgeServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/dto/WebKnowledgePreviewRequest.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/dto/WebKnowledgeImportRequest.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/vo/WebKnowledgePreviewVO.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/vo/WebKnowledgeImportResultVO.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/entity/KnowledgeDocumentEntity.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/vo/KnowledgeDocumentDetailVO.java`
+- `backend/src/main/resources/mapper/knowledge/KnowledgeDocumentMapper.xml`
+- `backend/pom.xml`
+- `database/20260330_ai_knowledge_web_import.sql`
+
+### 任务名称
+知识库创建人默认权限与同单位授权规则收口
+
+说明：
+已完成。知识库权限不再是“只有管理员才能看到和维护”。当前规则已收口为：知识库创建人默认拥有该库的查看、上传、训练、分析权限；创建人可在知识库管理页直接给其他用户授权，但只能授权本单位人员；超级管理员可跨单位设置所有人的知识库授权。知识库列表、当前权限摘要和知识库页“使用授权”区均已兼容这套规则，且创建人默认权限会作为不可编辑的默认项展示，避免被旧授权记录覆盖。
+
+涉及文件：
+- `frontend/src/views/knowledge/KnowledgeBaseListView.vue`
+- `frontend/src/api/ai.js`
+- `backend/src/main/java/com/example/lecturesystem/modules/aipermission/controller/AiPermissionController.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/aipermission/service/AiPermissionService.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/aipermission/service/impl/AiPermissionServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/mapper/KnowledgeBaseMapper.java`
+- `backend/src/main/resources/mapper/knowledge/KnowledgeBaseMapper.xml`
+
+### 任务名称
+网页导入标题与正文抽取增强
+
+说明：
+已完成。网页导入的抓取预览不再只依赖一套通用规则，而是升级为多级标题策略、多个正文候选容器评分择优、低质量候选自动重试和更细的反馈文本。当前会依次尝试 `h1 / 常见标题类名 / og:title / title / 正文首行` 提取标题，并过滤导航词、站点名和栏目名；正文会尝试常见详情页容器与文本密度候选，对每个候选记录文本长度、评分和低质量原因，最终选择质量最高的候选。反馈信息已补充 HTML 长度、原始 title、发布时间、标题尝试过程、正文候选过程、最终采用策略和导入建议，便于继续复制给 AI 调优。
+
+涉及文件：
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/service/impl/KnowledgeServiceImpl.java`
+- `frontend/src/views/knowledge/KnowledgeBaseListView.vue`
+
+### 任务名称
+网页导入动态页诊断与浏览器渲染兜底
+
+说明：
+已完成。针对“HTTP 200 但 HTML 很短、标题抓不到、正文为空”的网页导入场景，知识库网页抓取已新增疑似动态页诊断与浏览器渲染兜底。普通模式会补齐更接近浏览器的请求头，并检测 `fetch / axios / XMLHttpRequest / iframe / rowId / detailId / contentId` 等异步加载特征；若同时伴随 HTML 偏短、标题缺失、正文极短，则自动触发无头浏览器 `dump-dom` 兜底，再复用现有标题/正文评分逻辑择优返回结果。反馈信息也已新增抓取模式、是否触发兜底、异步特征检测、普通/渲染两种正文长度、最终采用模式、失败类型和建议，便于复制给 AI 继续分析。
+
+涉及文件：
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/service/impl/KnowledgeServiceImpl.java`
+
+### 任务名称
+网页导入请求阶段失败诊断与兜底触发修复
+
+说明：
+已完成。网页导入普通 HTTP 抓取在请求阶段抛异常时，不再被直接吞掉后返回空反馈，而是会生成结构化请求阶段诊断，并继续判断是否触发浏览器渲染兜底。当前反馈信息已能展示请求客户端、请求开始时间、目标地址、最终地址、是否重定向、HTML 长度、HTML 预览、异常类型、异常消息，以及是否超时 / SSL 异常 / DNS 解析异常 / 连接被拒绝；失败类型也已收口为 `DNS解析失败 / 连接超时 / 读取超时 / SSL证书或握手异常 / 连接被拒绝 / 重定向异常 / 返回4xx / 返回5xx / HTML为空 / 其他未知请求异常`。兜底触发条件同步放宽，只要普通模式失败、状态未获取、HTML 为空或过短、标题未获取、正文为空或疑似动态页，就会继续尝试浏览器渲染；若渲染能力未接通，也会在反馈信息里明确说明。
+
+涉及文件：
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/service/impl/KnowledgeServiceImpl.java`
+- `frontend/src/views/knowledge/KnowledgeBaseListView.vue`
+
+### 任务名称
+网页快照导入闭环
+
+说明：
+已完成。知识库模块在现有“网页地址导入”基础上新增了“网页快照导入”子模式，支持上传单个 `.mhtml / .html / .htm` 文件进行解析预览、手工修正标题/摘要/正文后再确认导入。`.html/.htm` 会直接按 HTML 解析；`.mhtml` 会按 MIME multipart 结构提取主 HTML，并兼容 `base64 / quoted-printable / 8bit` 常见正文编码。解析出 HTML 后，会继续复用现有标题提取、正文候选择优、摘要生成和默认折叠反馈信息能力。入库则继续复用 `ai_knowledge_document + ai_knowledge_chunk` 模型，不新增表结构，仅把 `sourceType` 记为 `WEB_SNAPSHOT` 并保留上传的快照文件名与存储路径。
+
+涉及文件：
+- `frontend/src/views/knowledge/KnowledgeBaseListView.vue`
+- `frontend/src/api/knowledge.js`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/controller/KnowledgeController.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/service/KnowledgeService.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/service/impl/KnowledgeServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/knowledge/vo/WebKnowledgePreviewVO.java`

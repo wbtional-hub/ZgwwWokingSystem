@@ -28,4 +28,7 @@ public interface OrgTreeMapper {
                                @Param("newTreePath") String newTreePath,
                                @Param("levelOffset") int levelOffset,
                                @Param("newParentUserId") Long newParentUserId);
+
+    int updateSubtreeUnitId(@Param("treePathPrefix") String treePathPrefix,
+                            @Param("unitId") Long unitId);
 }

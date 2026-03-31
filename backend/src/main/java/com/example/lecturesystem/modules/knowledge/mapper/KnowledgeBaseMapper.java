@@ -13,12 +13,18 @@ import java.util.List;
 public interface KnowledgeBaseMapper {
     List<KnowledgeBaseListItemVO> queryList(@Param("request") KnowledgeBaseQueryRequest request);
     List<KnowledgeBaseListItemVO> queryListByUserId(@Param("userId") Long userId, @Param("request") KnowledgeBaseQueryRequest request);
+    List<KnowledgeBaseListItemVO> queryOwnedByUserId(@Param("userId") Long userId);
     KnowledgeBaseEntity findById(@Param("id") Long id);
     KnowledgeBaseEntity findByCode(@Param("baseCode") String baseCode);
     int insert(KnowledgeBaseEntity entity);
     int update(KnowledgeBaseEntity entity);
+    int logicalDelete(@Param("id") Long id,
+                      @Param("updateUser") String updateUser,
+                      @Param("updateTime") LocalDateTime updateTime);
     int updateStatus(@Param("id") Long id,
                      @Param("status") Integer status,
                      @Param("updateUser") String updateUser,
                      @Param("updateTime") LocalDateTime updateTime);
+    int countDocumentsByBaseId(@Param("baseId") Long baseId);
+    int countChunksByBaseId(@Param("baseId") Long baseId);
 }

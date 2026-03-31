@@ -6,6 +6,7 @@ public interface AiPermissionService {
     Object listUserAiPermissions(UserAiPermissionQueryRequest request);
     void saveUserAiPermission(SaveUserAiPermissionRequest request);
     Object listUserKnowledgePermissions(UserKnowledgePermissionQueryRequest request);
+    Object listGrantableKnowledgeUsers(Long baseId);
     void saveUserKnowledgePermission(SaveUserKnowledgePermissionRequest request);
     Object listUserSkillPermissions(UserSkillPermissionQueryRequest request);
     void saveUserSkillPermission(SaveUserSkillPermissionRequest request);

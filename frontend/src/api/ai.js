@@ -28,6 +28,10 @@ export function queryUserKnowledgePermissionList(data) {
   return request.post('/ai/permission/user-knowledge/list', data)
 }
 
+export function queryGrantableKnowledgeUsers(baseId) {
+  return request.get(`/ai/permission/user-knowledge/grantable-users/${baseId}`)
+}
+
 export function saveUserKnowledgePermission(data) {
   return request.post('/ai/permission/user-knowledge/save', data)
 }

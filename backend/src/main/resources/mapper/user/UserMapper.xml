@@ -76,7 +76,7 @@
 
     <select id="queryPage" resultType="com.example.lecturesystem.modules.user.vo.UserListItemVO">
         SELECT u.id, u.unit_id, su.unit_name, u.username, u.real_name, u.job_title, u.mobile, u.status,
-               parent_user_id, level_no, create_time, update_time
+               u.parent_user_id, u.level_no, u.create_time, u.update_time
         FROM sys_user u
         LEFT JOIN sys_org_unit su ON su.id = u.unit_id
         WHERE u.is_deleted = FALSE
@@ -116,7 +116,7 @@
 
     <select id="queryPageByUserId" resultType="com.example.lecturesystem.modules.user.vo.UserListItemVO">
         SELECT u.id, u.unit_id, su.unit_name, u.username, u.real_name, u.job_title, u.mobile, u.status,
-               parent_user_id, level_no, create_time, update_time
+               u.parent_user_id, u.level_no, u.create_time, u.update_time
         FROM sys_user u
         LEFT JOIN sys_org_unit su ON su.id = u.unit_id
         WHERE u.is_deleted = FALSE
@@ -154,7 +154,7 @@
 
     <select id="queryPageByTreePath" resultType="com.example.lecturesystem.modules.user.vo.UserListItemVO">
         SELECT u.id, u.unit_id, su.unit_name, u.username, u.real_name, u.job_title, u.mobile, u.status,
-               parent_user_id, level_no, create_time, update_time
+               u.parent_user_id, u.level_no, u.create_time, u.update_time
         FROM sys_user u
         LEFT JOIN sys_org_unit su ON su.id = u.unit_id
         WHERE u.is_deleted = FALSE

@@ -9,6 +9,7 @@ public class KnowledgeDocumentEntity {
     private Long categoryId;
     private String docTitle;
     private String sourceType;
+    private String sourceUrl;
     private String fileName;
     private String filePath;
     private String docType;
@@ -18,6 +19,7 @@ public class KnowledgeDocumentEntity {
     private LocalDate expireDate;
     private String keywords;
     private String summary;
+    private LocalDateTime fetchTime;
     private String parseStatus;
     private Integer status;
     private LocalDateTime createTime;
@@ -36,6 +38,8 @@ public class KnowledgeDocumentEntity {
     public void setDocTitle(String docTitle) { this.docTitle = docTitle; }
     public String getSourceType() { return sourceType; }
     public void setSourceType(String sourceType) { this.sourceType = sourceType; }
+    public String getSourceUrl() { return sourceUrl; }
+    public void setSourceUrl(String sourceUrl) { this.sourceUrl = sourceUrl; }
     public String getFileName() { return fileName; }
     public void setFileName(String fileName) { this.fileName = fileName; }
     public String getFilePath() { return filePath; }
@@ -54,6 +58,8 @@ public class KnowledgeDocumentEntity {
     public void setKeywords(String keywords) { this.keywords = keywords; }
     public String getSummary() { return summary; }
     public void setSummary(String summary) { this.summary = summary; }
+    public LocalDateTime getFetchTime() { return fetchTime; }
+    public void setFetchTime(LocalDateTime fetchTime) { this.fetchTime = fetchTime; }
     public String getParseStatus() { return parseStatus; }
     public void setParseStatus(String parseStatus) { this.parseStatus = parseStatus; }
     public Integer getStatus() { return status; }

@@ -1,19 +1,22 @@
 package com.example.lecturesystem.modules.knowledge.dto;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotBlank;
 
 public class SaveKnowledgeBaseRequest {
     private Long id;
 
-    @NotBlank(message = "知识库编码不能为空")
     private String baseCode;
 
     @NotBlank(message = "知识库名称不能为空")
     private String baseName;
 
+    @NotBlank(message = "适用领域不能为空")
     private String domainType;
+
+    @NotBlank(message = "知识库简介不能为空")
     private String description;
+    private String remark;
 
     @NotNull(message = "状态不能为空")
     private Integer status;
@@ -56,6 +59,14 @@ public class SaveKnowledgeBaseRequest {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getRemark() {
+        return remark;
+    }
+
+    public void setRemark(String remark) {
+        this.remark = remark;
     }
 
     public Integer getStatus() {

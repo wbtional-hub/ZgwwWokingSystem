@@ -8,6 +8,7 @@ public class KnowledgeBaseEntity {
     private String baseName;
     private String domainType;
     private String description;
+    private String remark;
     private Integer status;
     private Long ownerUserId;
     private LocalDateTime createTime;
@@ -26,6 +27,8 @@ public class KnowledgeBaseEntity {
     public void setDomainType(String domainType) { this.domainType = domainType; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+    public String getRemark() { return remark; }
+    public void setRemark(String remark) { this.remark = remark; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
     public Long getOwnerUserId() { return ownerUserId; }

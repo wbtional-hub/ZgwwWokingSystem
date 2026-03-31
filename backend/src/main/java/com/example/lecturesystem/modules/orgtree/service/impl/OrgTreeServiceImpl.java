@@ -55,17 +55,24 @@ public class OrgTreeServiceImpl implements OrgTreeService {
         UserEntity parentUser = requireUser(request.getParentUserId(), "上级用户不存在");
         OrgNodeEntity parentNode = ensureParentNodeForCreate(loginUser.getUserId(), request.getParentUserId(), parentUser);
         validateCreatePermission(loginUser.getUserId(), parentNode);
+        boolean skipParentUnitInheritance = permissionService.isSuperAdmin(loginUser.getUserId())
+                && Objects.equals(parentNode.getUserId(), loginUser.getUserId());
 
         if (userMapper.findByUsername(request.getUsername()) != null) {
             throw new IllegalArgumentException("账号已存在");
         }
 
-        if (request.getUnitId() != null && !Objects.equals(request.getUnitId(), parentNode.getUnitId())) {
+        if (!skipParentUnitInheritance
+                && request.getUnitId() != null
+                && !Objects.equals(request.getUnitId(), parentNode.getUnitId())) {
             throw new IllegalArgumentException("新增下级必须继承上级节点所属单位");
+        }
+        if (skipParentUnitInheritance && request.getUnitId() == null) {
+            throw new IllegalArgumentException("请先为该下级节点选择所属单位");
         }
 
         UserEntity newUser = new UserEntity();
-        Long targetUnitId = parentNode.getUnitId();
+        Long targetUnitId = skipParentUnitInheritance ? request.getUnitId() : parentNode.getUnitId();
         newUser.setUnitId(targetUnitId);
         newUser.setUsername(request.getUsername());
         newUser.setPasswordHash(passwordEncoder.encode(request.getPassword()));
@@ -180,16 +187,18 @@ public class OrgTreeServiceImpl implements OrgTreeService {
         UserEntity targetUser = requireUser(request.getUserId(), "当前节点不存在");
         OrgNodeEntity targetNode = requireNode(request.getUserId(), "当前节点不存在");
         validateOperatePermission(loginUser.getUserId(), targetNode);
+        Long nextUnitId = request.getUnitId() != null ? request.getUnitId() : targetNode.getUnitId();
 
         targetUser.setRealName(request.getRealName().trim());
         targetUser.setJobTitle(trimToNull(request.getJobTitle()));
         targetUser.setMobile(trimToNull(request.getMobile()));
-        if (request.getUnitId() != null && !Objects.equals(request.getUnitId(), targetNode.getUnitId())) {
-            throw new IllegalArgumentException("组织树节点单位不可在当前页面直接修改");
-        }
+        targetUser.setUnitId(nextUnitId);
         targetUser.setUpdateTime(LocalDateTime.now());
         targetUser.setUpdateUser(loginUser.getUsername());
         userMapper.updateUser(targetUser);
+        if (!Objects.equals(nextUnitId, targetNode.getUnitId())) {
+            orgTreeMapper.updateSubtreeUnitId(ensureTrailingSlash(targetNode.getTreePath()), nextUnitId);
+        }
     }
 
     @Override

@@ -102,4 +102,11 @@
         WHERE tree_path = #{oldTreePath}
            OR tree_path LIKE #{oldTreePath} || '%'
     </update>
+
+    <update id="updateSubtreeUnitId">
+        UPDATE sys_user
+        SET unit_id = #{unitId}
+        WHERE tree_path = #{treePathPrefix}
+           OR tree_path LIKE #{treePathPrefix} || '%'
+    </update>
 </mapper>

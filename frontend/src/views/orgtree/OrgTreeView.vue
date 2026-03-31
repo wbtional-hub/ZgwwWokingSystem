@@ -154,9 +154,11 @@
             :model-value="createUnitLabel"
             label="所属单位"
             readonly
-            placeholder="自动继承上级节点所属单位"
+            :is-link="canPickCreateUnit"
+            :placeholder="canPickCreateUnit ? '请选择所属单位' : '自动继承上级节点所属单位'"
+            @click="canPickCreateUnit ? openUnitPicker('create') : null"
           />
-          <div class="popup-tip subtle-tip">新增下级会自动继承当前上级节点所属单位。</div>
+          <div class="popup-tip subtle-tip">{{ createUnitTip }}</div>
           <van-field
             :model-value="Number(state.createForm.status) === 1 ? '启用' : '停用'"
             label="状态"
@@ -186,9 +188,11 @@
             :model-value="editUnitLabel"
             label="所属单位"
             readonly
-            placeholder="当前页面不支持修改所属单位"
+            is-link
+            placeholder="请选择所属单位"
+            @click="openUnitPicker('edit')"
           />
-          <div class="popup-tip subtle-tip">节点所属单位跟随当前组织结构维护，如需调整请走其他维护流程。</div>
+          <div class="popup-tip subtle-tip">设置单位后，将同步更新当前节点及全部下级节点的所属单位。</div>
           <div class="popup-actions">
             <van-button block plain @click="state.editVisible = false">取消</van-button>
             <van-button block type="primary" native-type="submit" :loading="state.submittingEdit">保存修改</van-button>
@@ -415,6 +419,14 @@ const moveSubmitHint = computed(() => {
 
 const createUnitLabel = computed(() => resolveUnitLabel(state.createForm.unitId))
 const editUnitLabel = computed(() => resolveUnitLabel(state.editForm.unitId))
+const canPickCreateUnit = computed(() => {
+  return Boolean(userStore.userInfo?.superAdmin) && Number(state.createForm.parentUserId) === Number(userStore.userInfo?.userId)
+})
+const createUnitTip = computed(() => {
+  return canPickCreateUnit.value
+    ? '当前为超级管理员直属新增，下级节点不继承超级管理员单位，请手动选择所属单位。'
+    : '新增下级会自动继承当前上级节点所属单位。'
+})
 const unitColumns = computed(() => state.unitOptions.map((item) => ({
   text: `${item.unitName} (${item.unitCode})`,
   value: item.id
@@ -502,13 +514,14 @@ async function loadAncestors(userId) {
 
 function openCreateDialog(node) {
   const normalized = normalizeNode(node)
+  const useExplicitUnitSelection = Boolean(userStore.userInfo?.superAdmin) && Number(normalized.id) === Number(userStore.userInfo?.userId)
   state.createForm.parentUserId = normalized.id
   state.createForm.username = ''
   state.createForm.password = ''
   state.createForm.realName = ''
   state.createForm.jobTitle = ''
   state.createForm.mobile = ''
-  state.createForm.unitId = normalized.unitId ?? ''
+  state.createForm.unitId = useExplicitUnitSelection ? '' : normalized.unitId ?? ''
   state.createForm.status = 1
   state.createParentLabel = `${normalized.realName || normalized.username} · ${normalized.username}`
   state.createVisible = true
@@ -604,6 +617,10 @@ function handleUnitConfirm({ selectedOptions }) {
 async function submitCreate() {
   if (!state.createForm.parentUserId) {
     showToast('请先选择上级节点')
+    return
+  }
+  if (canPickCreateUnit.value && !state.createForm.unitId) {
+    showToast('请先选择所属单位')
     return
   }
   if (!state.createForm.username.trim() || !state.createForm.password.trim() || !state.createForm.realName.trim()) {

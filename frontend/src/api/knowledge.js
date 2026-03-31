@@ -12,6 +12,38 @@ export function toggleKnowledgeBaseStatus(data) {
   return request.post('/knowledge/base/toggle-status', data)
 }
 
+export function setCurrentKnowledgeBase(data) {
+  return request.post('/knowledge/base/set-current', data)
+}
+
+export function deleteKnowledgeBase(id) {
+  return request.delete(`/knowledge/base/${id}`)
+}
+
+export function previewWebKnowledge(data) {
+  return request.post('/knowledge/web-preview', data)
+}
+
+export function importWebKnowledge(data) {
+  return request.post('/knowledge/web-import', data)
+}
+
+export function previewSnapshotKnowledge(formData) {
+  return request.post('/knowledge/snapshot-preview', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
+export function importSnapshotKnowledge(formData) {
+  return request.post('/knowledge/snapshot-import', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
 export function queryKnowledgeDocumentList(data) {
   return request.post('/knowledge/document/list', data)
 }

@@ -10,6 +10,7 @@
         <result property="categoryId" column="category_id"/>
         <result property="docTitle" column="doc_title"/>
         <result property="sourceType" column="source_type"/>
+        <result property="sourceUrl" column="source_url"/>
         <result property="fileName" column="file_name"/>
         <result property="filePath" column="file_path"/>
         <result property="docType" column="doc_type"/>
@@ -19,6 +20,7 @@
         <result property="expireDate" column="expire_date"/>
         <result property="keywords" column="keywords"/>
         <result property="summary" column="summary"/>
+        <result property="fetchTime" column="fetch_time"/>
         <result property="parseStatus" column="parse_status"/>
         <result property="status" column="status"/>
         <result property="createTime" column="create_time"/>
@@ -50,6 +52,7 @@
         <result property="categoryId" column="category_id"/>
         <result property="docTitle" column="doc_title"/>
         <result property="sourceType" column="source_type"/>
+        <result property="sourceUrl" column="source_url"/>
         <result property="fileName" column="file_name"/>
         <result property="filePath" column="file_path"/>
         <result property="docType" column="doc_type"/>
@@ -59,6 +62,7 @@
         <result property="expireDate" column="expire_date"/>
         <result property="keywords" column="keywords"/>
         <result property="summary" column="summary"/>
+        <result property="fetchTime" column="fetch_time"/>
         <result property="parseStatus" column="parse_status"/>
         <result property="status" column="status"/>
         <result property="createTime" column="create_time"/>
@@ -95,8 +99,8 @@
     </select>
 
     <select id="findById" resultMap="KnowledgeDocumentEntityMap">
-        SELECT id, base_id, category_id, doc_title, source_type, file_name, file_path, doc_type,
-               policy_region, policy_level, effective_date, expire_date, keywords, summary,
+        SELECT id, base_id, category_id, doc_title, source_type, source_url, file_name, file_path, doc_type,
+               policy_region, policy_level, effective_date, expire_date, keywords, summary, fetch_time,
                parse_status, status, create_time, update_time, create_user, update_user, is_deleted
         FROM ai_knowledge_document
         WHERE id = #{id}
@@ -104,8 +108,8 @@
     </select>
 
     <select id="queryDetail" resultMap="KnowledgeDocumentDetailMap">
-        SELECT id, base_id, category_id, doc_title, source_type, file_name, file_path, doc_type,
-               policy_region, policy_level, effective_date, expire_date, keywords, summary,
+        SELECT id, base_id, category_id, doc_title, source_type, source_url, file_name, file_path, doc_type,
+               policy_region, policy_level, effective_date, expire_date, keywords, summary, fetch_time,
                parse_status, status, create_time, update_time
         FROM ai_knowledge_document
         WHERE id = #{id}
@@ -114,12 +118,12 @@
 
     <insert id="insert" parameterType="com.example.lecturesystem.modules.knowledge.entity.KnowledgeDocumentEntity" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO ai_knowledge_document (
-            base_id, category_id, doc_title, source_type, file_name, file_path, doc_type,
-            policy_region, policy_level, effective_date, expire_date, keywords, summary,
+            base_id, category_id, doc_title, source_type, source_url, file_name, file_path, doc_type,
+            policy_region, policy_level, effective_date, expire_date, keywords, summary, fetch_time,
             parse_status, status, create_time, update_time, create_user, update_user, is_deleted
         ) VALUES (
-            #{baseId}, #{categoryId}, #{docTitle}, #{sourceType}, #{fileName}, #{filePath}, #{docType},
-            #{policyRegion}, #{policyLevel}, #{effectiveDate}, #{expireDate}, #{keywords}, #{summary},
+            #{baseId}, #{categoryId}, #{docTitle}, #{sourceType}, #{sourceUrl}, #{fileName}, #{filePath}, #{docType},
+            #{policyRegion}, #{policyLevel}, #{effectiveDate}, #{expireDate}, #{keywords}, #{summary}, #{fetchTime},
             #{parseStatus}, #{status}, #{createTime}, #{updateTime}, #{createUser}, #{updateUser}, #{isDeleted}
         )
     </insert>
