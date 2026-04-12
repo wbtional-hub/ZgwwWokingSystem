@@ -4,12 +4,95 @@
       <PageHelp page-key="attendance" />
     </template>
     <template #actions>
-      <div class="action-row" data-guide="attendance-checkin">
-        <van-button type="primary" :loading="state.checkingIn" :disabled="pageBusy" @click="handleCheckIn">立即打卡</van-button>
+      <div v-if="hasSubordinates" class="action-row" data-guide="attendance-checkin">
+        <van-button type="primary" :loading="state.checkingIn" :disabled="pageBusy || !personalCanCheckIn" @click="handleCheckIn">{{ personalCheckInButtonText }}</van-button>
         <van-button plain type="success" :loading="state.exporting" :disabled="pageBusy || !state.list.length" @click="handleExport">导出记录</van-button>
         <van-button plain type="primary" :loading="state.loading" :disabled="pageBusy" @click="fetchList">刷新列表</van-button>
       </div>
     </template>
+
+    <PersonalAttendanceWorkspace
+      v-if="!hasSubordinates"
+      :loading="personalWorkspaceLoading"
+      :name="currentWorkspaceUserName"
+      :today-status-label="personalWorkspaceStatus.label"
+      :today-status-tone="personalWorkspaceStatus.tone"
+      :notice="personalWorkspaceNotice"
+      :check-in-time="personalWorkspaceTodayCard.checkInTime"
+      :check-out-time="personalWorkspaceTodayCard.checkOutTime"
+      :location-text="personalWorkspaceTodayCard.locationText"
+      :location-detail="personalWorkspaceTodayCard.locationDetail"
+      :location-status="personalWorkspaceTodayCard.locationStatus"
+      :can-check-in="personalCanCheckIn"
+      :checking-in="state.checkingIn"
+      :weekly-stats="personalWorkspaceWeekStats"
+      :recent-records="personalRecentRecords"
+      :check-in-hint="personalWorkspaceCheckInHint"
+      :check-in-button-text="personalCheckInButtonText"
+      @check-in="handleCheckIn"
+    />
+
+    <template v-else>
+    <section class="attendance-leadership-section">
+      <AttendanceLeadershipSummarySection
+        :loading="state.leadershipLoading"
+        :scope-description="state.leadershipScopeDescription"
+        :range-text="leadershipWorkweekRangeText"
+        :overview="leadershipOverview"
+        :alerts="leadershipAlerts"
+        :non-workday-notice="leadershipNonWorkdayNotice"
+      />
+
+      <div class="attendance-leadership-workspace">
+        <div class="attendance-leadership-main">
+          <AttendanceLeadershipMemberCards
+            :members="leadershipFilteredMembers"
+            :loading="state.leadershipLoading"
+            :selected-user-id="state.leadershipSelectedUserId"
+            :keyword="state.leadershipFilters.keyword"
+            :status="state.leadershipFilters.status"
+            :department="state.leadershipFilters.department"
+            :department-options="leadershipDepartmentOptions"
+            :status-options="LEADERSHIP_STATUS_FILTER_OPTIONS"
+            @select-member="handleSelectLeadershipMember"
+            @update:keyword="handleLeadershipKeywordChange"
+            @update:status="handleLeadershipStatusChange"
+            @update:department="handleLeadershipDepartmentChange"
+            @clear-filters="handleResetLeadershipFilters"
+            @refresh="fetchLeadershipWorkspace"
+          >
+            <template #detail>
+              <AttendanceLeadershipDetailPanel
+                class="attendance-leadership-detail-mobile"
+                :member="selectedLeadershipMember"
+                :detail="selectedLeadershipDetail"
+                :today-label="leadershipTodayText"
+                :week-range-text="leadershipWorkweekRangeText"
+                :loading="state.leadershipDetailLoading"
+              />
+            </template>
+          </AttendanceLeadershipMemberCards>
+        </div>
+
+        <aside class="attendance-leadership-aside">
+          <AttendanceLeadershipDetailPanel
+            :member="selectedLeadershipMember"
+            :detail="selectedLeadershipDetail"
+            :today-label="leadershipTodayText"
+            :week-range-text="leadershipWorkweekRangeText"
+            :loading="state.leadershipDetailLoading"
+          />
+        </aside>
+      </div>
+    </section>
+
+    <details class="attendance-legacy-tools">
+      <summary class="attendance-legacy-tools__summary">
+        <div>
+          <strong>高级分析工具</strong>
+          <span>保留旧查询、异常分析与趋势排查，默认折叠以突出工作台主线。</span>
+        </div>
+      </summary>
 
     <section class="panel" data-guide="attendance-query">
       <div class="panel-title">查询区</div>
@@ -178,6 +261,7 @@
         </div>
       </template>
     </section>
+    </details>
 
     <section class="panel">
       <div class="panel-title">异常用户趋势</div>
@@ -391,7 +475,7 @@
       <van-loading v-if="state.loading" class="state-block" size="24px" vertical>加载中...</van-loading>
       <van-empty v-else-if="!state.list.length" description="暂无考勤数据">
         <template #default>
-          <div class="panel-hint">可直接点击“立即打卡”，或在上方表单补录一条考勤。</div>
+          <div class="panel-hint">可直接点击上方打卡按钮，或在上方表单补录一条考勤。</div>
           <div class="attendance-meta">当前查询范围：{{ listRangeText }}</div>
           <div v-if="listFilterSummary" class="attendance-meta">当前筛选摘要：{{ listFilterSummary }}</div>
           <div v-if="listLinkageSummary" class="attendance-meta">当前联动：{{ listLinkageSummary }}</div>
@@ -463,17 +547,31 @@
         />
       </div>
     </section>
+    </template>
   </AppPageShell>
 </template>
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
+import AttendanceLeadershipDetailPanel from '@/components/attendance/AttendanceLeadershipDetailPanel.vue'
+import AttendanceLeadershipMemberCards from '@/components/attendance/AttendanceLeadershipMemberCards.vue'
+import AttendanceLeadershipSummarySection from '@/components/attendance/AttendanceLeadershipSummarySection.vue'
+import PersonalAttendanceWorkspace from '@/components/attendance/PersonalAttendanceWorkspace.vue'
 import AppPageShell from '@/components/layout/AppPageShell.vue'
 import PageHelp from '@/components/PageHelp.vue'
 import { queryUserPageApi } from '@/api/user'
 import { useUserStore } from '@/stores/user'
 import { loadAmapSdk } from '@/utils/amap'
+import {
+  buildCheckInDiagnosticsFromCoordinates,
+  buildLocationEnvironmentDiagnostics,
+  createTestEnvironmentLocationFallback,
+  getUserLocation
+} from '@/utils/location'
+import { isTestIpLoginEnv } from '@/utils/runtime-origin'
+import { queryWechatJsapiConfigApi } from '@/api/wechat'
+import { getWechatLocationByJsapi, isWechatBrowser } from '@/utils/wechat-jsapi'
 import {
   ATTENDANCE_CHECK_IN_STATUS,
   ATTENDANCE_STATUS_OPTIONS,
@@ -500,14 +598,41 @@ const QUICK_RANGE_OPTIONS = [
 ]
 const GEOLOCATION_SAMPLE_COUNT = 3
 const GEOLOCATION_TIMEOUT_MS = 8000
-const INVALID_ACCURACY_METERS = 1000
-const WEAK_ACCURACY_FLOOR_METERS = 80
+const WECHAT_JSAPI_DEFAULT_PRIORITY = 'WECHAT_FIRST'
+const WECHAT_JSAPI_DEFAULT_FALLBACK = 'BROWSER'
+const WECHAT_JSAPI_DEFAULT_LOCATION_TYPE = 'gcj02'
+const TEST_GEOLOCATION_FALLBACK_MESSAGE = '当前未获取到定位，可继续打卡（测试环境）'
+const TEST_GEOLOCATION_FALLBACK_ADDRESS = '测试环境定位失败，按打卡点容错提交'
+const CHECK_IN_RANGE_OUT_MESSAGE = '当前位置不在打卡范围内，请到指定地点后再尝试'
+const CHECK_IN_LOCATION_REQUIRED_MESSAGE = '暂时无法获取当前位置，请检查定位权限后重试'
+const CHECK_IN_LOCATION_WEAK_MESSAGE = '当前定位精度不足，请移动到空旷区域后重试'
+const CHECK_IN_FAILURE_MESSAGE = '打卡失败，请稍后重试'
+const CHECK_IN_SUCCESS_MESSAGE = '上班打卡成功'
+const CHECK_OUT_SUCCESS_MESSAGE = '下班打卡成功'
 const CHECK_IN_MAP_DEFAULT_ZOOM = 14
 const CHECK_IN_MAP_COLORS = {
   target: '#dc2626',
   current: '#2563eb',
   line: '#0f766e'
 }
+const LEADERSHIP_STATUS_FILTER_OPTIONS = [
+  { label: '全部状态', value: 'ALL' },
+  { label: '正常', value: 'normal' },
+  { label: '迟到', value: 'late' },
+  { label: '未打卡', value: 'missing' },
+  { label: '外勤', value: 'field' },
+  { label: '异常', value: 'abnormal' }
+]
+const LEADERSHIP_WORKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五']
+const LEADERSHIP_STATUS_RULES = Object.freeze({
+  successResults: [
+    ATTENDANCE_CHECK_IN_STATUS.CHECK_IN_SUCCESS,
+    ATTENDANCE_CHECK_IN_STATUS.CHECK_OUT_SUCCESS
+  ],
+  structuredFieldResults: [ATTENDANCE_CHECK_IN_STATUS.OUT_OF_RANGE],
+  lateKeywords: ['迟到', 'late'],
+  fieldKeywords: ['外勤', 'field', 'outside']
+})
 
 const checkInMapRef = ref(null)
 
@@ -611,6 +736,19 @@ const state = reactive({
     dateFrom: '',
     dateTo: ''
   },
+  leadershipLoading: false,
+  leadershipDetailLoading: false,
+  leadershipScopeDescription: '',
+  leadershipUsers: [],
+  leadershipTodayRecords: [],
+  leadershipWeekRecords: [],
+  leadershipRecentAbnormalRecords: [],
+  leadershipSelectedUserId: null,
+  leadershipFilters: {
+    keyword: '',
+    status: 'ALL',
+    department: 'ALL'
+  },
   form: createEmptyForm()
 })
 
@@ -657,6 +795,355 @@ const trendOverview = computed(() => {
     abnormalDays,
     averageAbnormalRate: totalCount ? (abnormalCount / totalCount) * 100 : 0
   }
+})
+
+const leadershipTodayText = computed(() => getTodayDateText())
+
+const leadershipWorkweekDateTexts = computed(() => buildWorkweekDateTexts(leadershipTodayText.value))
+
+const leadershipEffectiveWorkweekDateTexts = computed(() => {
+  return leadershipWorkweekDateTexts.value.filter(dateText => dateText <= leadershipTodayText.value)
+})
+
+const leadershipWorkweekRangeText = computed(() => {
+  const dates = leadershipWorkweekDateTexts.value
+  if (!dates.length) {
+    return ''
+  }
+  return `${dates[0]} 至 ${dates[dates.length - 1]}`
+})
+
+const leadershipTodayIsNonWorkday = computed(() => {
+  return !leadershipWorkweekDateTexts.value.includes(leadershipTodayText.value)
+})
+
+const currentUserId = computed(() => Number(userStore.userInfo?.userId || 0))
+
+const leadershipAllEnabledUsers = computed(() => {
+  return Array.isArray(state.leadershipUsers) ? state.leadershipUsers.filter(isLeadershipUserEnabled) : []
+})
+
+const leadershipSubordinates = computed(() => {
+  return leadershipAllEnabledUsers.value.filter(item => Number(item.id || 0) !== currentUserId.value)
+})
+
+const hasSubordinates = computed(() => leadershipSubordinates.value.length > 0)
+
+const leadershipEnabledUsers = computed(() => {
+  return hasSubordinates.value ? leadershipSubordinates.value : leadershipAllEnabledUsers.value
+})
+
+const leadershipDepartmentOptions = computed(() => {
+  return Array.from(
+    new Set(
+      leadershipEnabledUsers.value
+        .map(item => item.unitName)
+        .filter(Boolean)
+    )
+  ).sort((left, right) => String(left).localeCompare(String(right), 'zh-Hans-CN'))
+})
+
+const leadershipTodayRecordMap = computed(() => buildLatestUserRecordMap(state.leadershipTodayRecords))
+
+const leadershipWeekRecordMap = computed(() => buildGroupedUserRecords(state.leadershipWeekRecords))
+
+function classifyLeadershipTodayWorkspaceStatus(record) {
+  if (!leadershipTodayIsNonWorkday.value) {
+    return classifyLeadershipStatus(record)
+  }
+  if (!record) {
+    return {
+      key: 'rest',
+      label: '非工作日',
+      tone: 'pending',
+      summary: '今日为非工作日，暂无加班 / 值班打卡记录'
+    }
+  }
+  if (!isAbnormalStatus(record.checkInResult)) {
+    return {
+      key: 'normal',
+      label: '加班打卡',
+      tone: 'normal',
+      summary: '今日为非工作日，已记录加班 / 值班打卡'
+    }
+  }
+  return {
+    key: 'abnormal',
+    label: '异常',
+    tone: 'abnormal',
+    summary: record.checkInFailReason || resultLabel(record.checkInResult)
+  }
+}
+
+const leadershipMemberCards = computed(() => {
+  return leadershipEnabledUsers.value.map((user) => {
+    const todayRecord = leadershipTodayRecordMap.value.get(user.id) || null
+    const weekRecords = leadershipWeekRecordMap.value.get(user.id) || []
+    const status = classifyLeadershipTodayWorkspaceStatus(todayRecord)
+    const weekSummary = createLeadershipWeekSummary(weekRecords, leadershipWorkweekDateTexts.value)
+    return {
+      userId: user.id,
+      username: user.username || '',
+      realName: user.realName || user.username || `用户${user.id}`,
+      unitName: user.unitName || '',
+      jobTitle: user.jobTitle || '',
+      todayRecord,
+      weekRecords,
+      statusKey: status.key,
+      statusLabel: status.label,
+      statusTone: status.tone,
+      statusSummary: status.summary,
+      checkInTimeText: formatTimeOnly(todayRecord?.checkInTime),
+      checkOutTimeText: formatTimeOnly(todayRecord?.checkOutTime),
+      weekSummary
+    }
+  })
+})
+
+const leadershipFilteredMembers = computed(() => {
+  const keyword = String(state.leadershipFilters.keyword || '').trim().toLowerCase()
+  const status = state.leadershipFilters.status || 'ALL'
+  const department = state.leadershipFilters.department || 'ALL'
+  return leadershipMemberCards.value.filter((member) => {
+    const matchesKeyword = !keyword || [
+      member.realName,
+      member.username,
+      member.jobTitle,
+      member.unitName
+    ]
+      .filter(Boolean)
+      .some(item => String(item).toLowerCase().includes(keyword))
+    const matchesStatus = status === 'ALL' || member.statusKey === status
+    const matchesDepartment = department === 'ALL' || member.unitName === department
+    return matchesKeyword && matchesStatus && matchesDepartment
+  })
+})
+
+const selectedLeadershipMember = computed(() => {
+  return leadershipFilteredMembers.value.find(item => item.userId === state.leadershipSelectedUserId) || null
+})
+
+function summarizeMemberNames(items, emptyText) {
+  if (!items.length) {
+    return emptyText
+  }
+  const names = items.slice(0, 6).map(item => item.realName || item.username || `用户${item.userId}`)
+  const suffix = items.length > 6 ? ` 等 ${items.length} 人` : ` 共 ${items.length} 人`
+  return `${names.join('、')}${suffix}`
+}
+
+const leadershipOverview = computed(() => {
+  const members = leadershipFilteredMembers.value
+  const isNonWorkday = leadershipTodayIsNonWorkday.value
+  const expectedCount = isNonWorkday ? 0 : members.length
+  const checkedCount = isNonWorkday ? 0 : members.filter(item => item.todayRecord).length
+  const missingCount = isNonWorkday ? 0 : members.filter(item => item.statusKey === 'missing').length
+  const lateCount = isNonWorkday ? 0 : members.filter(item => item.statusKey === 'late').length
+  const fieldCount = isNonWorkday ? 0 : members.filter(item => item.statusKey === 'field').length
+  const totalAttendanceDays = members.reduce((sum, item) => sum + Number(item.weekSummary.attendanceDays || 0), 0)
+  const attendanceBase = members.length * leadershipEffectiveWorkweekDateTexts.value.length
+  const weeklyAttendanceRate = attendanceBase ? (totalAttendanceDays / attendanceBase) * 100 : 0
+  return {
+    isNonWorkday,
+    expectedCount,
+    checkedCount,
+    missingCount,
+    lateCount,
+    fieldCount,
+    weeklyAttendanceRate,
+    weeklyAttendanceRateText: formatPercent(weeklyAttendanceRate)
+  }
+})
+
+const leadershipAlerts = computed(() => {
+  if (leadershipTodayIsNonWorkday.value) {
+    return {
+      isNonWorkday: true,
+      missingCount: 0,
+      lateCount: 0,
+      abnormalCount: 0,
+      missingSummary: '今日为非工作日，不生成未打卡提醒',
+      lateSummary: '今日为非工作日，不生成迟到提醒',
+      abnormalSummary: '非工作日打卡请查看上方加班/值班提示，不并入工作日异常统计'
+    }
+  }
+  const members = leadershipFilteredMembers.value
+  const missingMembers = members.filter(item => item.statusKey === 'missing')
+  const lateMembers = members.filter(item => item.statusKey === 'late')
+  const abnormalMembers = members.filter(item => item.statusKey === 'abnormal' || item.statusKey === 'field')
+  return {
+    isNonWorkday: false,
+    missingCount: missingMembers.length,
+    lateCount: lateMembers.length,
+    abnormalCount: abnormalMembers.length,
+    missingSummary: summarizeMemberNames(missingMembers, '当前没有未打卡成员'),
+    lateSummary: summarizeMemberNames(lateMembers, '当前没有迟到成员'),
+    abnormalSummary: summarizeMemberNames(abnormalMembers, '当前没有定位或外勤异常成员')
+  }
+})
+
+const leadershipNonWorkdayNotice = computed(() => {
+  if (!leadershipTodayIsNonWorkday.value) {
+    return null
+  }
+  const overtimeMembers = leadershipFilteredMembers.value.filter(item => item.todayRecord)
+  return {
+    title: '今日为非工作日，打卡按加班 / 值班记录处理',
+    description: '今日打卡不会并入工作日应到、未打卡或迟到异常统计，请单独查看非工作日打卡情况。',
+    countLabel: '加班打卡人数',
+    count: overtimeMembers.length,
+    summary: overtimeMembers.length
+      ? `已记录加班 / 值班打卡：${summarizeMemberNames(overtimeMembers, '')}`
+      : '当前范围内还没有加班 / 值班打卡记录。'
+  }
+})
+
+const selectedLeadershipDetail = computed(() => {
+  if (!selectedLeadershipMember.value) {
+    return {
+      todayRecord: null,
+      weekSummary: createLeadershipWeekSummary([], leadershipWorkweekDateTexts.value),
+      trendItems: buildLeadershipTrendItems([], leadershipWorkweekDateTexts.value),
+      recentAbnormalRecords: []
+    }
+  }
+  return {
+    todayRecord: buildLeadershipTodayDetailRecord(selectedLeadershipMember.value.todayRecord),
+    weekSummary: selectedLeadershipMember.value.weekSummary,
+    trendItems: buildLeadershipTrendItems(selectedLeadershipMember.value.weekRecords, leadershipWorkweekDateTexts.value),
+    recentAbnormalRecords: state.leadershipRecentAbnormalRecords.map(buildLeadershipAbnormalRecordItem)
+  }
+})
+
+const currentWorkspaceUser = computed(() => {
+  return leadershipAllEnabledUsers.value.find(item => Number(item.id || 0) === currentUserId.value) || null
+})
+
+const currentWorkspaceUserName = computed(() => {
+  return currentWorkspaceUser.value?.realName || userStore.userInfo?.realName || userStore.userInfo?.username || '当前用户'
+})
+
+const personalWorkspaceLoading = computed(() => state.locationLoading || state.loading || state.leadershipLoading)
+
+const personalTodayRecord = computed(() => {
+  return leadershipTodayRecordMap.value.get(currentUserId.value) || null
+})
+
+const personalWeekRecords = computed(() => {
+  return leadershipWeekRecordMap.value.get(currentUserId.value) || []
+})
+
+const personalWorkspaceStatus = computed(() => {
+  const status = classifyLeadershipTodayWorkspaceStatus(personalTodayRecord.value)
+  return {
+    label: status.label,
+    tone: status.tone
+  }
+})
+
+const personalWorkspaceNotice = computed(() => {
+  if (!leadershipTodayIsNonWorkday.value) {
+    return null
+  }
+  return personalTodayRecord.value
+    ? {
+        title: '今日为非工作日',
+        text: '已记录加班 / 值班打卡，当前记录已生效，但不会计入工作日应到或未打卡异常。'
+      }
+    : {
+        title: '今日为非工作日',
+        text: '今天可按加班 / 值班记录打卡；未打卡不会计入工作日未打卡异常。'
+      }
+})
+
+const personalWorkspaceTodayCard = computed(() => {
+  const todayRecord = personalTodayRecord.value
+  const locationText = todayRecord?.checkInAddress
+    || todayRecord?.checkOutAddress
+    || state.locationInfo.locationName
+    || state.locationInfo.address
+    || '未获取到定位信息'
+  const locationDetail = todayRecord
+    ? `${leadershipTodayIsNonWorkday.value ? '今日已记录加班 / 值班打卡' : '今日记录'}：${resultLabel(todayRecord.checkInResult)}`
+    : (leadershipTodayIsNonWorkday.value
+        ? '今日为非工作日，暂未产生加班 / 值班打卡记录。'
+        : (state.locationInfo.address || state.locationInfo.reason || '今日尚未产生打卡记录。'))
+  const locationStatus = state.checkInResult.reason
+    || state.locationInfo.reason
+    || (isTestIpLoginEnv() ? '测试环境下定位失败会自动切换容错提交流程。' : '')
+
+  return {
+    checkInTime: formatTimeOnly(todayRecord?.checkInTime),
+    checkOutTime: formatTimeOnly(todayRecord?.checkOutTime),
+    locationText,
+    locationDetail,
+    locationStatus
+  }
+})
+
+const personalWorkspaceWeekStats = computed(() => {
+  return createLeadershipWeekSummary(personalWeekRecords.value, leadershipWorkweekDateTexts.value)
+})
+
+const personalRecentRecords = computed(() => {
+  return state.list.slice(0, 5).map((item, index) => ({
+    id: item.id,
+    recordKey: `${item.userId || 'self'}-${item.attendanceDate || index}`,
+    dateText: item.attendanceDate || '-',
+    statusLabel: resultLabel(item.checkInResult),
+    timeText: `${formatTimeOnly(item.checkInTime)} / ${formatTimeOnly(item.checkOutTime)}`,
+    addressText: item.checkInAddress || item.checkOutAddress || item.checkInFailReason || '暂无地点信息'
+  }))
+})
+
+function hasCompletedCheckOut(record) {
+  return Boolean(record?.checkOutTime)
+    || record?.checkInResult === ATTENDANCE_CHECK_IN_STATUS.CHECK_OUT_SUCCESS
+    || record?.checkInResult === ATTENDANCE_CHECK_IN_STATUS.ALREADY_FINISHED
+}
+
+function hasCompletedCheckIn(record) {
+  return hasCompletedCheckOut(record)
+    || Boolean(record?.checkInTime)
+    || record?.checkInResult === ATTENDANCE_CHECK_IN_STATUS.CHECK_IN_SUCCESS
+}
+
+const personalCheckInButtonText = computed(() => {
+  if (hasCompletedCheckOut(personalTodayRecord.value)) {
+    return '今日已完成'
+  }
+  if (hasCompletedCheckIn(personalTodayRecord.value)) {
+    return '下班打卡'
+  }
+  return '上班打卡'
+})
+
+const personalCanCheckIn = computed(() => {
+  return !hasCompletedCheckOut(personalTodayRecord.value)
+    && !state.locationLoading
+    && Boolean(state.locationInfo.allowCheckIn)
+})
+
+const personalWorkspaceCheckInHint = computed(() => {
+  if (hasCompletedCheckOut(personalTodayRecord.value)) {
+    return '今日上下班打卡已完成，无需重复提交。'
+  }
+  if (!personalCanCheckIn.value) {
+    return state.locationInfo.reason || '当前打卡点不可用，请联系管理员检查配置。'
+  }
+  if (state.checkingIn) {
+    return '正在获取定位并提交本次打卡...'
+  }
+  if (hasCompletedCheckIn(personalTodayRecord.value)) {
+    return '已完成上班打卡，本次提交将记录下班时间。'
+  }
+  if (leadershipTodayIsNonWorkday.value) {
+    return '今日按加班 / 值班记录处理，打卡成功后会在当前页面单独展示，不并入工作日未打卡统计。'
+  }
+  if (isTestIpLoginEnv()) {
+    return '测试环境下若浏览器定位失败，会给出弱提示并继续按打卡点容错提交。'
+  }
+  return '点击后会自动获取定位、提交打卡并刷新今日状态。'
 })
 
 function createEmptyForm() {
@@ -764,202 +1251,432 @@ function formatPercent(value) {
   return `${Number(value).toFixed(1)}%`
 }
 
-function roundCoordinate(value) {
-  if (value == null || Number.isNaN(Number(value))) {
-    return null
+function formatTimeOnly(value) {
+  if (!value) {
+    return '-'
   }
-  return Number(Number(value).toFixed(6))
+  return String(value).slice(11, 16) || '-'
 }
 
-function calculateDistanceMeters(latitude1, longitude1, latitude2, longitude2) {
-  const values = [latitude1, longitude1, latitude2, longitude2].map(item => Number(item))
-  if (values.some(item => Number.isNaN(item))) {
-    return null
+function getTodayDateText() {
+  return toInputDate(new Date())
+}
+
+function getWeekStartDateText(baseDateText = getTodayDateText()) {
+  const baseDate = new Date(`${baseDateText}T00:00:00`)
+  if (Number.isNaN(baseDate.getTime())) {
+    return baseDateText
   }
-  const [lat1, lng1, lat2, lng2] = values
-  const earthRadiusMeters = 6371000
-  const latDistance = ((lat2 - lat1) * Math.PI) / 180
-  const lngDistance = ((lng2 - lng1) * Math.PI) / 180
-  const sinLat = Math.sin(latDistance / 2)
-  const sinLng = Math.sin(lngDistance / 2)
-  const a = sinLat * sinLat + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * sinLng * sinLng
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return Math.round(earthRadiusMeters * c)
+  const weekDay = baseDate.getDay() || 7
+  return toInputDate(addDays(baseDate, 1 - weekDay))
 }
 
-function outOfChina(longitude, latitude) {
-  return longitude < 72.004 || longitude > 137.8347 || latitude < 0.8293 || latitude > 55.8271
+function buildWorkweekDateTexts(baseDateText = getTodayDateText()) {
+  const mondayText = getWeekStartDateText(baseDateText)
+  const mondayDate = new Date(`${mondayText}T00:00:00`)
+  return LEADERSHIP_WORKDAY_LABELS.map((_, index) => toInputDate(addDays(mondayDate, index)))
 }
 
-function transformLatitude(longitude, latitude) {
-  let result = -100 + 2 * longitude + 3 * latitude + 0.2 * latitude * latitude + 0.1 * longitude * latitude + 0.2 * Math.sqrt(Math.abs(longitude))
-  result += ((20 * Math.sin(6 * longitude * Math.PI) + 20 * Math.sin(2 * longitude * Math.PI)) * 2) / 3
-  result += ((20 * Math.sin(latitude * Math.PI) + 40 * Math.sin((latitude / 3) * Math.PI)) * 2) / 3
-  result += ((160 * Math.sin((latitude / 12) * Math.PI) + 320 * Math.sin((latitude * Math.PI) / 30)) * 2) / 3
-  return result
-}
-
-function transformLongitude(longitude, latitude) {
-  let result = 300 + longitude + 2 * latitude + 0.1 * longitude * longitude + 0.1 * longitude * latitude + 0.1 * Math.sqrt(Math.abs(longitude))
-  result += ((20 * Math.sin(6 * longitude * Math.PI) + 20 * Math.sin(2 * longitude * Math.PI)) * 2) / 3
-  result += ((20 * Math.sin(longitude * Math.PI) + 40 * Math.sin((longitude / 3) * Math.PI)) * 2) / 3
-  result += ((150 * Math.sin((longitude / 12) * Math.PI) + 300 * Math.sin((longitude / 30) * Math.PI)) * 2) / 3
-  return result
-}
-
-function wgs84ToGcj02(longitude, latitude) {
-  const lng = Number(longitude)
-  const lat = Number(latitude)
-  if (Number.isNaN(lng) || Number.isNaN(lat) || outOfChina(lng, lat)) {
-    return { longitude: lng, latitude: lat }
+function isLeadershipUserEnabled(user) {
+  if (user?.status == null) {
+    return true
   }
-  const a = 6378245.0
-  const ee = 0.00669342162296594323
-  let dLat = transformLatitude(lng - 105.0, lat - 35.0)
-  let dLng = transformLongitude(lng - 105.0, lat - 35.0)
-  const radLat = (lat / 180.0) * Math.PI
-  let magic = Math.sin(radLat)
-  magic = 1 - ee * magic * magic
-  const sqrtMagic = Math.sqrt(magic)
-  dLat = (dLat * 180.0) / (((a * (1 - ee)) / (magic * sqrtMagic)) * Math.PI)
-  dLng = (dLng * 180.0) / ((a / sqrtMagic) * Math.cos(radLat) * Math.PI)
+  return Number(user.status) === 1
+}
+
+function buildRecordSignalText(record) {
+  return [
+    record?.checkInResult,
+    record?.checkInFailReason,
+    record?.checkInAddress,
+    record?.checkOutAddress
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function includesAnySignal(text, keywords = []) {
+  return keywords.some(keyword => text.includes(String(keyword).toLowerCase()))
+}
+
+function resolveLeadershipStatusSignals(record) {
+  const signalText = buildRecordSignalText(record)
+  const status = record?.checkInResult || ''
   return {
-    longitude: lng + dLng,
-    latitude: lat + dLat
+    status,
+    structuredSuccess: LEADERSHIP_STATUS_RULES.successResults.includes(status),
+    structuredField: LEADERSHIP_STATUS_RULES.structuredFieldResults.includes(status),
+    inferredLate: includesAnySignal(signalText, LEADERSHIP_STATUS_RULES.lateKeywords),
+    inferredField: includesAnySignal(signalText, LEADERSHIP_STATUS_RULES.fieldKeywords)
+  }
+}
+
+function hasLateSignal(record) {
+  const signalText = buildRecordSignalText(record)
+  return signalText.includes('迟到') || signalText.includes('late')
+}
+
+function hasFieldSignal(record) {
+  const signalText = buildRecordSignalText(record)
+  return record?.checkInResult === ATTENDANCE_CHECK_IN_STATUS.OUT_OF_RANGE
+    || signalText.includes('外勤')
+    || signalText.includes('field')
+    || signalText.includes('outside')
+}
+
+function classifyLeadershipStatus(record) {
+  if (!record) {
+    return {
+      key: 'missing',
+      label: '未打卡',
+      tone: 'missing',
+      summary: '今天还没有打卡记录'
+    }
+  }
+  const signals = resolveLeadershipStatusSignals(record)
+  if (signals.inferredLate) {
+    return {
+      key: 'late',
+      label: '迟到',
+      tone: 'late',
+      summary: record.checkInFailReason || '今日记录识别为迟到'
+    }
+  }
+  if (signals.structuredField || signals.inferredField) {
+    return {
+      key: 'field',
+      label: '外勤',
+      tone: 'field',
+      summary: record.checkInFailReason || '今日记录包含外勤或超范围信号'
+    }
+  }
+  if (signals.structuredSuccess && !isAbnormalStatus(record.checkInResult)) {
+    return {
+      key: 'normal',
+      label: '正常',
+      tone: 'normal',
+      summary: '今日打卡状态正常'
+    }
+  }
+  return {
+    key: 'abnormal',
+    label: '异常',
+    tone: 'abnormal',
+    summary: record.checkInFailReason || resultLabel(record.checkInResult)
+  }
+}
+
+function getRecordSortValue(record) {
+  return String(record?.checkOutTime || record?.checkInTime || record?.createTime || record?.attendanceDate || '')
+}
+
+function buildLatestUserRecordMap(records) {
+  const result = new Map()
+  records.forEach((record) => {
+    const userId = Number(record?.userId || 0)
+    if (!userId) {
+      return
+    }
+    const current = result.get(userId)
+    if (!current || getRecordSortValue(record) > getRecordSortValue(current)) {
+      result.set(userId, record)
+    }
+  })
+  return result
+}
+
+function buildGroupedUserRecords(records) {
+  const result = new Map()
+  records.forEach((record) => {
+    const userId = Number(record?.userId || 0)
+    if (!userId) {
+      return
+    }
+    if (!result.has(userId)) {
+      result.set(userId, [])
+    }
+    result.get(userId).push(record)
+  })
+  result.forEach((items) => {
+    items.sort((left, right) => getRecordSortValue(right).localeCompare(getRecordSortValue(left)))
+  })
+  return result
+}
+
+function buildDailyRecordMap(records) {
+  const result = new Map()
+  records.forEach((record) => {
+    const dateKey = String(record?.attendanceDate || '')
+    if (!dateKey) {
+      return
+    }
+    const current = result.get(dateKey)
+    if (!current || getRecordSortValue(record) > getRecordSortValue(current)) {
+      result.set(dateKey, record)
+    }
+  })
+  return result
+}
+
+function createLeadershipWeekSummary(records, workdayDateTexts) {
+  const dailyRecordMap = buildDailyRecordMap(records)
+  const effectiveDates = workdayDateTexts.filter(dateText => dateText <= getTodayDateText())
+  let lateCount = 0
+  let fieldCount = 0
+  let abnormalCount = 0
+  effectiveDates.forEach((dateText) => {
+    const status = classifyLeadershipStatus(dailyRecordMap.get(dateText))
+    if (status.key === 'late') {
+      lateCount += 1
+    } else if (status.key === 'field') {
+      fieldCount += 1
+    } else if (status.key === 'abnormal') {
+      abnormalCount += 1
+    }
+  })
+  const attendanceDays = effectiveDates.filter(dateText => dailyRecordMap.has(dateText)).length
+  return {
+    attendanceDays,
+    lateCount,
+    fieldCount,
+    abnormalCount,
+    missingCount: Math.max(effectiveDates.length - attendanceDays, 0)
+  }
+}
+
+function extractTimeDeviationText(record) {
+  const reasonText = record?.checkInFailReason || ''
+  if (!reasonText) {
+    return ''
+  }
+  const durationMatch = reasonText.match(/(\d+\s*(分钟|小时))/)
+  return durationMatch ? durationMatch[1] : reasonText
+}
+
+function buildLeadershipTodayDetailRecord(record) {
+  if (!record) {
+    return null
+  }
+  const status = classifyLeadershipStatus(record)
+  return {
+    checkInTimeText: formatTimeOnly(record.checkInTime),
+    checkOutTimeText: formatTimeOnly(record.checkOutTime),
+    resultLabel: resultLabel(record.checkInResult),
+    rangeLabel: record.checkInResult === ATTENDANCE_CHECK_IN_STATUS.OUT_OF_RANGE ? '否' : '是',
+    checkInAddress: record.checkInAddress || '',
+    checkOutAddress: record.checkOutAddress || '',
+    timeDeviationText: extractTimeDeviationText(record) || (status.key === 'late' ? '已识别迟到，但未返回具体时长' : '')
+  }
+}
+
+function buildLeadershipTrendItems(records, workdayDateTexts) {
+  const dailyRecordMap = buildDailyRecordMap(records)
+  const todayText = getTodayDateText()
+  return workdayDateTexts.map((dateText, index) => {
+    if (dateText > todayText) {
+      return {
+        date: dateText,
+        shortDate: dateText.slice(5),
+        weekday: LEADERSHIP_WORKDAY_LABELS[index],
+        label: '待发生',
+        tone: 'pending'
+      }
+    }
+    const status = classifyLeadershipStatus(dailyRecordMap.get(dateText))
+    return {
+      date: dateText,
+      shortDate: dateText.slice(5),
+      weekday: LEADERSHIP_WORKDAY_LABELS[index],
+      label: status.label,
+      tone: status.tone
+    }
+  })
+}
+
+function buildLeadershipAbnormalRecordItem(record) {
+  return {
+    id: record?.id,
+    attendanceDate: record?.attendanceDate || '-',
+    resultLabel: resultLabel(record?.checkInResult),
+    checkInAddress: record?.checkInAddress || '',
+    checkOutAddress: record?.checkOutAddress || '',
+    reasonText: record?.checkInFailReason || resultLabel(record?.checkInResult)
+  }
+}
+
+async function queryAllUsersByScope(params = {}) {
+  const pageSize = 200
+  let pageNo = 1
+  let total = 0
+  let scopeDescription = ''
+  const list = []
+  do {
+    const response = await queryUserPageApi({
+      ...params,
+      pageNo,
+      pageSize
+    })
+    const data = response?.data || {}
+    const pageList = Array.isArray(data.list) ? data.list : []
+    total = Number(data.total || pageList.length)
+    scopeDescription = data.scopeDescription || scopeDescription
+    list.push(...pageList)
+    if (!pageList.length || list.length >= total) {
+      break
+    }
+    pageNo += 1
+  } while (pageNo <= 20)
+  return {
+    list,
+    scopeDescription
+  }
+}
+
+async function queryAllAttendanceRecords(payload = {}) {
+  const pageSize = 200
+  let pageNo = 1
+  let total = 0
+  const list = []
+  do {
+    const response = await queryAttendanceListApi({
+      ...payload,
+      pageNo,
+      pageSize
+    })
+    const data = response?.data || {}
+    const pageList = Array.isArray(data.list) ? data.list : []
+    total = Number(data.total || pageList.length)
+    list.push(...pageList)
+    if (!pageList.length || list.length >= total) {
+      break
+    }
+    pageNo += 1
+  } while (pageNo <= 20)
+  return list
+}
+
+async function fetchLeadershipRecentAbnormalRecords(userId) {
+  const normalizedUserId = Number(userId || 0)
+  if (!normalizedUserId) {
+    state.leadershipRecentAbnormalRecords = []
+    state.leadershipDetailLoading = false
+    return
+  }
+  state.leadershipDetailLoading = true
+  try {
+    const response = await queryAttendanceListApi({
+      userId: normalizedUserId,
+      abnormalOnly: true,
+      pageNo: 1,
+      pageSize: 3
+    })
+    if (state.leadershipSelectedUserId !== normalizedUserId) {
+      return
+    }
+    const data = response?.data || {}
+    state.leadershipRecentAbnormalRecords = Array.isArray(data.list) ? data.list : []
+  } catch (error) {
+    if (state.leadershipSelectedUserId === normalizedUserId) {
+      state.leadershipRecentAbnormalRecords = []
+    }
+  } finally {
+    if (state.leadershipSelectedUserId === normalizedUserId || !state.leadershipSelectedUserId) {
+      state.leadershipDetailLoading = false
+    }
+  }
+}
+
+async function handleSelectLeadershipMember(member) {
+  const normalizedUserId = Number(member?.userId || 0)
+  state.leadershipSelectedUserId = normalizedUserId || null
+  if (!normalizedUserId) {
+    state.leadershipRecentAbnormalRecords = []
+    state.leadershipDetailLoading = false
+    return
+  }
+  await fetchLeadershipRecentAbnormalRecords(normalizedUserId)
+}
+
+function handleLeadershipKeywordChange(value) {
+  state.leadershipFilters.keyword = String(value || '')
+}
+
+function handleLeadershipStatusChange(value) {
+  state.leadershipFilters.status = value || 'ALL'
+}
+
+function handleLeadershipDepartmentChange(value) {
+  state.leadershipFilters.department = value || 'ALL'
+}
+
+function handleResetLeadershipFilters() {
+  state.leadershipFilters.keyword = ''
+  state.leadershipFilters.status = 'ALL'
+  state.leadershipFilters.department = 'ALL'
+}
+
+async function fetchLeadershipWorkspace() {
+  state.leadershipLoading = true
+  try {
+    const todayDateText = leadershipTodayText.value
+    const workdayDateTexts = leadershipEffectiveWorkweekDateTexts.value
+    const weekStartDateText = workdayDateTexts[0] || todayDateText
+    const [userScope, todayRecords, weekRecords] = await Promise.all([
+      queryAllUsersByScope(),
+      queryAllAttendanceRecords({
+        dateFrom: todayDateText,
+        dateTo: todayDateText
+      }),
+      queryAllAttendanceRecords({
+        dateFrom: weekStartDateText,
+        dateTo: todayDateText
+      })
+    ])
+    state.leadershipUsers = Array.isArray(userScope.list) ? userScope.list : []
+    state.leadershipScopeDescription = userScope.scopeDescription || ''
+    state.leadershipTodayRecords = Array.isArray(todayRecords) ? todayRecords : []
+    state.leadershipWeekRecords = Array.isArray(weekRecords) ? weekRecords : []
+    if (!hasSubordinates.value) {
+      state.leadershipSelectedUserId = null
+      state.leadershipRecentAbnormalRecords = []
+      state.leadershipDetailLoading = false
+      return
+    }
+    const preferredMember = leadershipFilteredMembers.value.find(item => item.userId === state.leadershipSelectedUserId)
+      || leadershipFilteredMembers.value[0]
+      || null
+    if (!preferredMember) {
+      state.leadershipSelectedUserId = null
+      state.leadershipRecentAbnormalRecords = []
+      state.leadershipDetailLoading = false
+      return
+    }
+    await handleSelectLeadershipMember(preferredMember)
+  } catch (error) {
+    state.leadershipScopeDescription = ''
+    state.leadershipUsers = []
+    state.leadershipTodayRecords = []
+    state.leadershipWeekRecords = []
+    state.leadershipRecentAbnormalRecords = []
+    state.leadershipSelectedUserId = null
+    state.leadershipDetailLoading = false
+    showToast(error.message || '团队考勤工作台加载失败')
+  } finally {
+    state.leadershipLoading = false
   }
 }
 
 function buildOutOfRangeReason(distanceMeters, radiusMeters, accuracyMeters) {
-  if (distanceMeters == null || radiusMeters == null) {
-    return '超出单位打卡范围'
-  }
-  let reason = `当前位置距离打卡点 ${distanceMeters} 米，允许半径 ${radiusMeters} 米`
-  if (accuracyMeters != null && accuracyMeters > radiusMeters) {
-    reason += `；当前定位精度约 ${accuracyMeters} 米，请尽量在室外空旷区域重试`
-  }
-  return reason
+  return CHECK_IN_RANGE_OUT_MESSAGE
 }
 
 function buildInvalidLocationReason(accuracyMeters) {
-  if (accuracyMeters != null) {
-    return `未获取到可用定位，当前定位精度约 ${accuracyMeters} 米，请检查定位权限或定位服务后重试`
-  }
-  return '未获取到可用定位，请检查定位权限或定位服务后重试'
+  return CHECK_IN_LOCATION_REQUIRED_MESSAGE
 }
 
 function buildWeakLocationReason(accuracyMeters) {
-  if (accuracyMeters != null) {
-    return `当前定位质量较差，定位精度约 ${accuracyMeters} 米，室内信号可能较弱，建议稍等定位稳定或靠窗后重试`
-  }
-  return '当前定位质量较差，室内信号可能较弱，建议稍等定位稳定或靠窗后重试'
-}
-
-function isInvalidGeolocationSample(position) {
-  const latitude = Number(position?.coords?.latitude)
-  const longitude = Number(position?.coords?.longitude)
-  const accuracyMeters = position?.coords?.accuracy == null ? null : Math.round(Number(position.coords.accuracy))
-  if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
-    return true
-  }
-  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-    return true
-  }
-  if (Math.abs(latitude) < 0.000001 && Math.abs(longitude) < 0.000001) {
-    return true
-  }
-  return accuracyMeters != null && accuracyMeters > INVALID_ACCURACY_METERS
-}
-
-function isWeakAccuracy(accuracyMeters, radiusMeters) {
-  if (accuracyMeters == null) {
-    return false
-  }
-  return accuracyMeters > Math.max(Number(radiusMeters) || 0, WEAK_ACCURACY_FLOOR_METERS)
-}
-
-function buildCheckInDiagnostics(position) {
-  const rawLatitude = Number(position?.coords?.latitude)
-  const rawLongitude = Number(position?.coords?.longitude)
-  const accuracyMeters = position?.coords?.accuracy == null ? null : Math.round(Number(position.coords.accuracy))
-  const timestamp = Number(position?.timestamp || Date.now())
-  const targetLatitude = Number(state.locationInfo.latitude)
-  const targetLongitude = Number(state.locationInfo.longitude)
-  const radiusMeters = state.locationInfo.radiusMeters == null ? null : Number(state.locationInfo.radiusMeters)
-  const rawDistanceMeters = calculateDistanceMeters(rawLatitude, rawLongitude, targetLatitude, targetLongitude)
-  const converted = wgs84ToGcj02(rawLongitude, rawLatitude)
-  const convertedDistanceMeters = calculateDistanceMeters(converted.latitude, converted.longitude, targetLatitude, targetLongitude)
-  const useConverted = rawDistanceMeters != null
-    && convertedDistanceMeters != null
-    && convertedDistanceMeters < rawDistanceMeters
-  const submitLatitude = roundCoordinate(useConverted ? converted.latitude : rawLatitude)
-  const submitLongitude = roundCoordinate(useConverted ? converted.longitude : rawLongitude)
-  const localDistanceMeters = calculateDistanceMeters(submitLatitude, submitLongitude, targetLatitude, targetLongitude)
-  const overlap = localDistanceMeters != null
-    && radiusMeters != null
-    && accuracyMeters != null
-    && localDistanceMeters <= radiusMeters + accuracyMeters
-  return {
-    rawLatitude: roundCoordinate(rawLatitude),
-    rawLongitude: roundCoordinate(rawLongitude),
-    convertedLatitude: roundCoordinate(converted.latitude),
-    convertedLongitude: roundCoordinate(converted.longitude),
-    submitLatitude,
-    submitLongitude,
-    targetLatitude: roundCoordinate(targetLatitude),
-    targetLongitude: roundCoordinate(targetLongitude),
-    radiusMeters,
-    accuracyMeters,
-    timestamp,
-    rawDistanceMeters,
-    convertedDistanceMeters,
-    localDistanceMeters,
-    overlap,
-    coordinateSource: useConverted ? 'gcj02-adjusted' : 'browser-raw'
-  }
-}
-
-function compareCheckInDiagnostics(current, next) {
-  const currentWeak = isWeakAccuracy(current.accuracyMeters, current.radiusMeters)
-  const nextWeak = isWeakAccuracy(next.accuracyMeters, next.radiusMeters)
-  if (currentWeak !== nextWeak) {
-    return currentWeak ? 1 : -1
-  }
-  const currentAccuracy = current.accuracyMeters ?? Number.POSITIVE_INFINITY
-  const nextAccuracy = next.accuracyMeters ?? Number.POSITIVE_INFINITY
-  if (currentAccuracy !== nextAccuracy) {
-    return currentAccuracy - nextAccuracy
-  }
-  const currentTimestamp = current.timestamp ?? 0
-  const nextTimestamp = next.timestamp ?? 0
-  if (currentTimestamp !== nextTimestamp) {
-    return nextTimestamp - currentTimestamp
-  }
-  const currentDistance = current.localDistanceMeters ?? Number.POSITIVE_INFINITY
-  const nextDistance = next.localDistanceMeters ?? Number.POSITIVE_INFINITY
-  return currentDistance - nextDistance
-}
-
-function isLocalhostHost(hostname) {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
-}
-
-function isPrivateIpv4Host(hostname) {
-  return /^10\./.test(hostname)
-    || /^192\.168\./.test(hostname)
-    || /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
-}
-
-function buildLocationEnvironmentDiagnostics() {
-  const { protocol, hostname, href } = window.location
-  return {
-    userAgent: navigator.userAgent,
-    url: href,
-    protocol,
-    hostname,
-    isHttps: protocol === 'https:',
-    isLocalhost: isLocalhostHost(hostname),
-    isIntranet: isLocalhostHost(hostname) || isPrivateIpv4Host(hostname) || (!hostname.includes('.') && hostname !== '')
-  }
+  return CHECK_IN_LOCATION_WEAK_MESSAGE
 }
 
 function resetCheckInVisualizationSubmission() {
@@ -982,81 +1699,322 @@ function resetCheckInVisualizationSubmission() {
   })
 }
 
-function getCurrentPositionOnce() {
-  return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: GEOLOCATION_TIMEOUT_MS,
-      maximumAge: 0
-    })
+function createTestFallbackLocation(reason = TEST_GEOLOCATION_FALLBACK_MESSAGE) {
+  return createTestEnvironmentLocationFallback({
+    targetLatitude: state.locationInfo.latitude,
+    targetLongitude: state.locationInfo.longitude,
+    radiusMeters: state.locationInfo.radiusMeters,
+    reason
   })
 }
 
-async function collectBestGeolocationDiagnostics() {
-  const samples = []
-  let lastError = null
-  console.info('[attendance geolocation environment]', buildLocationEnvironmentDiagnostics())
-  updateCheckInVisualization({
-    stageText: '正在获取定位...',
-    hasUsableLocation: false,
-    error: ''
+function resolveCheckInPageUrl() {
+  if (typeof window === 'undefined' || !window.location) {
+    return ''
+  }
+  return window.location.href.split('#')[0] || ''
+}
+
+function normalizeWechatJsapiConfig(data = {}) {
+  return {
+    enabled: Boolean(data.enabled),
+    locationEnabled: Boolean(data.locationEnabled),
+    appId: data.appId || '',
+    timestamp: data.timestamp ?? null,
+    nonceStr: data.nonceStr || '',
+    signature: data.signature || '',
+    jsApiList: Array.isArray(data.jsApiList) ? data.jsApiList : [],
+    locationType: data.locationType || WECHAT_JSAPI_DEFAULT_LOCATION_TYPE,
+    debug: Boolean(data.debug),
+    priority: data.priority || WECHAT_JSAPI_DEFAULT_PRIORITY,
+    fallback: data.fallback || WECHAT_JSAPI_DEFAULT_FALLBACK,
+    accuracyThreshold: data.accuracyThreshold == null ? null : Number(data.accuracyThreshold),
+    timeoutMs: data.timeoutMs == null ? GEOLOCATION_TIMEOUT_MS : Number(data.timeoutMs)
+  }
+}
+
+async function queryWechatJsapiConfigForCheckIn() {
+  const pageUrl = resolveCheckInPageUrl()
+  if (!pageUrl) {
+    return normalizeWechatJsapiConfig()
+  }
+  try {
+    const response = await queryWechatJsapiConfigApi({ url: pageUrl })
+    if (!response || response.code !== 0) {
+      return normalizeWechatJsapiConfig()
+    }
+    return normalizeWechatJsapiConfig(response.data || {})
+  } catch (error) {
+    console.warn('[wechat jsapi config load failed]', error)
+    return normalizeWechatJsapiConfig()
+  }
+}
+
+function buildLocationFailurePayload(reason, status, diagnostics = null, decisionBranch = 'INVALID') {
+  return {
+    reason,
+    status,
+    visualization: {
+      ...(diagnostics || {}),
+      error: reason,
+      decisionBranch,
+      overlap: false,
+      weakToleranceApplied: false,
+      stageText: '未获取到可用定位',
+      hasUsableLocation: false,
+      sampleTimestamp: diagnostics?.timestamp ?? null
+    }
+  }
+}
+
+function applyTerminalLocationFailure(failure) {
+  if (!failure) {
+    return
+  }
+  state.checkInResult.success = false
+  state.checkInResult.allowCheckIn = false
+  state.checkInResult.action = ''
+  state.checkInResult.status = failure.status || ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
+  state.checkInResult.distanceMeters = null
+  state.checkInResult.reason = failure.reason || '未获取到可用定位'
+  updateCheckInVisualization(failure.visualization || {
+    error: state.checkInResult.reason,
+    stageText: '未获取到可用定位',
+    hasUsableLocation: false
   })
-  for (let index = 0; index < GEOLOCATION_SAMPLE_COUNT; index += 1) {
-    try {
-      const position = await getCurrentPositionOnce()
-      const diagnostics = buildCheckInDiagnostics(position)
-      diagnostics.sampleIndex = index + 1
-      diagnostics.invalidSample = isInvalidGeolocationSample(position)
-      diagnostics.weakSample = isWeakAccuracy(diagnostics.accuracyMeters, diagnostics.radiusMeters)
-      samples.push(diagnostics)
-      console.info('[attendance geolocation sample]', {
-        sampleIndex: diagnostics.sampleIndex,
-        timestamp: diagnostics.timestamp,
-        latitude: diagnostics.rawLatitude,
-        longitude: diagnostics.rawLongitude,
-        accuracyMeters: diagnostics.accuracyMeters,
-        convertedLatitude: diagnostics.convertedLatitude,
-        convertedLongitude: diagnostics.convertedLongitude,
-        converted: diagnostics.coordinateSource === 'gcj02-adjusted',
-        localDistanceMeters: diagnostics.localDistanceMeters,
-        invalidSample: diagnostics.invalidSample,
-        weakSample: diagnostics.weakSample
-      })
-    } catch (error) {
-      lastError = error
-      console.warn('[attendance geolocation sample error]', {
-        sampleIndex: index + 1,
-        code: error?.code,
-        message: error?.message || ''
-      })
-      if (error?.code === 1) {
-        throw error
+  showToast(state.checkInResult.reason)
+}
+
+async function tryCollectBrowserLocationSelection() {
+  try {
+    const geolocation = typeof navigator === 'undefined' ? null : navigator.geolocation
+    const collected = await getUserLocation({
+      geolocation,
+      targetLatitude: state.locationInfo.latitude,
+      targetLongitude: state.locationInfo.longitude,
+      radiusMeters: state.locationInfo.radiusMeters,
+      sampleCount: GEOLOCATION_SAMPLE_COUNT,
+      timeoutMs: GEOLOCATION_TIMEOUT_MS
+    })
+
+    if (!collected.diagnostics) {
+      if (isTestIpLoginEnv()) {
+        const fallback = handleNonBlockingGeolocationFailure(TEST_GEOLOCATION_FALLBACK_MESSAGE)
+        return fallback ? { selection: fallback } : { failure: null }
+      }
+      const diagnostics = collected.samples[collected.samples.length - 1] || null
+      const invalidReason = collected.invalidReason || (
+        collected.errorCode === 'UNSUPPORTED'
+          ? buildInvalidLocationReason(null)
+          : buildInvalidLocationReason(diagnostics?.accuracyMeters ?? null)
+      )
+      return {
+        failure: buildLocationFailurePayload(
+          invalidReason,
+          collected.errorCode === 'UNSUPPORTED'
+            ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
+            : ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID,
+          diagnostics,
+          collected.errorCode === 'UNSUPPORTED' ? 'LOCATION_UNSUPPORTED' : 'INVALID'
+        )
       }
     }
-  }
-  updateCheckInVisualization({
-    stageText: '正在校验定位质量...'
-  })
-  const validSamples = samples.filter(item => !item.invalidSample)
-  if (!validSamples.length) {
+
     return {
-      diagnostics: null,
-      samples,
-      invalidReason: buildInvalidLocationReason(samples[0]?.accuracyMeters ?? null),
-      lastError
+      selection: {
+        ...collected,
+        source: 'BROWSER_GEO',
+        provider: 'BROWSER'
+      }
+    }
+  } catch (error) {
+    if (isTestIpLoginEnv()) {
+      const fallback = handleNonBlockingGeolocationFailure(
+        error?.code === 1
+          ? '定位权限被拒绝，可继续打卡（测试环境）'
+          : TEST_GEOLOCATION_FALLBACK_MESSAGE
+      )
+      return fallback ? { selection: fallback } : { failure: null }
+    }
+    return {
+      failure: buildLocationFailurePayload(
+        buildInvalidLocationReason(null),
+        error?.code === 1 ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID : ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED,
+        null,
+        error?.code === 1 ? 'INVALID' : 'LOCATION_ERROR'
+      )
     }
   }
-  validSamples.sort(compareCheckInDiagnostics)
-  console.info('[attendance geolocation selected sample]', {
-    selected: validSamples[0],
-    sampleCount: samples.length
-  })
-  return {
-    diagnostics: validSamples[0],
-    samples,
-    invalidReason: '',
-    lastError
+}
+
+async function tryCollectWechatLocationSelection(jsapiConfig) {
+  try {
+    const result = await getWechatLocationByJsapi({
+      config: jsapiConfig,
+      timeoutMs: jsapiConfig.timeoutMs,
+      locationType: jsapiConfig.locationType
+    })
+    const diagnostics = buildCheckInDiagnosticsFromCoordinates({
+      latitude: result.latitude,
+      longitude: result.longitude,
+      accuracyMeters: result.accuracy,
+      timestamp: Date.now(),
+      coordinateType: jsapiConfig.locationType,
+      targetLatitude: state.locationInfo.latitude,
+      targetLongitude: state.locationInfo.longitude,
+      radiusMeters: state.locationInfo.radiusMeters
+    })
+    const accuracyThreshold = Number.isFinite(jsapiConfig.accuracyThreshold)
+      ? Number(jsapiConfig.accuracyThreshold)
+      : null
+    if (accuracyThreshold != null && diagnostics.accuracyMeters != null && diagnostics.accuracyMeters > accuracyThreshold) {
+      return {
+        failure: buildLocationFailurePayload(
+          buildWeakLocationReason(diagnostics?.accuracyMeters),
+          ATTENDANCE_CHECK_IN_STATUS.LOCATION_WEAK,
+          diagnostics,
+          'WECHAT_LOCATION_WEAK'
+        )
+      }
+    }
+    return {
+      selection: {
+        latitude: diagnostics.submitLatitude,
+        longitude: diagnostics.submitLongitude,
+        accuracy: diagnostics.accuracyMeters,
+        errorCode: null,
+        errorMessage: '',
+        diagnostics,
+        source: 'WECHAT_JSAPI',
+        provider: 'WECHAT'
+      }
+    }
+  } catch (error) {
+    return {
+      failure: buildLocationFailurePayload(
+        buildInvalidLocationReason(null),
+        error?.code === 'CANCEL'
+          ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
+          : ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED,
+        null,
+        'WECHAT_LOCATION_ERROR'
+      )
+    }
   }
+}
+
+async function resolveLocationSelectionOrFail() {
+  console.info('[attendance geolocation environment]', buildLocationEnvironmentDiagnostics())
+  const jsapiConfig = await queryWechatJsapiConfigForCheckIn()
+  const inWechat = isWechatBrowser()
+  const canUseWechatLocation = inWechat
+    && jsapiConfig.enabled
+    && jsapiConfig.locationEnabled
+    && jsapiConfig.jsApiList.includes('getLocation')
+  const allowBrowserFallback = jsapiConfig.fallback === 'BROWSER'
+  const priority = canUseWechatLocation ? jsapiConfig.priority : WECHAT_JSAPI_DEFAULT_PRIORITY
+
+  if (!inWechat && jsapiConfig.enabled && !allowBrowserFallback) {
+    applyTerminalLocationFailure(buildLocationFailurePayload(
+      '当前不是微信环境，且系统未开启浏览器定位兜底',
+      ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED,
+      null,
+      'NON_WECHAT_BLOCKED'
+    ))
+    return null
+  }
+
+  if (!canUseWechatLocation) {
+    const browserResult = await tryCollectBrowserLocationSelection()
+    if (browserResult.failure) {
+      applyTerminalLocationFailure(browserResult.failure)
+      return null
+    }
+    return browserResult.selection
+  }
+
+  if (priority === 'WECHAT_ONLY') {
+    const wechatResult = await tryCollectWechatLocationSelection(jsapiConfig)
+    if (wechatResult.failure) {
+      applyTerminalLocationFailure(wechatResult.failure)
+      return null
+    }
+    return wechatResult.selection
+  }
+
+  if (priority === 'BROWSER_FIRST') {
+    const browserResult = await tryCollectBrowserLocationSelection()
+    if (browserResult.selection) {
+      return browserResult.selection
+    }
+    const wechatResult = await tryCollectWechatLocationSelection(jsapiConfig)
+    if (wechatResult.failure) {
+      applyTerminalLocationFailure(wechatResult.failure)
+      return null
+    }
+    return wechatResult.selection
+  }
+
+  const wechatResult = await tryCollectWechatLocationSelection(jsapiConfig)
+  if (wechatResult.selection) {
+    return wechatResult.selection
+  }
+  if (allowBrowserFallback) {
+    const browserResult = await tryCollectBrowserLocationSelection()
+    if (browserResult.selection) {
+      return browserResult.selection
+    }
+    if (browserResult.failure) {
+      applyTerminalLocationFailure(browserResult.failure)
+      return null
+    }
+  }
+  applyTerminalLocationFailure(wechatResult.failure)
+  return null
+}
+
+function buildCheckInSubmissionPayload(locationSelection) {
+  const usingTestFallback = locationSelection?.source === 'TEST_FALLBACK'
+  const usingWechatJsapi = locationSelection?.source === 'WECHAT_JSAPI'
+  return {
+    address: usingTestFallback
+      ? `${TEST_GEOLOCATION_FALLBACK_ADDRESS}${state.locationInfo.locationName ? `（${state.locationInfo.locationName}）` : ''}`
+      : `${usingWechatJsapi ? '微信定位' : '浏览器定位'}：${locationSelection.latitude}, ${locationSelection.longitude}`,
+    latitude: locationSelection.latitude,
+    longitude: locationSelection.longitude,
+    accuracyMeters: locationSelection.accuracy ?? null,
+    locationSource: usingTestFallback ? 'BROWSER_GEO_TEST_FALLBACK' : (locationSelection.source || 'BROWSER_GEO'),
+    locationProvider: usingTestFallback ? 'TEST_ENV' : (locationSelection.provider || 'BROWSER')
+  }
+}
+
+function handleNonBlockingGeolocationFailure(reason = TEST_GEOLOCATION_FALLBACK_MESSAGE) {
+  const fallback = createTestFallbackLocation(reason)
+  if (!fallback) {
+    state.checkInResult.success = false
+    state.checkInResult.allowCheckIn = false
+    state.checkInResult.action = ''
+    state.checkInResult.status = ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
+    state.checkInResult.distanceMeters = null
+    state.checkInResult.reason = state.locationInfo.reason || reason
+    updateCheckInVisualization({
+      stageText: reason,
+      hasUsableLocation: false,
+      error: ''
+    })
+    showToast(state.checkInResult.reason)
+    return null
+  }
+  updateCheckInVisualization({
+    ...fallback.diagnostics,
+    decisionBranch: 'TEST_FALLBACK',
+    stageText: reason,
+    hasUsableLocation: false,
+    error: '',
+    sampleTimestamp: fallback.diagnostics.timestamp ?? null
+  })
+  showToast(reason)
+  return fallback
 }
 
 function updateCheckInVisualization(payload = {}) {
@@ -1755,23 +2713,30 @@ function handleClearSelectedFormUser() {
 
 function resolveCheckInRequestErrorMessage(error) {
   const backendMessage = error?.response?.data?.message
-  if (backendMessage && String(backendMessage).trim()) {
-    return String(backendMessage).trim()
+  const rawMessage = backendMessage && String(backendMessage).trim()
+    ? String(backendMessage).trim()
+    : (error?.message && String(error.message).trim() ? String(error.message).trim() : '')
+  const inferredStatus = inferCheckInStatusFromErrorMessage(rawMessage)
+  if (inferredStatus === ATTENDANCE_CHECK_IN_STATUS.OUT_OF_RANGE) {
+    return CHECK_IN_RANGE_OUT_MESSAGE
   }
-  if (error?.message && String(error.message).trim()) {
-    return String(error.message).trim()
+  if (inferredStatus === ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED || inferredStatus === ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID) {
+    return CHECK_IN_LOCATION_REQUIRED_MESSAGE
   }
-  return '打卡失败，请稍后重试'
+  if (inferredStatus === ATTENDANCE_CHECK_IN_STATUS.LOCATION_WEAK) {
+    return CHECK_IN_LOCATION_WEAK_MESSAGE
+  }
+  return rawMessage || CHECK_IN_FAILURE_MESSAGE
 }
 
 function inferCheckInStatusFromErrorMessage(message) {
   if (!message) {
     return ''
   }
-  if (message.includes('定位无效')) {
+  if (message.includes('定位无效') || message.includes('无法获取当前位置') || message.includes('定位权限')) {
     return ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
   }
-  if (message.includes('定位质量较差') || message.includes('室内信号')) {
+  if (message.includes('定位精度不足') || message.includes('定位质量较差') || message.includes('室内信号')) {
     return ATTENDANCE_CHECK_IN_STATUS.LOCATION_WEAK
   }
   if (message.includes('未配置打卡点') || message.includes('配置不完整')) {
@@ -1783,7 +2748,7 @@ function inferCheckInStatusFromErrorMessage(message) {
   if (message.includes('未绑定单位')) {
     return ATTENDANCE_CHECK_IN_STATUS.LOCATION_NOT_BOUND
   }
-  if (message.includes('超出单位打卡范围')) {
+  if (message.includes('范围') || message.includes('超出') || message.includes('距离打卡点')) {
     return ATTENDANCE_CHECK_IN_STATUS.OUT_OF_RANGE
   }
   if (message.includes('今日考勤已完成')) {
@@ -1792,57 +2757,80 @@ function inferCheckInStatusFromErrorMessage(message) {
   return ''
 }
 
-async function handleCheckIn() {
-  if (!navigator.geolocation) {
-    state.checkInResult.success = false
-    state.checkInResult.allowCheckIn = false
-    state.checkInResult.action = ''
-    state.checkInResult.status = ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
-    state.checkInResult.distanceMeters = null
-    state.checkInResult.reason = '当前环境不支持定位'
-    updateCheckInVisualization({
-      stageText: '未获取到可用定位',
-      hasUsableLocation: false,
-      error: '当前环境不支持定位'
-    })
-    showToast('当前环境不支持定位')
-    return
-  }
+async function legacyHandleCheckInBrowserOnly() {
   state.checkingIn = true
   resetCheckInVisualizationSubmission()
   try {
+    let locationSelection = null
     try {
-      const collected = await collectBestGeolocationDiagnostics()
+      const geolocation = typeof navigator === 'undefined' ? null : navigator.geolocation
+      console.info('[attendance geolocation environment]', buildLocationEnvironmentDiagnostics())
+      updateCheckInVisualization({
+        stageText: '正在获取定位...',
+        hasUsableLocation: false,
+        error: ''
+      })
+
+      const collected = await getUserLocation({
+        geolocation,
+        targetLatitude: state.locationInfo.latitude,
+        targetLongitude: state.locationInfo.longitude,
+        radiusMeters: state.locationInfo.radiusMeters,
+        sampleCount: GEOLOCATION_SAMPLE_COUNT,
+        timeoutMs: GEOLOCATION_TIMEOUT_MS
+      })
+
       if (!collected.diagnostics) {
-        updateCheckInVisualization({
-          ...(collected.samples[collected.samples.length - 1] || {}),
-          error: collected.invalidReason || '未获取到可用定位，请检查定位服务后重试',
-          decisionBranch: 'INVALID',
-          overlap: false,
-          weakToleranceApplied: false,
-          stageText: '未获取到可用定位',
-          hasUsableLocation: false,
-          sampleTimestamp: collected.samples[collected.samples.length - 1]?.timestamp ?? null
-        })
-        state.checkInResult.success = false
-        state.checkInResult.allowCheckIn = false
-        state.checkInResult.action = ''
-        state.checkInResult.status = ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
-        state.checkInResult.distanceMeters = null
-        state.checkInResult.reason = collected.invalidReason || '未获取到可用定位，请检查定位服务后重试'
-        showToast(state.checkInResult.reason)
+        if (isTestIpLoginEnv()) {
+          locationSelection = handleNonBlockingGeolocationFailure(TEST_GEOLOCATION_FALLBACK_MESSAGE)
+        } else {
+          const invalidReason = collected.invalidReason || (
+            collected.errorCode === 'UNSUPPORTED'
+              ? buildInvalidLocationReason(null)
+              : buildInvalidLocationReason(collected.samples[collected.samples.length - 1]?.accuracyMeters ?? null)
+          )
+          updateCheckInVisualization({
+            ...(collected.samples[collected.samples.length - 1] || {}),
+            error: invalidReason,
+            decisionBranch: collected.errorCode === 'UNSUPPORTED' ? 'LOCATION_UNSUPPORTED' : 'INVALID',
+            overlap: false,
+            weakToleranceApplied: false,
+            stageText: '未获取到可用定位',
+            hasUsableLocation: false,
+            sampleTimestamp: collected.samples[collected.samples.length - 1]?.timestamp ?? null
+          })
+          state.checkInResult.success = false
+          state.checkInResult.allowCheckIn = false
+          state.checkInResult.action = ''
+          state.checkInResult.status = collected.errorCode === 'UNSUPPORTED'
+            ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
+            : ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
+          state.checkInResult.distanceMeters = null
+          state.checkInResult.reason = invalidReason
+          showToast(state.checkInResult.reason)
+          return
+        }
+      } else {
+        locationSelection = {
+          ...collected,
+          source: 'BROWSER_GEO'
+        }
+      }
+      if (!locationSelection) {
         return
       }
-      const diagnostics = collected.diagnostics
+      const diagnostics = locationSelection.diagnostics
       updateCheckInVisualization({
         ...diagnostics,
         error: '',
-        stageText: '正在提交打卡...',
-        hasUsableLocation: true,
+        stageText: locationSelection.source === 'TEST_FALLBACK' ? '测试环境容错提交中...' : '正在提交打卡...',
+        hasUsableLocation: locationSelection.source !== 'TEST_FALLBACK',
         sampleTimestamp: diagnostics.timestamp ?? null
       })
       console.info('[attendance check-in submit diagnostics]', {
         environment: buildLocationEnvironmentDiagnostics(),
+        source: locationSelection.source,
+        errorCode: locationSelection.errorCode || '',
         selectedTimestamp: diagnostics.timestamp,
         rawLatitude: diagnostics.rawLatitude,
         rawLongitude: diagnostics.rawLongitude,
@@ -1859,12 +2847,7 @@ async function handleCheckIn() {
         submitLatitude: diagnostics.submitLatitude,
         submitLongitude: diagnostics.submitLongitude
       })
-      const response = await checkInApi({
-        address: `浏览器定位 ${diagnostics.submitLatitude}, ${diagnostics.submitLongitude}`,
-        latitude: diagnostics.submitLatitude,
-        longitude: diagnostics.submitLongitude,
-        accuracyMeters: diagnostics.accuracyMeters
-      })
+      const response = await checkInApi(buildCheckInSubmissionPayload(locationSelection))
       const result = response.data || {}
       console.info('[attendance check-in response]', {
         ...diagnostics,
@@ -1879,8 +2862,10 @@ async function handleCheckIn() {
         decisionBranch: result.decisionBranch || '',
         weakToleranceApplied: Boolean(result.weakToleranceApplied),
         error: '',
-        stageText: result.success ? '已获取到可用定位，打卡已提交' : '已获取到可用定位，已完成业务校验',
-        hasUsableLocation: true,
+        stageText: result.success
+          ? (locationSelection.source === 'TEST_FALLBACK' ? '测试环境容错打卡已提交' : '已获取到可用定位，打卡已提交')
+          : (locationSelection.source === 'TEST_FALLBACK' ? '测试环境容错打卡已完成业务校验' : '已获取到可用定位，已完成业务校验'),
+        hasUsableLocation: locationSelection.source !== 'TEST_FALLBACK',
         sampleTimestamp: diagnostics.timestamp ?? null
       })
       state.checkInResult.success = Boolean(result.success)
@@ -1897,19 +2882,58 @@ async function handleCheckIn() {
       } else {
         state.checkInResult.reason = result.failReason || result.reason || ''
       }
-      await Promise.all([fetchList(), fetchCurrentLocation()])
+      await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
       if (result.success) {
-        showToast(result.action === 'CHECK_OUT' ? '下班时间已补齐' : '上班打卡成功')
+        showToast(result.action === 'CHECK_OUT' ? CHECK_OUT_SUCCESS_MESSAGE : CHECK_IN_SUCCESS_MESSAGE)
       } else {
-        showToast(state.checkInResult.reason || result.reason || '打卡失败')
+        showToast(state.checkInResult.reason || result.reason || CHECK_IN_FAILURE_MESSAGE)
       }
     } catch (error) {
+      if (isTestIpLoginEnv()) {
+        locationSelection = handleNonBlockingGeolocationFailure(
+          error?.code === 1
+            ? '定位权限被拒绝，可继续打卡（测试环境）'
+            : TEST_GEOLOCATION_FALLBACK_MESSAGE
+        )
+        if (!locationSelection) {
+          return
+        }
+        const diagnostics = locationSelection.diagnostics
+        updateCheckInVisualization({
+          ...diagnostics,
+          error: '',
+          stageText: '测试环境容错提交中...',
+          hasUsableLocation: false,
+          sampleTimestamp: diagnostics.timestamp ?? null
+        })
+        const response = await checkInApi(buildCheckInSubmissionPayload(locationSelection))
+        const result = response.data || {}
+        updateCheckInVisualization({
+          ...diagnostics,
+          localDistanceMeters: result.distanceMeters ?? diagnostics.localDistanceMeters,
+          decisionBranch: result.decisionBranch || 'TEST_FALLBACK',
+          weakToleranceApplied: Boolean(result.weakToleranceApplied),
+          error: '',
+          stageText: result.success ? '测试环境容错打卡已提交' : '测试环境容错打卡已完成业务校验',
+          hasUsableLocation: false,
+          sampleTimestamp: diagnostics.timestamp ?? null
+        })
+        state.checkInResult.success = Boolean(result.success)
+        state.checkInResult.allowCheckIn = Boolean(result.allowCheckIn)
+        state.checkInResult.action = result.action || ''
+        state.checkInResult.status = result.status || ''
+        state.checkInResult.distanceMeters = result.distanceMeters ?? null
+        state.checkInResult.reason = result.failReason || result.reason || ''
+        await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
+        showToast(result.success ? (result.action === 'CHECK_OUT' ? CHECK_OUT_SUCCESS_MESSAGE : CHECK_IN_SUCCESS_MESSAGE) : (state.checkInResult.reason || CHECK_IN_FAILURE_MESSAGE))
+        return
+      }
       state.checkInResult.success = false
       state.checkInResult.allowCheckIn = false
       state.checkInResult.action = ''
       state.checkInResult.status = error?.code === 1 ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID : ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
       state.checkInResult.distanceMeters = null
-      state.checkInResult.reason = error?.code === 1 ? '定位权限被拒绝，请检查浏览器定位权限' : '定位失败，请检查定位服务后重试'
+      state.checkInResult.reason = buildInvalidLocationReason(null)
       updateCheckInVisualization({
         decisionBranch: error?.code === 1 ? 'INVALID' : 'LOCATION_ERROR',
         error: state.checkInResult.reason,
@@ -1922,7 +2946,7 @@ async function handleCheckIn() {
   } catch (error) {
     const message = resolveCheckInRequestErrorMessage(error)
     if (error?.response) {
-      await Promise.all([fetchList(), fetchCurrentLocation()])
+      await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
     }
     console.warn('[attendance check-in error]', {
       message,
@@ -1940,7 +2964,139 @@ async function handleCheckIn() {
       error: message
     })
     if (!error?.response) {
-      showToast(message)
+      showToast(message || CHECK_IN_FAILURE_MESSAGE)
+    }
+  } finally {
+    state.checkingIn = false
+  }
+}
+
+async function handleCheckIn() {
+  state.checkingIn = true
+  resetCheckInVisualizationSubmission()
+  try {
+    updateCheckInVisualization({
+      stageText: '正在获取定位...',
+      hasUsableLocation: false,
+      error: ''
+    })
+
+    const locationSelection = await resolveLocationSelectionOrFail()
+    if (!locationSelection) {
+      return
+    }
+
+    const diagnostics = locationSelection.diagnostics
+    const usingTestFallback = locationSelection.source === 'TEST_FALLBACK'
+    const usingWechatJsapi = locationSelection.source === 'WECHAT_JSAPI'
+
+    updateCheckInVisualization({
+      ...diagnostics,
+      error: '',
+      stageText: usingTestFallback
+        ? '测试环境容错提交中...'
+        : (usingWechatJsapi ? '正在提交微信定位打卡...' : '正在提交打卡...'),
+      hasUsableLocation: !usingTestFallback,
+      sampleTimestamp: diagnostics?.timestamp ?? null
+    })
+
+    console.info('[attendance check-in submit diagnostics]', {
+      environment: buildLocationEnvironmentDiagnostics(),
+      source: locationSelection.source,
+      provider: locationSelection.provider || '',
+      errorCode: locationSelection.errorCode || '',
+      selectedTimestamp: diagnostics?.timestamp,
+      rawLatitude: diagnostics?.rawLatitude,
+      rawLongitude: diagnostics?.rawLongitude,
+      convertedLatitude: diagnostics?.convertedLatitude,
+      convertedLongitude: diagnostics?.convertedLongitude,
+      coordinateSource: diagnostics?.coordinateSource,
+      converted: diagnostics?.coordinateSource === 'gcj02-adjusted',
+      targetLatitude: diagnostics?.targetLatitude,
+      targetLongitude: diagnostics?.targetLongitude,
+      radiusMeters: diagnostics?.radiusMeters,
+      accuracyMeters: diagnostics?.accuracyMeters,
+      localDistanceMeters: diagnostics?.localDistanceMeters,
+      overlap: diagnostics?.overlap,
+      submitLatitude: diagnostics?.submitLatitude,
+      submitLongitude: diagnostics?.submitLongitude
+    })
+
+    const response = await checkInApi(buildCheckInSubmissionPayload(locationSelection))
+    const result = response.data || {}
+
+    console.info('[attendance check-in response]', {
+      ...diagnostics,
+      responseDistanceMeters: result.distanceMeters ?? null,
+      responseRadiusMeters: result.radiusMeters ?? state.locationInfo.radiusMeters ?? null,
+      responseStatus: result.status || '',
+      responseReason: result.failReason || result.reason || ''
+    })
+
+    updateCheckInVisualization({
+      ...diagnostics,
+      localDistanceMeters: result.distanceMeters ?? diagnostics?.localDistanceMeters,
+      decisionBranch: result.decisionBranch || '',
+      weakToleranceApplied: Boolean(result.weakToleranceApplied),
+      error: '',
+      stageText: result.success
+        ? (usingTestFallback
+          ? '测试环境容错打卡已提交'
+          : (usingWechatJsapi ? '微信定位已提交，打卡已完成' : '已获取到可用定位，打卡已提交'))
+        : (usingTestFallback
+          ? '测试环境容错打卡已完成业务校验'
+          : (usingWechatJsapi ? '微信定位已完成业务校验' : '已获取到可用定位，已完成业务校验')),
+      hasUsableLocation: !usingTestFallback,
+      sampleTimestamp: diagnostics?.timestamp ?? null
+    })
+
+    state.checkInResult.success = Boolean(result.success)
+    state.checkInResult.allowCheckIn = Boolean(result.allowCheckIn)
+    state.checkInResult.action = result.action || ''
+    state.checkInResult.status = result.status || ''
+    state.checkInResult.distanceMeters = result.distanceMeters ?? null
+    if (result.status === ATTENDANCE_CHECK_IN_STATUS.OUT_OF_RANGE) {
+      state.checkInResult.reason = buildOutOfRangeReason(
+        result.distanceMeters ?? diagnostics?.localDistanceMeters,
+        result.radiusMeters ?? diagnostics?.radiusMeters,
+        diagnostics?.accuracyMeters
+      )
+    } else if (result.status === ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID) {
+      state.checkInResult.reason = buildInvalidLocationReason(diagnostics?.accuracyMeters)
+    } else if (result.status === ATTENDANCE_CHECK_IN_STATUS.LOCATION_WEAK) {
+      state.checkInResult.reason = buildWeakLocationReason(diagnostics?.accuracyMeters)
+    } else {
+      state.checkInResult.reason = result.failReason || result.reason || ''
+    }
+
+    await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
+    if (result.success) {
+      showToast(result.action === 'CHECK_OUT' ? CHECK_OUT_SUCCESS_MESSAGE : CHECK_IN_SUCCESS_MESSAGE)
+    } else {
+      showToast(state.checkInResult.reason || result.reason || CHECK_IN_FAILURE_MESSAGE)
+    }
+  } catch (error) {
+    const message = resolveCheckInRequestErrorMessage(error)
+    if (error?.response) {
+      await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
+    }
+    console.warn('[attendance check-in error]', {
+      message,
+      status: error?.response?.status,
+      data: error?.response?.data
+    })
+    state.checkInResult.success = false
+    state.checkInResult.allowCheckIn = false
+    state.checkInResult.action = ''
+    state.checkInResult.status = inferCheckInStatusFromErrorMessage(message)
+    state.checkInResult.distanceMeters = null
+    state.checkInResult.reason = message
+    updateCheckInVisualization({
+      stageText: state.checkInVisualization.hasUsableLocation ? '已获取到可用定位，但提交失败' : state.checkInVisualization.stageText,
+      error: message
+    })
+    if (!error?.response) {
+      showToast(message || CHECK_IN_FAILURE_MESSAGE)
     }
   } finally {
     state.checkingIn = false
@@ -2174,6 +3330,7 @@ async function handleExportAbnormalRanks() {
 onMounted(() => {
   fetchCurrentLocation()
   fetchList()
+  fetchLeadershipWorkspace()
   nextTick(() => {
     syncCheckInMap()
   })
@@ -2194,6 +3351,25 @@ watch(
   { flush: 'post' }
 )
 
+watch(leadershipFilteredMembers, (members) => {
+  if (!hasSubordinates.value) {
+    state.leadershipSelectedUserId = null
+    state.leadershipRecentAbnormalRecords = []
+    state.leadershipDetailLoading = false
+    return
+  }
+  if (!members.length) {
+    state.leadershipSelectedUserId = null
+    state.leadershipRecentAbnormalRecords = []
+    state.leadershipDetailLoading = false
+    return
+  }
+  const hasSelectedMember = members.some(item => item.userId === state.leadershipSelectedUserId)
+  if (!hasSelectedMember) {
+    void handleSelectLeadershipMember(members[0])
+  }
+})
+
 onBeforeUnmount(() => {
   if (checkInMapInstance) {
     checkInMapInstance.destroy()
@@ -2205,6 +3381,69 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.attendance-leadership-section {
+  display: grid;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.attendance-leadership-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.02fr) minmax(380px, 0.92fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.attendance-leadership-main {
+  min-width: 0;
+}
+
+.attendance-leadership-aside {
+  position: sticky;
+  top: 24px;
+}
+
+.attendance-leadership-detail-mobile {
+  display: none;
+}
+
+.attendance-legacy-tools {
+  margin-bottom: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.94);
+  overflow: hidden;
+}
+
+.attendance-legacy-tools__summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 16px 18px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.96));
+}
+
+.attendance-legacy-tools__summary::-webkit-details-marker {
+  display: none;
+}
+
+.attendance-legacy-tools__summary strong {
+  display: block;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.attendance-legacy-tools__summary span {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #64748b;
+}
+
+.attendance-legacy-tools > .panel:first-of-type {
+  margin-top: 0;
+}
+
 .action-row {
   display: flex;
   flex-wrap: wrap;
@@ -2639,5 +3878,23 @@ onBeforeUnmount(() => {
 
 .state-block {
   padding: 20px 0;
+}
+
+@media (max-width: 960px) {
+  .attendance-leadership-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .attendance-leadership-aside {
+    display: none;
+  }
+
+  .attendance-leadership-detail-mobile {
+    display: block;
+  }
+
+  .attendance-legacy-tools__summary {
+    padding: 14px 16px;
+  }
 }
 </style>

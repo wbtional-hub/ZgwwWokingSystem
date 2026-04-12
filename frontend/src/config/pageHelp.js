@@ -173,10 +173,10 @@ export const pageHelpConfig = {
   attendance: {
     title: '考勤管理操作说明',
     helpText: `功能说明：本页用于查看考勤记录、执行打卡、筛选异常数据，并跟踪异常用户与趋势变化。
-主要操作：1. 通过查询区筛选姓名、组织、状态和时间范围 2. 使用快捷时间快速切换常用范围 3. 查看打卡统计、异常榜单和用户趋势 4. 执行立即打卡或导出记录。
+主要操作：1. 通过查询区筛选姓名、组织、状态和时间范围 2. 使用快捷时间快速切换常用范围 3. 查看打卡统计、异常榜单和用户趋势 4. 执行上班/下班打卡或导出记录。
 
 使用提示：当页面处于异常联动或趋势联动状态时，建议先查看“当前查询工作面”摘要，再决定是否清空联动。`,
-    firstVisitTip: '本页可完成考勤查询、立即打卡、异常榜单查看和趋势联动分析。',
+    firstVisitTip: '本页可完成考勤查询、上班/下班打卡、异常榜单查看和趋势联动分析。',
     guideSteps: [
       {
         target: '[data-guide="attendance-query"]',
@@ -186,7 +186,7 @@ export const pageHelpConfig = {
       {
         target: '[data-guide="attendance-checkin"]',
         title: '打卡与刷新入口',
-        content: '这里提供立即打卡、导出记录和刷新列表等高频操作。'
+        content: '这里提供上班/下班打卡、导出记录和刷新列表等高频操作。'
       },
       {
         target: '[data-guide="attendance-abnormal"]',
