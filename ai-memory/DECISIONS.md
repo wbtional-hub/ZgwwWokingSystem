@@ -149,3 +149,20 @@
 - 避免页面同时出现互相矛盾的状态提示
 - 更符合真实浏览器联调时对页面反馈一致性的要求
 - 仅涉及前端展示逻辑，适合作为组织树前端联调阶段的小闭环
+## 2026-04-11
+
+### Technical Decision
+Build the leadership attendance redesign as a frontend-first single-page workspace that reuses existing APIs instead of adding a dedicated backend dashboard endpoint in this round.
+
+Reason:
+- The user goal is primarily interaction and information architecture, not a new attendance domain model.
+- Existing `queryUserPageApi()` and `queryAttendanceListApi()` already provide enough data for a first usable leadership workspace.
+- This keeps the diff small and avoids risk to the existing check-in flow and attendance backend logic.
+
+### Technical Decision
+For the leadership cards and detail panel, derive late/field/abnormal signals only from existing attendance result and fail-reason data, and do not fabricate precise durations when the backend does not provide them.
+
+Reason:
+- Current backend payloads do not expose a complete structured model for late duration, early leave duration, or explicit fieldwork flags.
+- Showing invented precision would be misleading.
+- If later the business needs exact metrics, the backend should add explicit fields and the frontend should switch to those fields directly.

@@ -15,6 +15,9 @@ public class OrgTreeNodeVO {
     private String realName;
     private String jobTitle;
     private String mobile;
+    private String wechatNo;
+    private String wechatOpenId;
+    private String wechatUnionId;
     private Integer status;
     private final List<OrgTreeNodeVO> children = new ArrayList<>();
 
@@ -99,6 +102,30 @@ public class OrgTreeNodeVO {
         this.mobile = mobile;
     }
 
+    public String getWechatNo() {
+        return wechatNo;
+    }
+
+    public void setWechatNo(String wechatNo) {
+        this.wechatNo = wechatNo;
+    }
+
+    public String getWechatOpenId() {
+        return wechatOpenId;
+    }
+
+    public void setWechatOpenId(String wechatOpenId) {
+        this.wechatOpenId = wechatOpenId;
+    }
+
+    public String getWechatUnionId() {
+        return wechatUnionId;
+    }
+
+    public void setWechatUnionId(String wechatUnionId) {
+        this.wechatUnionId = wechatUnionId;
+    }
+
     public Integer getStatus() {
         return status;
     }
@@ -110,5 +137,4 @@ public class OrgTreeNodeVO {
     public List<OrgTreeNodeVO> getChildren() {
         return children;
     }
-
 }

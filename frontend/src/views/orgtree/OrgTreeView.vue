@@ -69,6 +69,9 @@
               <van-cell title="路径" :value="state.selectedNode.treePath" />
               <van-cell title="岗位" :value="state.selectedNode.jobTitle || '-'" />
               <van-cell title="手机号" :value="state.selectedNode.mobile || '-'" />
+              <van-cell title="微信号" :value="state.selectedNode.wechatNo || '-'" />
+              <van-cell title="微信OpenId" :value="state.selectedNode.wechatOpenId || '-'" />
+              <van-cell title="微信UnionId" :value="state.selectedNode.wechatUnionId || '-'" />
             </van-cell-group>
             <div class="popup-tip subtle-tip">组织树节点默认继承上级所属单位，当前页面仅维护树结构与节点资料，不直接改单位归属。</div>
 
@@ -150,6 +153,9 @@
           <van-field v-model="state.createForm.realName" label="姓名" placeholder="请输入姓名" required />
           <van-field v-model="state.createForm.jobTitle" label="岗位" placeholder="请输入岗位名称" />
           <van-field v-model="state.createForm.mobile" label="手机号" placeholder="请输入手机号" />
+          <van-field v-model="state.createForm.wechatNo" label="微信号" placeholder="请输入微信号" />
+          <van-field v-model="state.createForm.wechatOpenId" label="微信OpenId" placeholder="用于小程序授权绑定" />
+          <van-field v-model="state.createForm.wechatUnionId" label="微信UnionId" placeholder="用于跨应用微信身份绑定" />
           <van-field
             :model-value="createUnitLabel"
             label="所属单位"
@@ -184,6 +190,9 @@
           <van-field v-model="state.editForm.realName" label="姓名" placeholder="请输入姓名" required />
           <van-field v-model="state.editForm.jobTitle" label="岗位" placeholder="请输入岗位名称" />
           <van-field v-model="state.editForm.mobile" label="手机号" placeholder="请输入手机号" />
+          <van-field v-model="state.editForm.wechatNo" label="微信号" placeholder="请输入微信号" />
+          <van-field v-model="state.editForm.wechatOpenId" label="微信OpenId" placeholder="用于小程序授权绑定" />
+          <van-field v-model="state.editForm.wechatUnionId" label="微信UnionId" placeholder="用于跨应用微信身份绑定" />
           <van-field
             :model-value="editUnitLabel"
             label="所属单位"
@@ -341,6 +350,9 @@ const state = reactive({
     realName: '',
     jobTitle: '',
     mobile: '',
+    wechatNo: '',
+    wechatOpenId: '',
+    wechatUnionId: '',
     unitId: '',
     status: 1
   },
@@ -350,6 +362,9 @@ const state = reactive({
     realName: '',
     jobTitle: '',
     mobile: '',
+    wechatNo: '',
+    wechatOpenId: '',
+    wechatUnionId: '',
     unitId: '',
     status: 1
   },
@@ -521,6 +536,9 @@ function openCreateDialog(node) {
   state.createForm.realName = ''
   state.createForm.jobTitle = ''
   state.createForm.mobile = ''
+  state.createForm.wechatNo = ''
+  state.createForm.wechatOpenId = ''
+  state.createForm.wechatUnionId = ''
   state.createForm.unitId = useExplicitUnitSelection ? '' : normalized.unitId ?? ''
   state.createForm.status = 1
   state.createParentLabel = `${normalized.realName || normalized.username} · ${normalized.username}`
@@ -534,6 +552,9 @@ function openEditDialog(node) {
   state.editForm.realName = normalized.realName || ''
   state.editForm.jobTitle = normalized.jobTitle || ''
   state.editForm.mobile = normalized.mobile || ''
+  state.editForm.wechatNo = normalized.wechatNo || ''
+  state.editForm.wechatOpenId = normalized.wechatOpenId || ''
+  state.editForm.wechatUnionId = normalized.wechatUnionId || ''
   state.editForm.unitId = normalized.unitId ?? ''
   state.editForm.status = Number(normalized.status) || 0
   state.editNodeLabel = `${normalized.realName || normalized.username} · ${normalized.username}`
@@ -637,6 +658,9 @@ async function submitCreate() {
       realName: state.createForm.realName.trim(),
       jobTitle: trimToNull(state.createForm.jobTitle),
       mobile: trimToNull(state.createForm.mobile),
+      wechatNo: trimToNull(state.createForm.wechatNo),
+      wechatOpenId: trimToNull(state.createForm.wechatOpenId),
+      wechatUnionId: trimToNull(state.createForm.wechatUnionId),
       unitId: state.createForm.unitId ? Number(state.createForm.unitId) : null
     }))
     state.createVisible = false
@@ -666,6 +690,9 @@ async function submitEdit() {
       realName: state.editForm.realName.trim(),
       jobTitle: trimToNull(state.editForm.jobTitle),
       mobile: trimToNull(state.editForm.mobile),
+      wechatNo: trimToNull(state.editForm.wechatNo),
+      wechatOpenId: trimToNull(state.editForm.wechatOpenId),
+      wechatUnionId: trimToNull(state.editForm.wechatUnionId),
       unitId: state.editForm.unitId ? Number(state.editForm.unitId) : null
     }))
     state.editVisible = false

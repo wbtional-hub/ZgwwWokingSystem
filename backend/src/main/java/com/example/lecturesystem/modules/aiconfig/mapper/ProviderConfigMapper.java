@@ -14,6 +14,7 @@ public interface ProviderConfigMapper {
     List<ProviderConfigListItemVO> queryList(@Param("request") ProviderConfigQueryRequest request);
     ProviderConfigEntity findById(@Param("id") Long id);
     ProviderConfigEntity findByCode(@Param("providerCode") String providerCode);
+    ProviderConfigEntity findFirstEnabledSuccess();
     int insert(ProviderConfigEntity entity);
     int update(ProviderConfigEntity entity);
     int updateStatus(@Param("id") Long id,

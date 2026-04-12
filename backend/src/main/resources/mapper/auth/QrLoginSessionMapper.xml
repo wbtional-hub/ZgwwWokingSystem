@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.auth.mapper.QrLoginSessionMapper">
+
+    <resultMap id="QrLoginSessionMap" type="com.example.lecturesystem.modules.auth.entity.QrLoginSession">
+        <id property="id" column="id"/>
+        <result property="qrToken" column="qr_token"/>
+        <result property="userId" column="user_id"/>
+        <result property="status" column="status"/>
+        <result property="expireTime" column="expire_time"/>
+        <result property="scannedTime" column="scanned_time"/>
+        <result property="confirmedTime" column="confirmed_time"/>
+        <result property="consumedTime" column="consumed_time"/>
+        <result property="createdTime" column="created_time"/>
+        <result property="updatedTime" column="updated_time"/>
+    </resultMap>
+
+    <insert id="insertSession" parameterType="com.example.lecturesystem.modules.auth.entity.QrLoginSession" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO auth_qr_login_session (
+            qr_token,
+            status,
+            expire_time
+        ) VALUES (
+            #{qrToken},
+            'PENDING',
+            #{expireTime}
+        )
+    </insert>
+
+    <select id="selectByQrToken" resultMap="QrLoginSessionMap">
+        SELECT *
+        FROM auth_qr_login_session
+        WHERE qr_token = #{qrToken}
+        LIMIT 1
+    </select>
+
+    <update id="updateStatus">
+        UPDATE auth_qr_login_session
+        SET status = #{status},
+            updated_time = now()
+        WHERE qr_token = #{qrToken}
+    </update>
+
+    <update id="markScanned">
+        UPDATE auth_qr_login_session
+        SET status = 'SCANNED',
+            scanned_time = COALESCE(scanned_time, #{scannedTime}),
+            updated_time = now()
+        WHERE qr_token = #{qrToken}
+    </update>
+
+    <update id="confirmSession">
+        UPDATE auth_qr_login_session
+        SET status = #{status},
+            user_id = #{userId},
+            confirmed_time = #{confirmedTime},
+            updated_time = now()
+        WHERE qr_token = #{qrToken}
+    </update>
+
+    <update id="consumeConfirmedSession">
+        UPDATE auth_qr_login_session
+        SET status = 'CONSUMED',
+            consumed_time = #{consumedTime},
+            updated_time = now()
+        WHERE qr_token = #{qrToken}
+          AND status = 'CONFIRMED'
+          AND consumed_time IS NULL
+    </update>
+
+    <delete id="deleteExpiredSessions">
+        DELETE FROM auth_qr_login_session
+        WHERE expire_time &lt; now()
+    </delete>
+</mapper>

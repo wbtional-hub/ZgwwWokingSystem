@@ -19,6 +19,7 @@ import com.example.lecturesystem.modules.attendance.vo.AttendanceStatusCountVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceSummaryVO;
 import com.example.lecturesystem.modules.auth.security.LoginUser;
 import com.example.lecturesystem.modules.operationlog.service.OperationLogService;
+import com.example.lecturesystem.modules.param.service.ParamService;
 import com.example.lecturesystem.modules.permission.support.CurrentUserFacade;
 import com.example.lecturesystem.modules.permission.support.DataScopeService;
 import com.example.lecturesystem.modules.permission.service.PermissionService;
@@ -28,6 +29,7 @@ import com.example.lecturesystem.modules.user.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -51,13 +53,20 @@ public class AttendanceServiceImpl implements AttendanceService {
     private static final Logger log = LoggerFactory.getLogger(AttendanceServiceImpl.class);
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final double EARTH_RADIUS_METERS = 6371000D;
-    private static final int INVALID_ACCURACY_METERS = 1000;
-    private static final int WEAK_SUCCESS_MAX_ACCURACY_METERS = 80;
-    private static final int WEAK_ACCURACY_FLOOR_METERS = 80;
+    private static final int DEFAULT_GOOD_ACCURACY_METERS = 100;
+    private static final int DEFAULT_MAX_ACCURACY_METERS = 1000;
+    private static final String PARAM_ATTENDANCE_LOCATION_ACCURACY_GOOD_THRESHOLD = "ATTENDANCE_LOCATION_ACCURACY_GOOD_THRESHOLD";
+    private static final String PARAM_ATTENDANCE_LOCATION_ACCURACY_MAX_THRESHOLD = "ATTENDANCE_LOCATION_ACCURACY_MAX_THRESHOLD";
     private static final int MAX_WEAK_TOLERANCE_METERS = 50;
     private static final String RISK_LEVEL_HIGH = "HIGH";
     private static final String RISK_LEVEL_MEDIUM = "MEDIUM";
     private static final String RISK_LEVEL_LOW = "LOW";
+    private static final String CHECK_ACTION_IN = "CHECK_IN";
+    private static final String CHECK_ACTION_OUT = "CHECK_OUT";
+    private static final String REASON_CHECK_IN_COMPLETED = "今日已完成上班打卡";
+    private static final String REASON_CHECK_OUT_COMPLETED = "今日已完成下班打卡";
+    private static final String REASON_CHECK_IN_REQUIRED = "请先完成上班打卡";
+    private static final String REASON_TODAY_FINISHED = "今日打卡已全部完成";
     private static final String TREND_RISING = "RISING";
     private static final String TREND_FALLING = "FALLING";
     private static final String TREND_STABLE = "STABLE";
@@ -68,6 +77,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     private final OperationLogService operationLogService;
     private final CurrentUserFacade currentUserFacade;
     private final DataScopeService dataScopeService;
+    private final ParamService paramService;
 
     public AttendanceServiceImpl(AttendanceMapper attendanceMapper,
                                  PermissionService permissionService,
@@ -81,7 +91,35 @@ public class AttendanceServiceImpl implements AttendanceService {
             public Object query(com.example.lecturesystem.modules.operationlog.dto.OperationLogQueryRequest request) {
                 return java.util.List.of();
             }
-        }, null, new DataScopeService());
+        }, null, new DataScopeService(), new ParamService() {
+            @Override
+            public Object listParams(com.example.lecturesystem.modules.param.dto.ParamQueryRequest request) {
+                return java.util.List.of();
+            }
+
+            @Override
+            public String getByCode(String code) {
+                return null;
+            }
+
+            @Override
+            public com.example.lecturesystem.modules.config.vo.AmapConfigVO queryAmapConfig() {
+                return null;
+            }
+
+            @Override
+            public Long saveParam(com.example.lecturesystem.modules.param.dto.SaveParamRequest request) {
+                return null;
+            }
+
+            @Override
+            public void deleteParam(Long id) {
+            }
+
+            @Override
+            public void toggleStatus(com.example.lecturesystem.modules.param.dto.ToggleParamStatusRequest request) {
+            }
+        });
     }
 
     @Autowired
@@ -90,13 +128,15 @@ public class AttendanceServiceImpl implements AttendanceService {
                                  UserMapper userMapper,
                                  OperationLogService operationLogService,
                                  CurrentUserFacade currentUserFacade,
-                                 DataScopeService dataScopeService) {
+                                 DataScopeService dataScopeService,
+                                 ParamService paramService) {
         this.attendanceMapper = attendanceMapper;
         this.permissionService = permissionService;
         this.userMapper = userMapper;
         this.operationLogService = operationLogService;
         this.currentUserFacade = currentUserFacade;
         this.dataScopeService = dataScopeService;
+        this.paramService = paramService;
     }
 
     @Override
@@ -113,6 +153,8 @@ public class AttendanceServiceImpl implements AttendanceService {
         result.put("allowCheckIn", scope.reason == null);
         result.put("status", scope.status);
         result.put("reason", scope.reason);
+        result.put("accuracyGoodThreshold", resolveGoodAccuracyThreshold());
+        result.put("accuracyMaxThreshold", resolveMaxAccuracyThreshold());
         if (scope.location != null) {
             result.put("locationName", scope.location.getLocationName());
             result.put("latitude", scope.location.getLatitude());
@@ -136,11 +178,31 @@ public class AttendanceServiceImpl implements AttendanceService {
             return buildCheckInResult(false, null, scope, null, scope.reason, scope.status);
         }
         if (request == null || request.getLatitude() == null || request.getLongitude() == null) {
+            logCheckInFailureDiagnostic(
+                    loginUser,
+                    request,
+                    "CHECK_IN_VALIDATE",
+                    AttendanceCheckInStatus.LOCATION_REQUIRED,
+                    null,
+                    scope.location == null ? null : scope.location.getRadiusMeters(),
+                    "未获取到当前位置"
+            );
             return buildCheckInResult(false, null, scope, null, "未获取到当前位置", AttendanceCheckInStatus.LOCATION_REQUIRED);
         }
         Integer accuracyMeters = normalizeAccuracyMeters(request.getAccuracyMeters());
-        if (isInvalidLocation(request, accuracyMeters)) {
-            String invalidReason = buildInvalidLocationReason(accuracyMeters);
+        int goodAccuracyThreshold = resolveGoodAccuracyThreshold();
+        int maxAccuracyThreshold = resolveMaxAccuracyThreshold();
+        if (isInvalidLocation(request, accuracyMeters, maxAccuracyThreshold)) {
+            String invalidReason = buildInvalidLocationReason(request, accuracyMeters, maxAccuracyThreshold);
+            logCheckInFailureDiagnostic(
+                    loginUser,
+                    request,
+                    "CHECK_IN_VALIDATE",
+                    AttendanceCheckInStatus.LOCATION_INVALID,
+                    null,
+                    scope.location == null ? null : scope.location.getRadiusMeters(),
+                    invalidReason
+            );
             log.warn(
                     "attendance check-in rejected userId={} branch={} status={} submittedLat={} submittedLng={} accuracyMeters={} reason={}",
                     loginUser.getUserId(),
@@ -152,6 +214,19 @@ public class AttendanceServiceImpl implements AttendanceService {
                     invalidReason
             );
             return buildCheckInResult(false, null, scope, null, invalidReason, AttendanceCheckInStatus.LOCATION_INVALID, null, accuracyMeters, "INVALID", false, 0);
+        }
+        if (isWeakLocation(accuracyMeters, goodAccuracyThreshold, maxAccuracyThreshold)) {
+            String weakReason = buildWeakLocationReason(accuracyMeters, goodAccuracyThreshold);
+            logCheckInFailureDiagnostic(
+                    loginUser,
+                    request,
+                    "CHECK_IN_VALIDATE",
+                    AttendanceCheckInStatus.LOCATION_WEAK,
+                    null,
+                    scope.location == null ? null : scope.location.getRadiusMeters(),
+                    weakReason
+            );
+            return buildCheckInResult(false, null, scope, null, weakReason, AttendanceCheckInStatus.LOCATION_WEAK, null, accuracyMeters, "ACCURACY_WEAK", false, 0);
         }
         int distanceMeters = calculateDistanceMeters(
                 request.getLatitude().doubleValue(),
@@ -175,32 +250,16 @@ public class AttendanceServiceImpl implements AttendanceService {
         if (distanceMeters <= scope.location.getRadiusMeters()) {
             return persistCheckInSuccess(currentUser, loginUser, today, now, request, scope, distanceMeters, accuracyMeters, false, "SUCCESS");
         }
-        if (isWeakSuccess(scope.location.getRadiusMeters(), accuracyMeters, distanceMeters)) {
-            log.info(
-                    "attendance check-in weak-success userId={} distanceMeters={} radiusMeters={} accuracyMeters={} toleranceMeters={}",
-                    loginUser.getUserId(),
-                    distanceMeters,
-                    scope.location.getRadiusMeters(),
-                    accuracyMeters,
-                    toleranceMeters
-            );
-            return persistCheckInSuccess(currentUser, loginUser, today, now, request, scope, distanceMeters, accuracyMeters, true, "WEAK_SUCCESS");
-        }
-        if (isWeakLocation(accuracyMeters)) {
-            String weakReason = buildWeakLocationReason(accuracyMeters, scope.location.getRadiusMeters());
-            log.warn(
-                    "attendance check-in rejected userId={} branch={} status={} distanceMeters={} radiusMeters={} accuracyMeters={} reason={}",
-                    loginUser.getUserId(),
-                    "WEAK",
-                    AttendanceCheckInStatus.LOCATION_WEAK,
-                    distanceMeters,
-                    scope.location.getRadiusMeters(),
-                    accuracyMeters,
-                    weakReason
-            );
-            return buildCheckInResult(false, null, scope, distanceMeters, weakReason, AttendanceCheckInStatus.LOCATION_WEAK, null, accuracyMeters, "WEAK", false, toleranceMeters);
-        }
         String outOfRangeReason = buildOutOfRangeReason(distanceMeters, scope.location.getRadiusMeters(), accuracyMeters);
+        logCheckInFailureDiagnostic(
+                loginUser,
+                request,
+                "CHECK_IN_VALIDATE",
+                AttendanceCheckInStatus.OUT_OF_RANGE,
+                distanceMeters,
+                scope.location.getRadiusMeters(),
+                outOfRangeReason
+        );
         log.warn(
                 "attendance check-in rejected userId={} branch={} status={} distanceMeters={} radiusMeters={} accuracyMeters={} reason={}",
                 loginUser.getUserId(),
@@ -646,6 +705,11 @@ public class AttendanceServiceImpl implements AttendanceService {
         LocalDateTime checkInTime = parseDateTime(request.getCheckInTime());
         LocalDateTime checkOutTime = parseDateTime(request.getCheckOutTime());
         validateAttendanceTimes(attendanceDate, checkInTime, checkOutTime);
+        String checkType = resolveCheckType(checkInTime, checkOutTime);
+        LocalDateTime checkTime = resolveCheckTime(checkType, checkInTime, checkOutTime);
+        if (checkTime == null) {
+            throw new IllegalArgumentException("补录/编辑考勤时必须至少填写一个打卡时间");
+        }
 
         if (request.getId() == null) {
             AttendanceRecordEntity duplicated = attendanceMapper.findByUserIdAndDate(targetUserId, attendanceDate);
@@ -656,10 +720,14 @@ public class AttendanceServiceImpl implements AttendanceService {
             entity.setUnitId(targetUser.getUnitId());
             entity.setUserId(targetUserId);
             entity.setAttendanceDate(attendanceDate);
+            entity.setCheckType(checkType);
+            entity.setCheckTime(checkTime);
             entity.setCheckInTime(checkInTime);
             entity.setCheckOutTime(checkOutTime);
             entity.setCheckInAddress(normalizeText(request.getCheckInAddress()));
             entity.setCheckOutAddress(normalizeText(request.getCheckOutAddress()));
+            entity.setLocationSource("MANUAL");
+            entity.setLocationProvider("BACKOFFICE");
             entity.setValidFlag(request.getValidFlag());
             attendanceMapper.insert(entity);
             operationLogService.log(
@@ -680,10 +748,14 @@ public class AttendanceServiceImpl implements AttendanceService {
         existed.setUnitId(targetUser.getUnitId());
         existed.setUserId(targetUserId);
         existed.setAttendanceDate(attendanceDate);
+        existed.setCheckType(checkType);
+        existed.setCheckTime(checkTime);
         existed.setCheckInTime(checkInTime);
         existed.setCheckOutTime(checkOutTime);
         existed.setCheckInAddress(normalizeText(request.getCheckInAddress()));
         existed.setCheckOutAddress(normalizeText(request.getCheckOutAddress()));
+        existed.setLocationSource("MANUAL");
+        existed.setLocationProvider("BACKOFFICE");
         existed.setValidFlag(request.getValidFlag());
         attendanceMapper.update(existed);
         operationLogService.log(
@@ -714,6 +786,48 @@ public class AttendanceServiceImpl implements AttendanceService {
         }
         String trimmed = text.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String resolveLocationSource(CheckInRequest request) {
+        String source = normalizeText(request == null ? null : request.getLocationSource());
+        return source == null ? "BROWSER_GEO" : source.toUpperCase();
+    }
+
+    private String resolveLocationProvider(CheckInRequest request) {
+        String provider = normalizeText(request == null ? null : request.getLocationProvider());
+        if (provider != null) {
+            return provider.toUpperCase();
+        }
+        String source = resolveLocationSource(request);
+        if (source.startsWith("WECHAT")) {
+            return "WECHAT";
+        }
+        return "BROWSER";
+    }
+
+    private void logCheckInFailureDiagnostic(LoginUser loginUser,
+                                             CheckInRequest request,
+                                             String stage,
+                                             String errorCode,
+                                             Integer distanceMeters,
+                                             Integer radiusMeters,
+                                             String rawMessage) {
+        String locationSource = request == null ? "" : resolveLocationSource(request);
+        log.warn(
+                "attendance check-in diagnostic userId={} errorCode={} locationSource={} stage={} latitude={} longitude={} accuracy={} distanceMeters={} radiusMeters={} fallbackEnabled={} rawMessage={} locationProvider={}",
+                loginUser == null ? null : loginUser.getUserId(),
+                errorCode,
+                locationSource,
+                stage,
+                request == null ? null : request.getLatitude(),
+                request == null ? null : request.getLongitude(),
+                request == null ? null : request.getAccuracyMeters(),
+                distanceMeters,
+                radiusMeters,
+                locationSource.contains("FALLBACK"),
+                normalizeText(rawMessage),
+                request == null ? "" : resolveLocationProvider(request)
+        );
     }
 
     private UserEntity requireCurrentUser(Long userId) {
@@ -863,29 +977,44 @@ public class AttendanceServiceImpl implements AttendanceService {
                                                       boolean weakToleranceApplied,
                                                       String decisionBranch) {
         AttendanceRecordEntity entity = attendanceMapper.findByUserIdAndDate(loginUser.getUserId(), today);
-        String action;
-        if (entity == null) {
-            entity = new AttendanceRecordEntity();
-            entity.setUnitId(currentUser.getUnitId());
-            entity.setUserId(loginUser.getUserId());
-            entity.setAttendanceDate(today);
-            entity.setCheckInTime(now);
-            entity.setCheckInAddress(normalizeText(request.getAddress()));
-            entity.setCheckInLatitude(request.getLatitude());
-            entity.setCheckInLongitude(request.getLongitude());
-            entity.setCheckInDistanceMeters(distanceMeters);
-            entity.setCheckInResult(AttendanceCheckInStatus.CHECK_IN_SUCCESS);
-            entity.setCheckInFailReason(null);
-            entity.setValidFlag(1);
-            attendanceMapper.insert(entity);
-            action = "CHECK_IN";
-        } else if (entity.getCheckOutTime() == null) {
+        String requestedAction = resolveRequestedCheckAction(request);
+        String action = resolveEffectiveCheckAction(requestedAction, entity);
+        if (CHECK_ACTION_IN.equals(action)) {
+            if (entity != null) {
+                return buildDuplicateCheckInResult(scope, distanceMeters, accuracyMeters, entity, requestedAction == null ? "AUTO_DUPLICATE_IN" : "CHECK_IN_DUPLICATE");
+            }
+            AttendanceRecordEntity insertEntity = buildCheckInEntity(currentUser, loginUser, today, now, request, distanceMeters);
+            try {
+                attendanceMapper.insert(insertEntity);
+                entity = insertEntity;
+            } catch (DuplicateKeyException ex) {
+                log.warn("attendance check-in duplicate insert intercepted userId={} attendanceDate={}", loginUser.getUserId(), today, ex);
+                AttendanceRecordEntity latest = attendanceMapper.findByUserIdAndDate(loginUser.getUserId(), today);
+                if (latest == null) {
+                    throw ex;
+                }
+                return buildDuplicateCheckInResult(scope, distanceMeters, accuracyMeters, latest, "DUPLICATE_INSERT");
+            }
+        } else if (CHECK_ACTION_OUT.equals(action)) {
+            if (entity == null) {
+                return buildCheckInResult(false, null, scope, distanceMeters, REASON_CHECK_IN_REQUIRED, AttendanceCheckInStatus.LOCATION_REQUIRED, null, accuracyMeters, "CHECK_OUT_BEFORE_IN", false, 0);
+            }
+            if (entity.getCheckInTime() == null) {
+                return buildCheckInResult(false, null, scope, distanceMeters, REASON_CHECK_IN_REQUIRED, AttendanceCheckInStatus.LOCATION_REQUIRED, entity, accuracyMeters, "CHECK_OUT_BEFORE_IN", false, 0);
+            }
+            if (entity.getCheckOutTime() != null) {
+                String reason = requestedAction == null ? REASON_TODAY_FINISHED : REASON_CHECK_OUT_COMPLETED;
+                return buildCheckInResult(false, null, scope, distanceMeters, reason, AttendanceCheckInStatus.ALREADY_FINISHED, entity, accuracyMeters, "CHECK_OUT_DUPLICATE", false, 0);
+            }
+            entity.setCheckType(CHECK_ACTION_OUT);
             entity.setCheckOutTime(now);
+            entity.setCheckTime(resolveCheckTime(entity.getCheckType(), entity.getCheckInTime(), entity.getCheckOutTime()));
             entity.setCheckOutAddress(normalizeText(request.getAddress()));
             entity.setCheckInResult(AttendanceCheckInStatus.CHECK_OUT_SUCCESS);
             entity.setCheckInFailReason(null);
+            entity.setLocationSource(resolveLocationSource(request));
+            entity.setLocationProvider(resolveLocationProvider(request));
             attendanceMapper.update(entity);
-            action = "CHECK_OUT";
         } else {
             return buildCheckInResult(false, null, scope, distanceMeters, "今日考勤已完成", AttendanceCheckInStatus.ALREADY_FINISHED, null, accuracyMeters, "FINISHED", false, 0);
         }
@@ -906,13 +1035,100 @@ public class AttendanceServiceImpl implements AttendanceService {
                 scope,
                 distanceMeters,
                 null,
-                "CHECK_IN".equals(action) ? AttendanceCheckInStatus.CHECK_IN_SUCCESS : AttendanceCheckInStatus.CHECK_OUT_SUCCESS,
+                CHECK_ACTION_IN.equals(action) ? AttendanceCheckInStatus.CHECK_IN_SUCCESS : AttendanceCheckInStatus.CHECK_OUT_SUCCESS,
                 entity,
                 accuracyMeters,
                 decisionBranch,
                 weakToleranceApplied,
                 resolveWeakToleranceMeters(accuracyMeters)
         );
+    }
+
+    private AttendanceRecordEntity buildCheckInEntity(UserEntity currentUser,
+                                                      LoginUser loginUser,
+                                                      LocalDate today,
+                                                      LocalDateTime now,
+                                                      CheckInRequest request,
+                                                      Integer distanceMeters) {
+        AttendanceRecordEntity entity = new AttendanceRecordEntity();
+        entity.setUnitId(currentUser.getUnitId());
+        entity.setUserId(loginUser.getUserId());
+        entity.setAttendanceDate(today);
+        entity.setCheckType(CHECK_ACTION_IN);
+        entity.setCheckInTime(now);
+        entity.setCheckTime(resolveCheckTime(entity.getCheckType(), entity.getCheckInTime(), entity.getCheckOutTime()));
+        entity.setCheckInAddress(normalizeText(request.getAddress()));
+        entity.setCheckInLatitude(request.getLatitude());
+        entity.setCheckInLongitude(request.getLongitude());
+        entity.setCheckInDistanceMeters(distanceMeters);
+        entity.setCheckInResult(AttendanceCheckInStatus.CHECK_IN_SUCCESS);
+        entity.setCheckInFailReason(null);
+        entity.setLocationSource(resolveLocationSource(request));
+        entity.setLocationProvider(resolveLocationProvider(request));
+        entity.setValidFlag(1);
+        return entity;
+    }
+
+    private String resolveRequestedCheckAction(CheckInRequest request) {
+        String action = normalizeText(request == null ? null : request.getAction());
+        if (action == null) {
+            return null;
+        }
+        String normalized = action.toUpperCase();
+        if (CHECK_ACTION_IN.equals(normalized) || CHECK_ACTION_OUT.equals(normalized)) {
+            return normalized;
+        }
+        return null;
+    }
+
+    private String resolveEffectiveCheckAction(String requestedAction, AttendanceRecordEntity entity) {
+        if (requestedAction != null) {
+            return requestedAction;
+        }
+        if (entity == null) {
+            return CHECK_ACTION_IN;
+        }
+        return CHECK_ACTION_OUT;
+    }
+
+    private Map<String, Object> buildDuplicateCheckInResult(CheckInScope scope,
+                                                            Integer distanceMeters,
+                                                            Integer accuracyMeters,
+                                                            AttendanceRecordEntity entity,
+                                                            String decisionBranch) {
+        return buildCheckInResult(
+                false,
+                null,
+                scope,
+                distanceMeters,
+                REASON_CHECK_IN_COMPLETED,
+                AttendanceCheckInStatus.ALREADY_FINISHED,
+                entity,
+                accuracyMeters,
+                decisionBranch,
+                false,
+                0
+        );
+    }
+
+    private String resolveCheckType(LocalDateTime checkInTime, LocalDateTime checkOutTime) {
+        if (checkOutTime != null) {
+            return "CHECK_OUT";
+        }
+        if (checkInTime != null) {
+            return "CHECK_IN";
+        }
+        return "CHECK_IN";
+    }
+
+    private LocalDateTime resolveCheckTime(String checkType, LocalDateTime checkInTime, LocalDateTime checkOutTime) {
+        if ("CHECK_OUT".equals(checkType) && checkOutTime != null) {
+            return checkOutTime;
+        }
+        if (checkInTime != null) {
+            return checkInTime;
+        }
+        return checkOutTime;
     }
 
     private int calculateDistanceMeters(double latitude1, double longitude1, double latitude2, double longitude2) {
@@ -933,7 +1149,7 @@ public class AttendanceServiceImpl implements AttendanceService {
         return accuracyMeters;
     }
 
-    private boolean isInvalidLocation(CheckInRequest request, Integer accuracyMeters) {
+    private boolean isInvalidLocation(CheckInRequest request, Integer accuracyMeters, Integer maxAccuracyThreshold) {
         if (request == null || request.getLatitude() == null || request.getLongitude() == null) {
             return true;
         }
@@ -948,22 +1164,24 @@ public class AttendanceServiceImpl implements AttendanceService {
         if (Math.abs(latitude) < 0.000001D && Math.abs(longitude) < 0.000001D) {
             return true;
         }
-        return accuracyMeters != null && accuracyMeters >= INVALID_ACCURACY_METERS;
+        return accuracyMeters != null && accuracyMeters > (maxAccuracyThreshold == null ? DEFAULT_MAX_ACCURACY_METERS : maxAccuracyThreshold);
     }
 
     private boolean isWeakSuccess(Integer radiusMeters, Integer accuracyMeters, Integer distanceMeters) {
         if (radiusMeters == null || accuracyMeters == null || distanceMeters == null) {
             return false;
         }
-        return accuracyMeters <= WEAK_SUCCESS_MAX_ACCURACY_METERS
+        return accuracyMeters <= resolveGoodAccuracyThreshold()
                 && distanceMeters <= radiusMeters + resolveWeakToleranceMeters(accuracyMeters);
     }
 
-    private boolean isWeakLocation(Integer accuracyMeters) {
+    private boolean isWeakLocation(Integer accuracyMeters, Integer goodAccuracyThreshold, Integer maxAccuracyThreshold) {
         if (accuracyMeters == null) {
             return false;
         }
-        return accuracyMeters > WEAK_ACCURACY_FLOOR_METERS && accuracyMeters <= INVALID_ACCURACY_METERS;
+        int goodThreshold = goodAccuracyThreshold == null ? DEFAULT_GOOD_ACCURACY_METERS : goodAccuracyThreshold;
+        int maxThreshold = maxAccuracyThreshold == null ? DEFAULT_MAX_ACCURACY_METERS : maxAccuracyThreshold;
+        return accuracyMeters > goodThreshold && accuracyMeters <= maxThreshold;
     }
 
     private int resolveWeakToleranceMeters(Integer accuracyMeters) {
@@ -973,18 +1191,26 @@ public class AttendanceServiceImpl implements AttendanceService {
         return Math.min(accuracyMeters, MAX_WEAK_TOLERANCE_METERS);
     }
 
-    private String buildInvalidLocationReason(Integer accuracyMeters) {
-        if (accuracyMeters != null) {
-            return "当前定位无效，定位精度约 " + accuracyMeters + " 米，请检查定位权限或定位服务后重试";
+    private String buildInvalidLocationReason(CheckInRequest request, Integer accuracyMeters, Integer maxAccuracyThreshold) {
+        if (request == null || request.getLatitude() == null || request.getLongitude() == null) {
+            return "定位失败，未获取到有效经纬度，请检查定位权限后重试";
         }
-        return "当前定位无效，请检查定位权限或定位服务后重试";
+        int maxThreshold = maxAccuracyThreshold == null ? DEFAULT_MAX_ACCURACY_METERS : maxAccuracyThreshold;
+        if (accuracyMeters != null && accuracyMeters > maxThreshold) {
+            return "定位精度过低（约 " + accuracyMeters + " 米），不适合做 100 米围栏判断，请使用手机端或微信中重试";
+        }
+        if (accuracyMeters != null) {
+            return "定位失败，当前坐标无效，定位精度约 " + accuracyMeters + " 米，请检查定位权限或定位服务后重试";
+        }
+        return "定位失败，请检查定位权限或定位服务后重试";
     }
 
-    private String buildWeakLocationReason(Integer accuracyMeters, Integer radiusMeters) {
-        if (accuracyMeters != null && radiusMeters != null) {
-            return "当前定位质量较差，定位精度约 " + accuracyMeters + " 米，已超过稳定打卡建议范围，请稍等定位稳定或靠窗后重试";
+    private String buildWeakLocationReason(Integer accuracyMeters, Integer goodAccuracyThreshold) {
+        int goodThreshold = goodAccuracyThreshold == null ? DEFAULT_GOOD_ACCURACY_METERS : goodAccuracyThreshold;
+        if (accuracyMeters != null) {
+            return "定位精度不足（约 " + accuracyMeters + " 米），当前仅支持 " + goodThreshold + " 米内精度参与围栏判断，请确认后重试";
         }
-        return "当前定位质量较差，请稍等定位稳定或靠窗后重试";
+        return "定位精度不足，请确认后重试";
     }
 
     private String buildOutOfRangeReason(Integer distanceMeters, Integer radiusMeters, Integer accuracyMeters) {
@@ -995,11 +1221,38 @@ public class AttendanceServiceImpl implements AttendanceService {
                 .append(radiusMeters == null ? "-" : radiusMeters)
                 .append(" 米");
         if (accuracyMeters != null && radiusMeters != null && accuracyMeters > radiusMeters) {
-            builder.append("；当前定位精度约 ")
+            builder.append("；当前定位质量较差，定位精度约 ")
                     .append(accuracyMeters)
                     .append(" 米，请尽量在室外空旷区域重试");
         }
         return builder.toString();
+    }
+
+    private int resolveGoodAccuracyThreshold() {
+        return resolveIntParam(PARAM_ATTENDANCE_LOCATION_ACCURACY_GOOD_THRESHOLD, DEFAULT_GOOD_ACCURACY_METERS, 1, DEFAULT_MAX_ACCURACY_METERS);
+    }
+
+    private int resolveMaxAccuracyThreshold() {
+        return resolveIntParam(PARAM_ATTENDANCE_LOCATION_ACCURACY_MAX_THRESHOLD, DEFAULT_MAX_ACCURACY_METERS, DEFAULT_GOOD_ACCURACY_METERS, 5000);
+    }
+
+    private int resolveIntParam(String code, int fallback, int min, int max) {
+        if (paramService == null) {
+            return fallback;
+        }
+        try {
+            String value = paramService.getByCode(code);
+            if (value == null || value.isBlank()) {
+                return fallback;
+            }
+            int parsed = Integer.parseInt(value.trim());
+            if (parsed < min || parsed > max) {
+                return fallback;
+            }
+            return parsed;
+        } catch (Exception ex) {
+            return fallback;
+        }
     }
 
     private static class CheckInScope {

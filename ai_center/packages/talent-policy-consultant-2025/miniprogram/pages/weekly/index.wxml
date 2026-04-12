@@ -1,0 +1,40 @@
+<view class="page-shell">
+  <view class="hero-card">
+    <view class="hero-eyebrow">Weekly Work</view>
+    <view class="hero-title">把周报这件事，压缩成手机上能快速完成的动作。</view>
+    <view class="hero-subtitle">首版先保留本人周报查看、保存草稿和提交审核，先把提交流程跑通。</view>
+    <view class="meta-row">
+      <view class="meta-pill">建议周次 {{currentWeekNo}}</view>
+      <view class="meta-pill">记录 {{list.length}} 条</view>
+    </view>
+    <view class="button-row" style="margin-top: 24rpx;">
+      <button class="primary-button" bindtap="handleCreate">新建本周周报</button>
+    </view>
+  </view>
+
+  <view class="panel-card">
+    <view class="section-title">我的周报</view>
+    <view class="section-note">如果后端按权限返回更多记录，这里仍以移动端本人使用为主。</view>
+    <view wx:if="{{loading}}" class="empty-state">周报列表加载中...</view>
+    <view wx:elif="{{!list.length}}" class="empty-state">还没有周报记录，可以先新建本周草稿。</view>
+    <block wx:else>
+      <view
+        wx:for="{{list}}"
+        wx:key="id"
+        class="list-card"
+      >
+        <view class="card-title-row">
+          <view class="card-title">{{item.weekNo}}</view>
+          <view class="status-pill">{{item.statusText}}</view>
+        </view>
+        <view class="card-meta">工作计划：{{item.workPlanPreview || '未填写'}}</view>
+        <view class="card-meta">工作内容：{{item.workContentPreview || '未填写'}}</view>
+        <view class="card-meta">提交时间：{{item.submitTimeText}}</view>
+        <view class="card-meta">创建时间：{{item.createTimeText}}</view>
+        <view class="button-row" style="margin-top: 18rpx;">
+          <button class="ghost-button" data-id="{{item.id}}" bindtap="handleOpen">查看并编辑</button>
+        </view>
+      </view>
+    </block>
+  </view>
+</view>

@@ -12,6 +12,9 @@ public class UpdateOrgNodeRequest {
 
     private String jobTitle;
     private String mobile;
+    private String wechatNo;
+    private String wechatOpenId;
+    private String wechatUnionId;
     private Long unitId;
 
     public Long getUserId() {
@@ -44,6 +47,30 @@ public class UpdateOrgNodeRequest {
 
     public void setMobile(String mobile) {
         this.mobile = mobile;
+    }
+
+    public String getWechatNo() {
+        return wechatNo;
+    }
+
+    public void setWechatNo(String wechatNo) {
+        this.wechatNo = wechatNo;
+    }
+
+    public String getWechatOpenId() {
+        return wechatOpenId;
+    }
+
+    public void setWechatOpenId(String wechatOpenId) {
+        this.wechatOpenId = wechatOpenId;
+    }
+
+    public String getWechatUnionId() {
+        return wechatUnionId;
+    }
+
+    public void setWechatUnionId(String wechatUnionId) {
+        this.wechatUnionId = wechatUnionId;
     }
 
     public Long getUnitId() {

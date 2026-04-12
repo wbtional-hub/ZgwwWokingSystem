@@ -1,24 +1,43 @@
 <template>
-  <AppPageShell title="Skills 中心" description="在这里配置技能、训练版本、绑定知识库、录入验证题并执行验证。">
+  <AppPageShell
+    title="Skills 中心"
+    description="在这里配置技能、训练版本、绑定知识库、维护验证题并执行验证。"
+  >
     <template #actions>
       <div class="action-row">
         <van-button plain type="primary" :loading="state.loadingSkills" @click="reloadAll">刷新</van-button>
       </div>
     </template>
 
-    <section class="panel" data-guide="skills-list">
-      <div class="panel-title">技能列表</div>
-      <div class="panel-grid compact-grid">
-        <van-field v-model.trim="state.query.keywords" label="关键字" placeholder="按技能编码或名称查询" />
+    <section class="workspace-card skill-list-panel" data-guide="skills-list">
+      <div class="card-head">
+        <div>
+          <div class="section-kicker">Skills Center</div>
+          <div class="card-title">技能列表</div>
+        </div>
+      </div>
+
+      <div class="filter-grid">
+        <van-field v-model.trim="state.query.keywords" label="关键词" placeholder="按技能编码或名称查询" />
         <van-field v-model.trim="state.query.domainType" label="领域" placeholder="例如：人才政策" />
       </div>
       <div class="action-row">
         <van-button size="small" type="primary" :loading="state.loadingSkills" @click="fetchSkills">查询</van-button>
         <van-button size="small" plain @click="resetQuery">重置</van-button>
       </div>
+
       <div class="card-list">
-        <div v-for="item in state.skillList" :key="item.id" class="card-item" :class="{ active: state.activeSkillId === item.id }" @click="selectSkill(item)">
-          <div class="card-title">{{ item.skillName }}</div>
+        <div
+          v-for="item in state.skillList"
+          :key="item.id"
+          class="card-item"
+          :class="{ active: state.activeSkillId === item.id }"
+          @click="selectSkill(item)"
+        >
+          <div class="skill-card-top">
+            <div class="card-title-text">{{ item.skillName }}</div>
+            <div class="skill-chip">{{ item.domainType || '通用技能' }}</div>
+          </div>
           <div class="meta-line">编码：{{ item.skillCode }}</div>
           <div class="meta-line">领域：{{ item.domainType || '-' }} / 类型：{{ item.skillType || '-' }}</div>
           <div class="meta-line">知识库：{{ item.baseName || '-' }}</div>
@@ -27,15 +46,24 @@
       </div>
     </section>
 
-    <section v-if="showTrainPanels" class="panel-grid" data-guide="skills-version">
-      <section class="panel">
-        <div class="panel-title">技能维护</div>
+    <section v-if="showTrainPanels" class="editor-grid" data-guide="skills-version">
+      <section class="workspace-card">
+        <div class="card-head">
+          <div>
+            <div class="section-kicker">Skill Profile</div>
+            <div class="card-title">技能维护</div>
+          </div>
+        </div>
         <div class="panel-hint">新建技能需要全局训练权限；已授权技能支持按技能训练。</div>
-        <van-field v-model.trim="state.skillForm.skillCode" label="编码" placeholder="例如：talent_consultant" :readonly="Boolean(state.skillForm.id)" />
-        <van-field v-model.trim="state.skillForm.skillName" label="名称" placeholder="例如：人才政策咨询专家" />
-        <van-field v-model.trim="state.skillForm.domainType" label="领域" placeholder="例如：人才政策" />
-        <van-field v-model.trim="state.skillForm.skillType" label="类型" placeholder="例如：CONSULTANT" />
-        <van-field v-model="state.skillForm.description" label="说明" type="textarea" rows="3" autosize placeholder="技能说明" />
+
+        <div class="field-stack">
+          <van-field v-model.trim="state.skillForm.skillCode" label="编码" placeholder="例如：talent_consultant" :readonly="Boolean(state.skillForm.id)" />
+          <van-field v-model.trim="state.skillForm.skillName" label="名称" placeholder="例如：人才政策咨询专家" />
+          <van-field v-model.trim="state.skillForm.domainType" label="领域" placeholder="例如：人才政策" />
+          <van-field v-model.trim="state.skillForm.skillType" label="类型" placeholder="例如：CONSULTANT" />
+          <van-field v-model="state.skillForm.description" label="说明" type="textarea" rows="3" autosize placeholder="技能说明" />
+        </div>
+
         <div class="select-field">
           <span class="select-label">状态</span>
           <select v-model="state.skillForm.status">
@@ -43,16 +71,26 @@
             <option :value="0">停用</option>
           </select>
         </div>
+
         <div class="action-row">
           <van-button size="small" type="primary" :loading="state.savingSkill" @click="handleSaveSkill">保存技能</van-button>
           <van-button size="small" plain @click="resetSkillForm">清空</van-button>
         </div>
       </section>
 
-      <section class="panel">
-        <div class="panel-title">技能版本配置</div>
+      <section class="workspace-card">
+        <div class="card-head">
+          <div>
+            <div class="section-kicker">Version Setup</div>
+            <div class="card-title">技能版本配置</div>
+          </div>
+        </div>
         <div class="panel-hint">当前技能：{{ activeSkillName }}</div>
-        <van-field v-model.trim="state.versionForm.versionNo" label="版本号" placeholder="例如：v1.0.0" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
+
+        <div class="field-stack">
+          <van-field v-model.trim="state.versionForm.versionNo" label="版本号" placeholder="例如：v1.0.0" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
+        </div>
+
         <div class="select-field">
           <span class="select-label">AI 接入</span>
           <select v-model="state.versionForm.providerConfigId" :disabled="!state.activeSkillId || !canTrainCurrentSkill">
@@ -60,12 +98,16 @@
             <option v-for="item in state.providerOptions" :key="item.id" :value="String(item.id)">{{ item.providerName }}</option>
           </select>
         </div>
-        <van-field v-model.trim="state.versionForm.modelCode" label="模型" placeholder="例如：gpt-5.4" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
-        <van-field v-model="state.versionForm.systemPrompt" label="系统提示词" type="textarea" rows="4" autosize placeholder="角色设定和原则" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
-        <van-field v-model="state.versionForm.taskPrompt" label="任务提示词" type="textarea" rows="3" autosize placeholder="任务范围说明" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
-        <van-field v-model="state.versionForm.outputTemplate" label="输出模板" type="textarea" rows="3" autosize placeholder="输出格式模板" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
-        <van-field v-model="state.versionForm.forbiddenRules" label="禁答规则" type="textarea" rows="2" autosize placeholder="禁止回答范围" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
-        <van-field v-model="state.versionForm.citationRules" label="引用规则" type="textarea" rows="2" autosize placeholder="引用要求" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
+
+        <div class="field-stack">
+          <van-field v-model.trim="state.versionForm.modelCode" label="模型" placeholder="例如：gpt-5.4" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
+          <van-field v-model="state.versionForm.systemPrompt" label="系统提示词" type="textarea" rows="4" autosize placeholder="角色设定和原则" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
+          <van-field v-model="state.versionForm.taskPrompt" label="任务提示词" type="textarea" rows="3" autosize placeholder="任务范围说明" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
+          <van-field v-model="state.versionForm.outputTemplate" label="输出模板" type="textarea" rows="3" autosize placeholder="输出格式模板" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
+          <van-field v-model="state.versionForm.forbiddenRules" label="禁答规则" type="textarea" rows="2" autosize placeholder="禁止回答范围" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
+          <van-field v-model="state.versionForm.citationRules" label="引用规则" type="textarea" rows="2" autosize placeholder="引用要求" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
+        </div>
+
         <div class="action-row">
           <van-button size="small" type="primary" :loading="state.savingVersion" :disabled="!state.activeSkillId || !canTrainCurrentSkill" @click="handleSaveVersion">保存版本</van-button>
           <van-button size="small" plain type="success" :disabled="!state.versionForm.id || !canPublishCurrentSkill" @click="handlePublishVersion">发布版本</van-button>
@@ -73,9 +115,15 @@
       </section>
     </section>
 
-    <section v-if="showTrainPanels && state.activeSkillId" class="panel-grid" data-guide="skills-binding">
-      <section class="panel">
-        <div class="panel-title">知识库绑定</div>
+    <section v-if="showTrainPanels && state.activeSkillId" class="editor-grid" data-guide="skills-binding">
+      <section class="workspace-card">
+        <div class="card-head">
+          <div>
+            <div class="section-kicker">Knowledge Binding</div>
+            <div class="card-title">知识库绑定</div>
+          </div>
+        </div>
+
         <div class="select-field">
           <span class="select-label">知识库</span>
           <select v-model="state.bindingForm.baseId" :disabled="!state.versionForm.id || !canTrainCurrentSkill">
@@ -89,17 +137,27 @@
         <div class="meta-line">当前绑定：{{ state.bindingBaseName || '-' }}</div>
       </section>
 
-      <section class="panel">
-        <div class="panel-title">验证题维护</div>
-        <van-field v-model.trim="state.testCaseForm.caseType" label="类型" placeholder="例如：POLICY_QA" :disabled="!state.versionForm.id || !canTrainCurrentSkill" />
-        <van-field v-model="state.testCaseForm.questionText" label="问题" type="textarea" rows="3" autosize placeholder="输入验证问题" :disabled="!state.versionForm.id || !canTrainCurrentSkill" />
-        <van-field v-model="state.testCaseForm.expectedPoints" label="预期要点" type="textarea" rows="3" autosize placeholder="用换行或逗号分隔" :disabled="!state.versionForm.id || !canTrainCurrentSkill" />
-        <van-field v-model="state.testCaseForm.expectedFormat" label="预期格式" placeholder="例如：列点说明+引用依据" :disabled="!state.versionForm.id || !canTrainCurrentSkill" />
-        <van-field v-model="state.testCaseForm.standardAnswer" label="参考答案" type="textarea" rows="3" autosize placeholder="可选" :disabled="!state.versionForm.id || !canTrainCurrentSkill" />
+      <section class="workspace-card">
+        <div class="card-head">
+          <div>
+            <div class="section-kicker">Validation Cases</div>
+            <div class="card-title">验证题维护</div>
+          </div>
+        </div>
+
+        <div class="field-stack">
+          <van-field v-model.trim="state.testCaseForm.caseType" label="类型" placeholder="例如：POLICY_QA" :disabled="!state.versionForm.id || !canTrainCurrentSkill" />
+          <van-field v-model="state.testCaseForm.questionText" label="问题" type="textarea" rows="3" autosize placeholder="输入验证问题" :disabled="!state.versionForm.id || !canTrainCurrentSkill" />
+          <van-field v-model="state.testCaseForm.expectedPoints" label="预期要点" type="textarea" rows="3" autosize placeholder="用换行或逗号分隔" :disabled="!state.versionForm.id || !canTrainCurrentSkill" />
+          <van-field v-model="state.testCaseForm.expectedFormat" label="预期格式" placeholder="例如：列点说明 + 引用依据" :disabled="!state.versionForm.id || !canTrainCurrentSkill" />
+          <van-field v-model="state.testCaseForm.standardAnswer" label="参考答案" type="textarea" rows="3" autosize placeholder="可选" :disabled="!state.versionForm.id || !canTrainCurrentSkill" />
+        </div>
+
         <div class="action-row">
           <van-button size="small" type="primary" :loading="state.savingTestCase" :disabled="!state.versionForm.id || !canTrainCurrentSkill" @click="handleSaveTestCase">保存验证题</van-button>
           <van-button size="small" plain :disabled="!state.versionForm.id || !canTrainCurrentSkill" @click="resetTestCaseForm">清空</van-button>
         </div>
+
         <div class="permission-list">
           <div v-for="item in state.testCaseList" :key="item.id" class="permission-item" @click="fillTestCaseForm(item)">
             <div class="permission-title">{{ item.caseType }} / {{ item.questionText }}</div>
@@ -109,8 +167,13 @@
       </section>
     </section>
 
-    <section v-if="showTrainPanels && state.activeSkillId" class="panel" data-guide="skills-validation">
-      <div class="panel-title">技能验证</div>
+    <section v-if="showTrainPanels && state.activeSkillId" class="workspace-card" data-guide="skills-validation">
+      <div class="card-head">
+        <div>
+          <div class="section-kicker">Validation Run</div>
+          <div class="card-title">技能验证</div>
+        </div>
+      </div>
       <div class="panel-hint">当前版本：{{ state.versionForm.versionNo || '-' }}</div>
       <div class="action-row">
         <van-button size="small" type="primary" :loading="state.runningValidation" :disabled="!state.versionForm.id || !canTrainCurrentSkill" @click="handleRunValidation">执行验证</van-button>
@@ -468,35 +531,67 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.panel,
-.card-item,
-.permission-item {
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  background: #fff;
+.workspace-card {
+  margin-bottom: 18px;
+  padding: 24px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #eef2f7;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
-.panel {
-  margin-bottom: 16px;
-  padding: 16px;
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
 }
 
-.panel-title {
-  margin-bottom: 8px;
-  font-size: 16px;
-  font-weight: 600;
+.section-kicker,
+.skill-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
-.panel-grid {
+.section-kicker {
+  background: #eef2ff;
+  color: #3b82f6;
+}
+
+.card-title {
+  margin-top: 12px;
+  color: #111827;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.filter-grid,
+.editor-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 18px;
+  margin-bottom: 18px;
 }
 
-.compact-grid {
+.filter-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-bottom: 8px;
+}
+
+.editor-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.field-stack {
+  display: grid;
+  gap: 12px;
 }
 
 .action-row,
@@ -504,66 +599,136 @@ onMounted(async () => {
 .permission-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
 
 .card-list,
 .permission-list {
   flex-direction: column;
-  margin-top: 12px;
+  margin-top: 16px;
 }
 
 .card-item,
 .permission-item {
-  padding: 12px;
+  padding: 14px;
   cursor: pointer;
+  border-radius: 14px;
+  border: 1px solid #eef2f7;
+  background: #ffffff;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.card-item:hover,
+.permission-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(143, 168, 211, 0.88);
 }
 
 .card-item.active {
-  border-color: #1677ff;
+  border-color: #3b82f6;
   background: #eff6ff;
+  box-shadow: 0 8px 18px rgba(59, 130, 246, 0.08);
 }
 
-.card-title,
+.skill-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.card-title-text,
 .permission-title {
-  font-weight: 600;
-  color: #1f2937;
+  color: #162f4b;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.skill-chip {
+  background: #eef2ff;
+  color: #3b82f6;
 }
 
 .meta-line,
 .panel-hint {
-  color: #4b5563;
+  color: #6b7280;
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.5;
 }
 
 .select-field {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 10px 0;
-  padding: 10px 12px;
-  border: 1px solid #ebedf0;
+  margin: 12px 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
+  background: #ffffff;
 }
 
 .select-label {
-  flex: 0 0 72px;
+  flex: 0 0 58px;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .select-field select {
   flex: 1;
   border: 0;
   background: transparent;
+  color: #374151;
+  font-size: 14px;
+  outline: none;
 }
 
 .validation-box {
-  margin-top: 12px;
+  margin-top: 16px;
+}
+
+:deep(.van-field) {
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+:deep(.van-cell) {
+  background: transparent;
+}
+
+:deep(.van-field__label) {
+  width: 72px;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+:deep(.van-field__control) {
+  color: #374151;
+  font-size: 14px;
+}
+
+:deep(.van-field__control::placeholder) {
+  color: #9ca3af;
+}
+
+:deep(.van-button) {
+  min-height: 40px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+:deep(.van-button--primary) {
+  border-color: #2563eb;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.18);
 }
 
 @media (max-width: 960px) {
-  .panel-grid,
-  .compact-grid {
+  .filter-grid,
+  .editor-grid {
     grid-template-columns: 1fr;
   }
 }

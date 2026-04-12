@@ -693,6 +693,35 @@
 - `frontend/src/views/knowledge/KnowledgeBaseListView.vue`
 
 ### 任务名称
+H5 域名登录 403 最小修复
+
+说明：进行中。本轮只收口 `https://www.xmzgww.com` 访问 H5 登录 403，不扩展其它模块。已确认前端账号密码登录真实路径为 `POST /api/auth/login`，微信 H5 自动登录真实路径为 `POST /api/auth/wechat-mp-login`；当前安全层已保持 `CSRF disabled`，问题集中在 Security 放行范围与 CORS 来源白名单不完整。已将正式域名与 `localhost/127.0.0.1` 的 `5173/9000/9080/9090` 来源补齐，并让 JWT 过滤器跳过登录、健康检查与 `OPTIONS` 预检，非登录接口继续要求认证。
+涉及文件：
+- `backend/src/main/java/com/example/lecturesystem/config/SecurityConfig.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/security/JwtAuthenticationFilter.java`
+- `backend/src/test/java/com/example/lecturesystem/config/SecurityConfigTest.java`
+
+### 任务名称
+公众号 H5 授权登录最小闭环
+
+说明：进行中。本轮在不重构现有登录体系的前提下，继续复用 `POST /api/auth/wechat-mp-login` 作为 `code -> JWT` 的核心入口，最小新增 `GET /api/auth/wechat-mp-authorize-url` 和 `GET /api/auth/wechat-mp-callback` 两个配套接口。后端已新增统一 `wechat.mp / wechat.mini` 配置类，默认 `enabled=false` 不会触发真实微信请求；前端登录页已改为向后端获取公众号授权地址并处理 callback 回落登录结果；小程序只保留配置项、服务骨架和未启用时的明确提示。当前继续验证账号密码登录、本地开发访问与服务器部署访问不受影响。
+涉及文件：
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/config/WechatProperties.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/WechatMpAuthService.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/WechatMiniAuthService.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/impl/WechatMpAuthServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/impl/WechatMiniAuthServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/impl/AuthServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/controller/AuthController.java`
+- `backend/src/main/java/com/example/lecturesystem/config/SecurityConfig.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/security/JwtAuthenticationFilter.java`
+- `backend/src/main/resources/application.yml`
+- `frontend/src/api/auth.js`
+- `frontend/src/utils/request.js`
+- `frontend/src/views/auth/LoginView.vue`
+- `frontend/.env.example`
+
+### 任务名称
 网页导入动态页诊断与浏览器渲染兜底
 
 说明：
@@ -724,3 +753,180 @@
 - `backend/src/main/java/com/example/lecturesystem/modules/knowledge/service/KnowledgeService.java`
 - `backend/src/main/java/com/example/lecturesystem/modules/knowledge/service/impl/KnowledgeServiceImpl.java`
 - `backend/src/main/java/com/example/lecturesystem/modules/knowledge/vo/WebKnowledgePreviewVO.java`
+
+### 任务名称
+公众号 H5 真机测试收口
+
+说明：进行中。本轮只做“可直接部署到服务器并用手机微信测试公众号 H5 登录”的最小收口，不重构现有登录体系，不启用小程序真实调用。已补齐仅后端读取的公众号配置与 `application-prod.yml` 示例，继续复用 `POST /api/auth/wechat-mp-login` 作为 `code -> JWT` 的核心入口；微信内访问 `/login` 时由前端调用后端生成授权地址，回调失败时统一回落到登录页并携带 `wechatAuthFailed / wechatAuthCode / wechatAuthMessage`，已绑定用户直接登录，未绑定用户明确提示“当前微信未绑定系统账号”。
+涉及文件：
+- `backend/src/main/resources/application.yml`
+- `backend/src/main/resources/application-prod.yml`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/WechatMpAuthService.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/impl/WechatMpAuthServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/impl/AuthServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/impl/WechatMiniAuthServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/common/GlobalExceptionHandler.java`
+- `frontend/src/views/auth/LoginView.vue`
+- `frontend/src/utils/request.js`
+- `backend/src/test/java/com/example/lecturesystem/modules/auth/service/impl/AuthServiceImplTest.java`
+- `backend/src/test/java/com/example/lecturesystem/modules/auth/service/impl/WechatMpAuthServiceImplTest.java`
+- `backend/src/test/java/com/example/lecturesystem/modules/auth/service/impl/WechatMiniAuthServiceImplTest.java`
+- `ai-memory/progress.md`
+### Task Name
+Change password minimal closed loop
+
+Description: completed. Added the smallest possible self-service password change flow for the current logged-in user without changing the existing login mode, menu system, or admin reset-password behavior. The entry is attached to the existing `/profile` page, the backend route is `POST /api/auth/change-password`, storage continues to use `sys_user.password_hash`, and password verification/storage continues to use BCrypt so old accounts remain compatible with current login.
+Files involved:
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/dto/ChangePasswordRequest.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/AuthService.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/impl/AuthServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/controller/AuthController.java`
+- `backend/src/test/java/com/example/lecturesystem/modules/auth/service/impl/AuthServiceImplTest.java`
+- `frontend/src/api/auth.js`
+- `frontend/src/views/profile/ProfileView.vue`
+- `ai-memory/progress.md`
+- `ai-memory/TASKS.md`
+Closeout:
+- Added explicit submit-disable and submit-time popup close guard in the profile password popup.
+- Submit payload now uses trimmed `oldPassword/newPassword/confirmPassword`.
+- Added final backend test coverage for wrong old password and same old/new password.
+- Re-verified with `mvn -q -DskipTests compile`, `mvn -q -Dtest=AuthServiceImplTest test`, and `npm.cmd run build`.
+
+### Task Name
+Force password change after admin reset
+
+Description: completed. Added a minimal `force_password_change` security strategy so accounts whose passwords are reset by an administrator must change the password before they can continue into the system. The backend now persists the flag on `sys_user`, sets it to `true` on admin reset, clears it on self-service password change, and includes `forcePasswordChange` in the existing login result while returning the special response message `FORCE_PASSWORD_CHANGE`. The frontend reuses the existing `/profile` password popup, redirects forced users there immediately after login, and blocks normal route access until the password is changed. JWT generation, WeChat login flow, and BCrypt/SM3 compatibility logic were left unchanged.
+
+Files involved:
+- `database/20260406_force_password_change.sql`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/controller/AuthController.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/impl/AuthServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/vo/LoginVO.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/user/service/impl/UserServiceImpl.java`
+- `backend/src/main/resources/mapper/user/UserMapper.xml`
+- `backend/src/main/java/com/example/lecturesystem/modules/unit/service/impl/UnitServiceImpl.java`
+- `backend/src/test/java/com/example/lecturesystem/modules/auth/service/impl/AuthServiceImplTest.java`
+- `backend/src/test/java/com/example/lecturesystem/modules/user/service/impl/UserServiceImplTest.java`
+- `backend/src/test/java/com/example/lecturesystem/modules/attendance/service/impl/AttendanceServiceImplTest.java`
+- `backend/src/test/java/com/example/lecturesystem/modules/weeklywork/service/impl/WeeklyWorkServiceImplTest.java`
+- `frontend/src/stores/user.js`
+- `frontend/src/router/index.js`
+- `frontend/src/views/auth/LoginView.vue`
+- `frontend/src/views/profile/ProfileView.vue`
+- `ai-memory/progress.md`
+- `ai-memory/TASKS.md`
+
+Closeout:
+- Old users still log in through the existing BCrypt/SM3 compatibility branch.
+- Forced-change users now receive `FORCE_PASSWORD_CHANGE` plus the existing login payload so the authenticated change-password API remains usable.
+- Verified with backend compile, targeted auth/user tests, existing security/wechat smoke tests, and frontend production build.
+
+### Task Name
+QR login phase 1
+
+Description: completed. Added the first-stage QR login backend foundation without touching the existing account-password login chain, JWT generation/filtering, or WeChat login flow. This round only includes QR session creation and session-status query. The new anonymous endpoints are `POST /api/auth/qr-login/session` and `GET /api/auth/qr-login/status`, backed by the new table `auth_qr_login_session`. The frontend only gained API wrappers; no PC QR UI or mobile confirmation flow was implemented in this round.
+
+Files involved:
+- `backend/src/main/resources/db/migration/20260406_create_qr_login_session.sql`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/entity/QrLoginSession.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/mapper/QrLoginSessionMapper.java`
+- `backend/src/main/resources/mapper/auth/QrLoginSessionMapper.xml`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/QrLoginService.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/impl/QrLoginServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/controller/QrLoginController.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/vo/QrLoginSessionCreateVO.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/vo/QrLoginSessionStatusVO.java`
+- `backend/src/main/java/com/example/lecturesystem/config/SecurityConfig.java`
+- `backend/src/test/java/com/example/lecturesystem/modules/auth/service/impl/QrLoginServiceTest.java`
+- `frontend/src/api/auth.js`
+- `ai-memory/progress.md`
+- `ai-memory/TASKS.md`
+
+Closeout:
+- QR session creation now returns `qrToken`, `expireAt`, and `/mobile/qr-confirm?qrToken=...`.
+- Status query now returns `PENDING/SCANNED/CONFIRMED/CANCELED/EXPIRED`, and expired sessions automatically fall back to `EXPIRED`.
+- Verified with backend compile, targeted QR/auth/security/wechat tests, and frontend production build.
+
+Pending next steps:
+- QR login phase 2: mobile confirm API
+- PC login page QR code UI
+- PC QR polling logic
+- QR session expiration cleanup
+
+### Task Name
+QR login phase 2
+
+Description: completed. Added the mobile-side QR confirmation loop on top of the existing QR session foundation. This round only includes mobile session view, `PENDING -> SCANNED`, confirm/reject actions, and the minimum mobile confirmation page. No PC QR UI, polling, token consumption, WebSocket, Redis, or auth-chain rewrite was added.
+
+Files involved:
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/dto/QrLoginConfirmRequest.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/vo/QrLoginMobileSessionVO.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/vo/QrLoginConfirmResultVO.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/controller/QrLoginController.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/QrLoginService.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/impl/QrLoginServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/mapper/QrLoginSessionMapper.java`
+- `backend/src/main/resources/mapper/auth/QrLoginSessionMapper.xml`
+- `backend/src/test/java/com/example/lecturesystem/modules/auth/service/impl/QrLoginServiceTest.java`
+- `frontend/src/api/auth.js`
+- `frontend/src/router/index.js`
+- `frontend/src/views/mobile/MobileQrConfirmView.vue`
+- `ai-memory/progress.md`
+- `ai-memory/TASKS.md`
+
+Closeout:
+- Mobile users can now open `/mobile/qr-confirm?qrToken=...`, view session state, and confirm or reject the QR login request.
+- Allowed transitions are now enforced for `PENDING/SCANNED -> CONFIRMED/CANCELED`, with expired-session and repeated-confirmation rejection.
+- Verified with backend compile, targeted QR/auth/security/wechat tests, and frontend production build.
+
+Pending next steps:
+- PC login page QR code UI
+- PC QR polling logic
+- PC side token consumption / auto login
+- QR session expiration cleanup
+
+### Task Name
+QR login phase 3
+
+Description: completed. Added the PC-side QR login consumption loop on top of the existing QR session and mobile confirmation foundation. This round only includes QR status consumption, one-time `CONFIRMED -> CONSUMED`, the desktop login-page QR UI, polling, countdown, and automatic login application from the returned `LoginVO`.
+
+Files involved:
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/service/impl/QrLoginServiceImpl.java`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/mapper/QrLoginSessionMapper.java`
+- `backend/src/main/resources/mapper/auth/QrLoginSessionMapper.xml`
+- `backend/src/main/java/com/example/lecturesystem/modules/auth/vo/QrLoginSessionStatusVO.java`
+- `backend/src/test/java/com/example/lecturesystem/modules/auth/service/impl/QrLoginServiceTest.java`
+- `frontend/src/views/auth/LoginView.vue`
+- `ai-memory/progress.md`
+- `ai-memory/TASKS.md`
+
+Closeout:
+- PC can now generate a QR session, display the QR image on the login page, poll status every 2 seconds, and automatically consume a confirmed session exactly once.
+- `GET /api/auth/qr-login/status` now returns `login: LoginVO` when a confirmed session is consumed and returns `CONSUMED` on repeated polling to prevent duplicate login consumption.
+- Existing username/password login, WeChat login, JWT generation/filtering, login logs, and brute-force protection were not rewritten in this round.
+
+Pending next steps:
+- QR code local rendering replacement to remove the current third-party QR image dependency
+- Optional session cleanup scheduling for expired QR sessions
+- Optional PC-side UX polish around QR refresh and retry states
+### Task Name
+Leadership attendance single-page workspace
+
+Description:
+Completed a first usable single-page leadership dashboard on top of the existing attendance page.
+The page now shows:
+- top overview metrics
+- reminder cards
+- subordinate member cards
+- current-page detail expansion instead of list -> detail -> back
+
+Files:
+- `frontend/src/views/attendance/AttendanceCheckInView.vue`
+- `frontend/src/components/attendance/AttendanceLeadershipSummarySection.vue`
+- `frontend/src/components/attendance/AttendanceLeadershipMemberCards.vue`
+- `frontend/src/components/attendance/AttendanceLeadershipDetailPanel.vue`
+
+Current follow-up:
+- do real browser validation on desktop and mobile
+- if business later needs exact late/early duration or true fieldwork identification, add structured backend fields instead of continuing to infer from free text
+- after validation, consider trimming duplicate old leadership information from the lower attendance sections if the new workspace fully covers the scenario

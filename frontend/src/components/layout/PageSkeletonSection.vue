@@ -29,40 +29,41 @@ defineProps({
 
 <style scoped>
 .skeleton-section {
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 
 .skeleton-section-head {
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .skeleton-section-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 600;
-  color: #1f2937;
+  color: #111827;
 }
 
 .skeleton-section-description {
   margin: 6px 0 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #64748b;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #6b7280;
 }
 
 .skeleton-section-body {
-  border-radius: 12px;
-  border: 1px dashed #cbd5e1;
-  background: #f8fafc;
-  padding: 14px 16px;
-  color: #475569;
+  border-radius: 14px;
+  border: 1px solid #eef2f7;
+  background: #ffffff;
+  padding: 24px;
+  color: #374151;
   font-size: 14px;
-  line-height: 1.7;
+  line-height: 1.5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .skeleton-section-body--empty {
-  background: #fff7ed;
-  border-color: #fdba74;
-  color: #9a3412;
+  background: #fffaf0;
+  border-color: rgba(245, 158, 11, 0.32);
+  color: #b7791f;
 }
 </style>

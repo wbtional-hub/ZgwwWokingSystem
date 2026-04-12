@@ -1,0 +1,22 @@
+app:
+  auth:
+    mobile:
+      password-login:
+        enabled: ${MOBILE_PASSWORD_LOGIN_ENABLED:false}
+  jwt:
+    secret: ${APP_JWT_SECRET:change-this-secret-in-production}
+    expire-seconds: ${APP_JWT_EXPIRE_SECONDS:7200}
+
+wechat:
+  mp:
+    enabled: ${WECHAT_MP_ENABLED:true}
+    app-id: ${WECHAT_MP_APP_ID:}
+    app-secret: ${WECHAT_MP_APP_SECRET:}
+    token: ${WECHAT_MP_TOKEN:}
+    aes-key: ${WECHAT_MP_AES_KEY:}
+    oauth-redirect-uri: ${WECHAT_MP_OAUTH_REDIRECT_URI:https://www.xmzgww.com/api/auth/wechat-mp-callback}
+    authorize-scope: ${WECHAT_MP_AUTHORIZE_SCOPE:snsapi_base}
+  mini:
+    enabled: ${WECHAT_MINI_ENABLED:false}
+    app-id: ${WECHAT_MINI_APP_ID:}
+    app-secret: ${WECHAT_MINI_APP_SECRET:}

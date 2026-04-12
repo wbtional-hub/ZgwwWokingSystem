@@ -1,0 +1,33 @@
+<view class="page-shell">
+  <view class="page-glow page-glow-top"></view>
+  <view class="page-glow page-glow-bottom"></view>
+
+  <view class="login-stage">
+    <view class="title-block">
+      <view class="title">工作管理服务</view>
+      <view class="subtitle">便捷进入移动工作台</view>
+    </view>
+
+    <view class="wechat-badge">
+      <view class="wechat-mark">
+        <view class="bubble bubble-back">
+          <view class="eye eye-left"></view>
+          <view class="eye eye-right"></view>
+          <view class="tail tail-back"></view>
+        </view>
+        <view class="bubble bubble-front">
+          <view class="eye eye-left"></view>
+          <view class="eye eye-right"></view>
+          <view class="tail tail-front"></view>
+        </view>
+      </view>
+    </view>
+
+    <view class="action-block">
+      <button class="primary-button" hover-class="primary-button-hover" loading="{{loading}}" bindtap="handleWechatLogin">
+        {{loading ? '登录中...' : '微信授权登录'}}
+      </button>
+      <view class="hint">需先完成账号绑定后方可登录</view>
+    </view>
+  </view>
+</view>

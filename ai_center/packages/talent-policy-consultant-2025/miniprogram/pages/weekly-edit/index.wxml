@@ -1,0 +1,92 @@
+<view class="page-shell">
+  <view class="hero-card">
+    <view class="hero-eyebrow">Weekly Editor</view>
+    <view class="hero-title">{{weekNo || '新建周报'}}</view>
+    <view class="hero-subtitle">
+      当前状态：{{statusText || '未提交'}}。首版支持草稿保存和直接提交，先把移动端周报闭环跑起来。
+    </view>
+    <view class="meta-row">
+      <view class="meta-pill">当前节点 {{currentApprovalNodeText}}</view>
+      <view class="meta-pill">{{editable ? '可编辑' : '当前状态只读'}}</view>
+    </view>
+  </view>
+
+  <view class="panel-card">
+    <view class="field-label">周次</view>
+    <input
+      class="text-input"
+      value="{{weekNo}}"
+      placeholder="例如：2026-W14"
+      bindinput="handleWeekNoInput"
+      disabled="{{!editable}}"
+    />
+
+    <view class="field-label" style="margin-top: 18rpx;">工作计划</view>
+    <textarea
+      class="textarea-input"
+      value="{{workPlan}}"
+      maxlength="1000"
+      placeholder="填写本周计划"
+      bindinput="handleWorkPlanInput"
+      disabled="{{!editable}}"
+    />
+
+    <view class="field-label" style="margin-top: 18rpx;">工作内容</view>
+    <textarea
+      class="textarea-input"
+      value="{{workContent}}"
+      maxlength="2000"
+      placeholder="填写本周完成情况"
+      bindinput="handleWorkContentInput"
+      disabled="{{!editable}}"
+    />
+
+    <view class="field-label" style="margin-top: 18rpx;">备注</view>
+    <textarea
+      class="textarea-input"
+      value="{{remark}}"
+      maxlength="600"
+      placeholder="补充说明，可选"
+      bindinput="handleRemarkInput"
+      disabled="{{!editable}}"
+    />
+
+    <view class="button-row" style="margin-top: 20rpx;">
+      <button class="ghost-button" loading="{{saving}}" bindtap="handleSaveDraft" disabled="{{!editable}}">
+        {{saving ? '保存中...' : '保存草稿'}}
+      </button>
+      <button class="primary-button" loading="{{submitting}}" bindtap="handleSubmit" disabled="{{!editable}}">
+        {{submitting ? '提交中...' : '提交审核'}}
+      </button>
+    </view>
+  </view>
+
+  <view wx:if="{{flowNodes.length}}" class="panel-card">
+    <view class="section-title">审批链路</view>
+    <view
+      wx:for="{{flowNodes}}"
+      wx:key="key"
+      class="list-card"
+    >
+      <view class="card-title">{{item.label || item.key}}</view>
+      <view class="card-meta">负责人：{{item.realName || item.username || '-'}}</view>
+      <view class="card-meta">岗位：{{item.jobTitle || '-'}}</view>
+      <view class="card-meta">顺序：{{item.order || '-'}}</view>
+    </view>
+  </view>
+
+  <view wx:if="{{approvalLogs.length}}" class="panel-card">
+    <view class="section-title">审批记录</view>
+    <view
+      wx:for="{{approvalLogs}}"
+      wx:key="createTimeText"
+      class="list-card"
+    >
+      <view class="card-title">{{item.reviewerName || '系统记录'}}</view>
+      <view class="card-meta">动作：{{item.action || '-'}}</view>
+      <view class="card-meta">流转：{{item.fromNode}} → {{item.toNode}}</view>
+      <view class="card-meta">意见：{{item.comment || '无'}}</view>
+      <view class="card-meta">时间：{{item.createTimeText}}</view>
+    </view>
+  </view>
+</view>

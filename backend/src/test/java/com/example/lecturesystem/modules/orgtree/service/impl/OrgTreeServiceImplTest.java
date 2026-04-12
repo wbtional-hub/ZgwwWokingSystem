@@ -1,6 +1,10 @@
 package com.example.lecturesystem.modules.orgtree.service.impl;
 
 import com.example.lecturesystem.modules.auth.security.LoginUser;
+import com.example.lecturesystem.modules.auth.security.JwtTokenService;
+import com.example.lecturesystem.modules.auth.service.impl.AuthServiceImpl;
+import com.example.lecturesystem.modules.auth.support.PasswordPolicyValidator;
+import com.example.lecturesystem.modules.auth.support.Sm3PasswordCodec;
 import com.example.lecturesystem.modules.orgtree.dto.CreateChildUserRequest;
 import com.example.lecturesystem.modules.orgtree.dto.MoveNodeRequest;
 import com.example.lecturesystem.modules.orgtree.dto.UpdateOrgNodeRequest;
@@ -20,6 +24,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
@@ -40,21 +45,25 @@ public class OrgTreeServiceImplTest {
         PermissionService permissionService = mock(PermissionService.class);
         PermissionMapper permissionMapper = mock(PermissionMapper.class);
         OrgTreeServiceImpl service = new OrgTreeServiceImpl(orgTreeMapper, userMapper, permissionService, permissionMapper);
+        Sm3PasswordCodec sm3PasswordCodec = new Sm3PasswordCodec();
+        AtomicReference<UserEntity> createdUserRef = new AtomicReference<>();
 
         mockLoginUser(2L, false);
         when(orgTreeMapper.findByUserId(2L)).thenReturn(node(2L, 2L, null, 1, "/2"));
         when(userMapper.findById(2L)).thenReturn(user(2L, 2L, null, 1, "/2"));
-        when(userMapper.findByUsername("child1")).thenReturn(null);
+        when(userMapper.findById(5L)).thenAnswer(invocation -> createdUserRef.get());
+        when(userMapper.findByUsername("child1")).thenAnswer(invocation -> createdUserRef.get());
         doAnswer(invocation -> {
             UserEntity entity = invocation.getArgument(0);
             entity.setId(5L);
+            createdUserRef.set(entity);
             return 1;
         }).when(userMapper).insertUser(any(UserEntity.class));
 
         CreateChildUserRequest request = new CreateChildUserRequest();
         request.setParentUserId(2L);
         request.setUsername("child1");
-        request.setPassword("123456");
+        request.setPassword("Admin2026");
         request.setRealName("下级用户");
         request.setJobTitle("讲师");
         request.setMobile("13800000005");
@@ -63,8 +72,21 @@ public class OrgTreeServiceImplTest {
         Long userId = service.createChild(request);
 
         Assert.assertEquals(Long.valueOf(5L), userId);
+        Assert.assertEquals("SM3", createdUserRef.get().getPasswordAlgo());
+        Assert.assertNotNull(createdUserRef.get().getPasswordSalt());
+        Assert.assertTrue(sm3PasswordCodec.matches("Admin2026", createdUserRef.get().getPasswordSalt(), createdUserRef.get().getPasswordHash()));
         verify(orgTreeMapper).updateUserNodeInfo(5L, 2L, 2L, 2, "/2/5/");
         verify(permissionMapper).insertUserRole(5L, "ORG_USER");
+
+        AuthServiceImpl authService = new AuthServiceImpl(
+                userMapper,
+                permissionMapper,
+                new JwtTokenService("change-this-secret-in-production", 7200)
+        );
+        com.example.lecturesystem.modules.auth.dto.LoginRequest loginRequest = new com.example.lecturesystem.modules.auth.dto.LoginRequest();
+        loginRequest.setUsername("child1");
+        loginRequest.setPassword("Admin2026");
+        Assert.assertNotNull(authService.login(loginRequest).getToken());
     }
 
     @Test
@@ -88,7 +110,7 @@ public class OrgTreeServiceImplTest {
         CreateChildUserRequest request = new CreateChildUserRequest();
         request.setParentUserId(2L);
         request.setUsername("child1");
-        request.setPassword("123456");
+        request.setPassword("Admin2026");
         request.setRealName("一级用户");
         request.setStatus(1);
 
@@ -115,7 +137,7 @@ public class OrgTreeServiceImplTest {
         CreateChildUserRequest request = new CreateChildUserRequest();
         request.setParentUserId(2L);
         request.setUsername("child1");
-        request.setPassword("123456");
+        request.setPassword("Admin2026");
         request.setRealName("下级用户");
         request.setUnitId(9L);
         request.setStatus(1);
@@ -123,6 +145,31 @@ public class OrgTreeServiceImplTest {
         IllegalArgumentException error = Assert.assertThrows(IllegalArgumentException.class, () -> service.createChild(request));
 
         Assert.assertEquals("新增下级必须继承上级节点所属单位", error.getMessage());
+    }
+
+    @Test
+    public void createChildShouldRejectWeakPassword() {
+        OrgTreeMapper orgTreeMapper = mock(OrgTreeMapper.class);
+        UserMapper userMapper = mock(UserMapper.class);
+        PermissionService permissionService = mock(PermissionService.class);
+        PermissionMapper permissionMapper = mock(PermissionMapper.class);
+        OrgTreeServiceImpl service = new OrgTreeServiceImpl(orgTreeMapper, userMapper, permissionService, permissionMapper);
+
+        mockLoginUser(2L, false);
+        when(orgTreeMapper.findByUserId(2L)).thenReturn(node(2L, 2L, null, 1, "/2/"));
+        when(userMapper.findById(2L)).thenReturn(user(2L, 2L, null, 1, "/2/"));
+        when(userMapper.findByUsername("child1")).thenReturn(null);
+
+        CreateChildUserRequest request = new CreateChildUserRequest();
+        request.setParentUserId(2L);
+        request.setUsername("child1");
+        request.setPassword("admin123");
+        request.setRealName("涓嬬骇鐢ㄦ埛");
+        request.setStatus(1);
+
+        IllegalArgumentException error = Assert.assertThrows(IllegalArgumentException.class, () -> service.createChild(request));
+
+        Assert.assertEquals(PasswordPolicyValidator.MESSAGE, error.getMessage());
     }
 
     @Test

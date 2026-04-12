@@ -2,9 +2,17 @@ package com.example.lecturesystem.modules.attendance.controller;
 
 import com.example.lecturesystem.common.ApiResponse;
 import com.example.lecturesystem.modules.attendance.dto.AttendanceQueryRequest;
+import com.example.lecturesystem.modules.attendance.dto.AttendancePatchApplyQueryRequest;
+import com.example.lecturesystem.modules.attendance.dto.AttendanceStatsQueryRequest;
 import com.example.lecturesystem.modules.attendance.dto.CheckInRequest;
+import com.example.lecturesystem.modules.attendance.dto.ReviewAttendancePatchApplyRequest;
 import com.example.lecturesystem.modules.attendance.dto.SaveAttendanceRequest;
+import com.example.lecturesystem.modules.attendance.dto.SaveAttendanceRuleRequest;
+import com.example.lecturesystem.modules.attendance.dto.SubmitAttendancePatchApplyRequest;
+import com.example.lecturesystem.modules.attendance.service.AttendancePatchApplyService;
+import com.example.lecturesystem.modules.attendance.service.AttendanceRuleService;
 import com.example.lecturesystem.modules.attendance.service.AttendanceService;
+import com.example.lecturesystem.modules.attendance.service.AttendanceStatisticsService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,9 +20,18 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/attendance")
 public class AttendanceController {
     private final AttendanceService attendanceService;
+    private final AttendancePatchApplyService attendancePatchApplyService;
+    private final AttendanceRuleService attendanceRuleService;
+    private final AttendanceStatisticsService attendanceStatisticsService;
 
-    public AttendanceController(AttendanceService attendanceService) {
+    public AttendanceController(AttendanceService attendanceService,
+                                AttendancePatchApplyService attendancePatchApplyService,
+                                AttendanceRuleService attendanceRuleService,
+                                AttendanceStatisticsService attendanceStatisticsService) {
         this.attendanceService = attendanceService;
+        this.attendancePatchApplyService = attendancePatchApplyService;
+        this.attendanceRuleService = attendanceRuleService;
+        this.attendanceStatisticsService = attendanceStatisticsService;
     }
 
     @GetMapping("/current-location")
@@ -61,5 +78,54 @@ public class AttendanceController {
     public ApiResponse<?> delete(@PathVariable Long id) {
         attendanceService.deleteAttendance(id);
         return ApiResponse.success("ok");
+    }
+
+    @PostMapping("/patch-apply/submit")
+    public ApiResponse<?> submitPatchApply(@Validated @RequestBody SubmitAttendancePatchApplyRequest request) {
+        return ApiResponse.success(attendancePatchApplyService.submitApply(request));
+    }
+
+    @PostMapping("/patch-apply/my-page")
+    public ApiResponse<?> queryMyPatchApplyPage(@RequestBody(required = false) AttendancePatchApplyQueryRequest request) {
+        return ApiResponse.success(attendancePatchApplyService.queryMyPage(request));
+    }
+
+    @GetMapping("/patch-apply/{id}")
+    public ApiResponse<?> queryPatchApplyDetail(@PathVariable Long id) {
+        return ApiResponse.success(attendancePatchApplyService.detail(id));
+    }
+
+    @PostMapping("/patch-apply/pending-page")
+    public ApiResponse<?> queryPendingPatchApplyPage(@RequestBody(required = false) AttendancePatchApplyQueryRequest request) {
+        return ApiResponse.success(attendancePatchApplyService.queryPendingPage(request));
+    }
+
+    @PostMapping("/patch-apply/{id}/approve")
+    public ApiResponse<?> approvePatchApply(@PathVariable Long id,
+                                            @RequestBody(required = false) ReviewAttendancePatchApplyRequest request) {
+        attendancePatchApplyService.approve(id, request);
+        return ApiResponse.success("ok");
+    }
+
+    @PostMapping("/patch-apply/{id}/reject")
+    public ApiResponse<?> rejectPatchApply(@PathVariable Long id,
+                                           @RequestBody(required = false) ReviewAttendancePatchApplyRequest request) {
+        attendancePatchApplyService.reject(id, request);
+        return ApiResponse.success("ok");
+    }
+
+    @GetMapping("/rule/current")
+    public ApiResponse<?> queryCurrentAttendanceRule() {
+        return ApiResponse.success(attendanceRuleService.queryCurrentRule());
+    }
+
+    @PostMapping("/rule/save")
+    public ApiResponse<?> saveAttendanceRule(@Validated @RequestBody SaveAttendanceRuleRequest request) {
+        return ApiResponse.success(attendanceRuleService.saveCurrentRule(request));
+    }
+
+    @PostMapping("/team-statistics/query")
+    public ApiResponse<?> queryTeamStatistics(@RequestBody(required = false) AttendanceStatsQueryRequest request) {
+        return ApiResponse.success(attendanceStatisticsService.queryTeamStatistics(request));
     }
 }

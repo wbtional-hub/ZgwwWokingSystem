@@ -23,6 +23,9 @@
         <result property="realName" column="real_name"/>
         <result property="jobTitle" column="job_title"/>
         <result property="mobile" column="mobile"/>
+        <result property="wechatNo" column="wechat_no"/>
+        <result property="wechatOpenId" column="wechat_open_id"/>
+        <result property="wechatUnionId" column="wechat_union_id"/>
         <result property="status" column="status"/>
     </resultMap>
 
@@ -43,6 +46,9 @@
                u.real_name,
                u.job_title,
                u.mobile,
+               u.wechat_no,
+               u.wechat_open_id,
+               u.wechat_union_id,
                u.status
         FROM sys_user u
         WHERE u.is_deleted = FALSE
@@ -60,6 +66,9 @@
                u.real_name,
                u.job_title,
                u.mobile,
+               u.wechat_no,
+               u.wechat_open_id,
+               u.wechat_union_id,
                u.status
         FROM sys_user u
         WHERE u.parent_user_id = #{parentUserId}
@@ -77,6 +86,9 @@
                u.real_name,
                u.job_title,
                u.mobile,
+               u.wechat_no,
+               u.wechat_open_id,
+               u.wechat_union_id,
                u.status
         FROM sys_user u
         WHERE u.is_deleted = FALSE

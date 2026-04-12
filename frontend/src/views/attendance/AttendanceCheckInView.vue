@@ -563,13 +563,20 @@ import PageHelp from '@/components/PageHelp.vue'
 import { queryUserPageApi } from '@/api/user'
 import { useUserStore } from '@/stores/user'
 import { loadAmapSdk } from '@/utils/amap'
+import { LOG_TYPES, reportLog } from '@/utils/log-center'
 import {
   buildCheckInDiagnosticsFromCoordinates,
   buildLocationEnvironmentDiagnostics,
-  createTestEnvironmentLocationFallback,
   getUserLocation
 } from '@/utils/location'
-import { isTestIpLoginEnv } from '@/utils/runtime-origin'
+import {
+  buildDesktopLocationHint,
+  buildLocationDiagnosticPayload,
+  classifyLocationAccuracy,
+  isDesktopLocationEnvironment,
+  resolveLocationAccuracyPolicy,
+  resolveLocationFailureMessage
+} from '@/utils/location-diagnostics'
 import { queryWechatJsapiConfigApi } from '@/api/wechat'
 import { getWechatLocationByJsapi, isWechatBrowser } from '@/utils/wechat-jsapi'
 import {
@@ -601,11 +608,6 @@ const GEOLOCATION_TIMEOUT_MS = 8000
 const WECHAT_JSAPI_DEFAULT_PRIORITY = 'WECHAT_FIRST'
 const WECHAT_JSAPI_DEFAULT_FALLBACK = 'BROWSER'
 const WECHAT_JSAPI_DEFAULT_LOCATION_TYPE = 'gcj02'
-const TEST_GEOLOCATION_FALLBACK_MESSAGE = '当前未获取到定位，可继续打卡（测试环境）'
-const TEST_GEOLOCATION_FALLBACK_ADDRESS = '测试环境定位失败，按打卡点容错提交'
-const CHECK_IN_RANGE_OUT_MESSAGE = '当前位置不在打卡范围内，请到指定地点后再尝试'
-const CHECK_IN_LOCATION_REQUIRED_MESSAGE = '暂时无法获取当前位置，请检查定位权限后重试'
-const CHECK_IN_LOCATION_WEAK_MESSAGE = '当前定位精度不足，请移动到空旷区域后重试'
 const CHECK_IN_FAILURE_MESSAGE = '打卡失败，请稍后重试'
 const CHECK_IN_SUCCESS_MESSAGE = '上班打卡成功'
 const CHECK_OUT_SUCCESS_MESSAGE = '下班打卡成功'
@@ -689,6 +691,8 @@ const state = reactive({
     latitude: null,
     longitude: null,
     radiusMeters: null,
+    accuracyGoodThreshold: 100,
+    accuracyMaxThreshold: 1000,
     allowCheckIn: false,
     status: '',
     reason: ''
@@ -1024,6 +1028,10 @@ const currentWorkspaceUserName = computed(() => {
 })
 
 const personalWorkspaceLoading = computed(() => state.locationLoading || state.loading || state.leadershipLoading)
+const locationAccuracyPolicy = computed(() => resolveLocationAccuracyPolicy({
+  goodThreshold: state.locationInfo.accuracyGoodThreshold,
+  maxThreshold: state.locationInfo.accuracyMaxThreshold
+}))
 
 const personalTodayRecord = computed(() => {
   return leadershipTodayRecordMap.value.get(currentUserId.value) || null
@@ -1042,6 +1050,12 @@ const personalWorkspaceStatus = computed(() => {
 })
 
 const personalWorkspaceNotice = computed(() => {
+  if (isDesktopLocationEnvironment()) {
+    return {
+      title: '设备定位提示',
+      text: buildDesktopLocationHint()
+    }
+  }
   if (!leadershipTodayIsNonWorkday.value) {
     return null
   }
@@ -1070,7 +1084,7 @@ const personalWorkspaceTodayCard = computed(() => {
         : (state.locationInfo.address || state.locationInfo.reason || '今日尚未产生打卡记录。'))
   const locationStatus = state.checkInResult.reason
     || state.locationInfo.reason
-    || (isTestIpLoginEnv() ? '测试环境下定位失败会自动切换容错提交流程。' : '')
+    || ''
 
   return {
     checkInTime: formatTimeOnly(todayRecord?.checkInTime),
@@ -1139,9 +1153,6 @@ const personalWorkspaceCheckInHint = computed(() => {
   }
   if (leadershipTodayIsNonWorkday.value) {
     return '今日按加班 / 值班记录处理，打卡成功后会在当前页面单独展示，不并入工作日未打卡统计。'
-  }
-  if (isTestIpLoginEnv()) {
-    return '测试环境下若浏览器定位失败，会给出弱提示并继续按打卡点容错提交。'
   }
   return '点击后会自动获取定位、提交打卡并刷新今日状态。'
 })
@@ -1668,15 +1679,28 @@ async function fetchLeadershipWorkspace() {
 }
 
 function buildOutOfRangeReason(distanceMeters, radiusMeters, accuracyMeters) {
-  return CHECK_IN_RANGE_OUT_MESSAGE
+  if (distanceMeters == null || radiusMeters == null) {
+    return '当前位置超出打卡范围，请到指定地点后重试'
+  }
+  return `明确超出打卡范围：当前位置距离打卡点约 ${distanceMeters} 米，允许半径 ${radiusMeters} 米`
 }
 
 function buildInvalidLocationReason(accuracyMeters) {
-  return CHECK_IN_LOCATION_REQUIRED_MESSAGE
+  return resolveLocationFailureMessage({
+    errorCode: accuracyMeters != null && Number(accuracyMeters) > locationAccuracyPolicy.value.maxThreshold
+      ? 'LOCATION_ACCURACY_INVALID'
+      : 'LOCATION_INVALID',
+    accuracyMeters,
+    policy: locationAccuracyPolicy.value
+  })
 }
 
 function buildWeakLocationReason(accuracyMeters) {
-  return CHECK_IN_LOCATION_WEAK_MESSAGE
+  return resolveLocationFailureMessage({
+    errorCode: 'LOCATION_ACCURACY_WEAK',
+    accuracyMeters,
+    policy: locationAccuracyPolicy.value
+  })
 }
 
 function resetCheckInVisualizationSubmission() {
@@ -1696,15 +1720,6 @@ function resetCheckInVisualizationSubmission() {
     stageText: '',
     hasUsableLocation: false,
     sampleTimestamp: null
-  })
-}
-
-function createTestFallbackLocation(reason = TEST_GEOLOCATION_FALLBACK_MESSAGE) {
-  return createTestEnvironmentLocationFallback({
-    targetLatitude: state.locationInfo.latitude,
-    targetLongitude: state.locationInfo.longitude,
-    radiusMeters: state.locationInfo.radiusMeters,
-    reason
   })
 }
 
@@ -1729,7 +1744,11 @@ function normalizeWechatJsapiConfig(data = {}) {
     priority: data.priority || WECHAT_JSAPI_DEFAULT_PRIORITY,
     fallback: data.fallback || WECHAT_JSAPI_DEFAULT_FALLBACK,
     accuracyThreshold: data.accuracyThreshold == null ? null : Number(data.accuracyThreshold),
-    timeoutMs: data.timeoutMs == null ? GEOLOCATION_TIMEOUT_MS : Number(data.timeoutMs)
+    timeoutMs: data.timeoutMs == null ? GEOLOCATION_TIMEOUT_MS : Number(data.timeoutMs),
+    loadFailed: Boolean(data.loadFailed),
+    loadErrorCode: data.loadErrorCode || '',
+    loadErrorMessage: data.loadErrorMessage || '',
+    responseStatus: data.responseStatus ?? null
   }
 }
 
@@ -1741,16 +1760,95 @@ async function queryWechatJsapiConfigForCheckIn() {
   try {
     const response = await queryWechatJsapiConfigApi({ url: pageUrl })
     if (!response || response.code !== 0) {
-      return normalizeWechatJsapiConfig()
+      const failedConfig = normalizeWechatJsapiConfig({
+        loadFailed: true,
+        loadErrorCode: 'WECHAT_JSAPI_CONFIG_RESPONSE_FAIL',
+        loadErrorMessage: response?.message || '微信 jsapi-config 获取失败'
+      })
+      await reportLog(LOG_TYPES.WECHAT_JSAPI_ERROR, {
+        traceId: response?.traceId || '',
+        module: 'WECHAT',
+        subModule: 'JSAPI_CONFIG',
+        title: '微信 JS-SDK 配置获取失败',
+        summary: failedConfig.loadErrorMessage,
+        diagnosis: '微信环境下 jsapi-config 返回失败，前端已记录并可按需要切换浏览器定位兜底。',
+        errorCode: failedConfig.loadErrorCode,
+        message: failedConfig.loadErrorMessage,
+        requestUrl: '/wechat/jsapi-config',
+        requestMethod: 'GET',
+        requestParams: { url: pageUrl },
+        rawData: response || null
+      })
+      return failedConfig
     }
     return normalizeWechatJsapiConfig(response.data || {})
   } catch (error) {
+    const failedConfig = normalizeWechatJsapiConfig({
+      loadFailed: true,
+      loadErrorCode: error?.response?.status === 404 ? 'WECHAT_JSAPI_CONFIG_404' : 'WECHAT_JSAPI_CONFIG_FETCH_FAIL',
+      loadErrorMessage: error?.response?.data?.message || error.message || '微信 jsapi-config 获取失败',
+      responseStatus: error?.response?.status ?? null
+    })
+    await reportLog(LOG_TYPES.WECHAT_JSAPI_ERROR, {
+      traceId: error?.response?.headers?.['x-trace-id'] || '',
+      module: 'WECHAT',
+      subModule: 'JSAPI_CONFIG',
+      title: '微信 JS-SDK 配置获取失败',
+      summary: failedConfig.loadErrorMessage,
+      diagnosis: '微信环境下 jsapi-config 请求失败，可能是接口不存在、签名域名未配置或微信公众号配置异常。',
+      errorCode: failedConfig.loadErrorCode,
+      message: failedConfig.loadErrorMessage,
+      requestUrl: '/wechat/jsapi-config',
+      requestMethod: 'GET',
+      requestParams: { url: pageUrl },
+      responseStatus: error?.response?.status ?? null,
+      rawData: {
+        responseData: error?.response?.data || null,
+        stack: error?.stack || ''
+      }
+    })
     console.warn('[wechat jsapi config load failed]', error)
-    return normalizeWechatJsapiConfig()
+    return failedConfig
   }
 }
 
-function buildLocationFailurePayload(reason, status, diagnostics = null, decisionBranch = 'INVALID') {
+function resolveBrowserLocationErrorCode(errorCode) {
+  if (errorCode === 'UNSUPPORTED') {
+    return 'BROWSER_GEO_UNSUPPORTED'
+  }
+  if (errorCode === 'UNAVAILABLE') {
+    return 'BROWSER_GEO_UNAVAILABLE'
+  }
+  if (Number(errorCode) === 1) {
+    return 'BROWSER_GEO_PERMISSION_DENIED'
+  }
+  if (Number(errorCode) === 2) {
+    return 'BROWSER_GEO_POSITION_UNAVAILABLE'
+  }
+  if (Number(errorCode) === 3) {
+    return 'BROWSER_GEO_TIMEOUT'
+  }
+  return 'BROWSER_GEO_FAILED'
+}
+
+function resolveWechatLocationErrorCode(error) {
+  const rawMessage = String(error?.detail?.errMsg || error?.message || '').toLowerCase()
+  if (rawMessage.includes('invalid signature')) {
+    return 'WECHAT_JSAPI_INVALID_SIGNATURE'
+  }
+  if (error?.code === 'TIMEOUT') {
+    return 'WECHAT_JSAPI_TIMEOUT'
+  }
+  if (error?.code === 'CANCEL') {
+    return 'WECHAT_JSAPI_CANCEL'
+  }
+  if (error?.code === 'FAIL') {
+    return 'WECHAT_JSAPI_FAIL'
+  }
+  return 'WECHAT_JSAPI_LOCATION_ERROR'
+}
+
+function buildLocationFailurePayload(reason, status, diagnostics = null, decisionBranch = 'INVALID', logMeta = {}) {
   return {
     reason,
     status,
@@ -1763,11 +1861,25 @@ function buildLocationFailurePayload(reason, status, diagnostics = null, decisio
       stageText: '未获取到可用定位',
       hasUsableLocation: false,
       sampleTimestamp: diagnostics?.timestamp ?? null
+    },
+    logMeta: {
+      errorCode: logMeta.errorCode || status || '',
+      locationSource: logMeta.locationSource || '',
+      provider: logMeta.provider || '',
+      stage: logMeta.stage || decisionBranch,
+      latitude: diagnostics?.submitLatitude ?? diagnostics?.rawLatitude ?? null,
+      longitude: diagnostics?.submitLongitude ?? diagnostics?.rawLongitude ?? null,
+      accuracy: diagnostics?.accuracyMeters ?? null,
+      distanceMeters: diagnostics?.localDistanceMeters ?? null,
+      radiusMeters: diagnostics?.radiusMeters ?? state.locationInfo.radiusMeters ?? null,
+      fallbackEnabled: Boolean(logMeta.fallbackEnabled),
+      rawMessage: logMeta.rawMessage || '',
+      suggestion: logMeta.suggestion || ''
     }
   }
 }
 
-function applyTerminalLocationFailure(failure) {
+async function applyTerminalLocationFailure(failure) {
   if (!failure) {
     return
   }
@@ -1782,6 +1894,54 @@ function applyTerminalLocationFailure(failure) {
     stageText: '未获取到可用定位',
     hasUsableLocation: false
   })
+  const environment = buildLocationEnvironmentDiagnostics()
+  console.warn('[attendance check-in location failure]', {
+    errorCode: failure?.logMeta?.errorCode || failure.status || ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED,
+    locationSource: failure?.logMeta?.locationSource || '',
+    provider: failure?.logMeta?.provider || '',
+    stage: failure?.logMeta?.stage || '',
+    latitude: failure?.logMeta?.latitude ?? null,
+    longitude: failure?.logMeta?.longitude ?? null,
+    accuracy: failure?.logMeta?.accuracy ?? null,
+    distanceMeters: failure?.logMeta?.distanceMeters ?? null,
+    radiusMeters: failure?.logMeta?.radiusMeters ?? state.locationInfo.radiusMeters ?? null,
+    fallbackEnabled: Boolean(failure?.logMeta?.fallbackEnabled),
+    rawMessage: failure?.logMeta?.rawMessage || '',
+    currentUrl: environment.url || '',
+    userAgent: environment.userAgent || '',
+    isWeChatEnv: isWechatBrowser()
+  })
+  await reportLog(
+    failure?.logMeta?.provider === 'WECHAT' ? LOG_TYPES.WECHAT_JSAPI_ERROR : LOG_TYPES.FRONTEND_LOCATION_ERROR,
+    {
+      module: 'ATTENDANCE',
+      subModule: 'CHECK_IN',
+      title: failure?.logMeta?.provider === 'WECHAT' ? '微信定位失败' : '考勤定位失败',
+      summary: state.checkInResult.reason,
+      diagnosis: failure?.logMeta?.suggestion || '定位链路执行失败，请结合环境、定位权限与原始日志排查。',
+      errorCode: failure?.logMeta?.errorCode || failure.status || '',
+      message: failure?.logMeta?.rawMessage || state.checkInResult.reason,
+      requestUrl: '/attendance/check-in',
+      requestMethod: 'CHECK_IN',
+      rawData: {
+        visualization: failure.visualization || null,
+        diagnostics: failure.visualization || null
+      },
+      ...buildLocationDiagnosticPayload({
+        env: environment.userAgent && /micromessenger/i.test(environment.userAgent) ? 'WECHAT' : 'BROWSER',
+        provider: failure?.logMeta?.locationSource || '',
+        stage: failure?.logMeta?.stage || '',
+        errorCode: failure?.logMeta?.errorCode || '',
+        rawMessage: failure?.logMeta?.rawMessage || '',
+        diagnostics: failure?.visualization || null,
+        policy: locationAccuracyPolicy.value,
+        extra: {
+          fallbackEnabled: Boolean(failure?.logMeta?.fallbackEnabled),
+          reason: state.checkInResult.reason
+        }
+      })
+    }
+  )
   showToast(state.checkInResult.reason)
 }
 
@@ -1798,16 +1958,13 @@ async function tryCollectBrowserLocationSelection() {
     })
 
     if (!collected.diagnostics) {
-      if (isTestIpLoginEnv()) {
-        const fallback = handleNonBlockingGeolocationFailure(TEST_GEOLOCATION_FALLBACK_MESSAGE)
-        return fallback ? { selection: fallback } : { failure: null }
-      }
       const diagnostics = collected.samples[collected.samples.length - 1] || null
-      const invalidReason = collected.invalidReason || (
-        collected.errorCode === 'UNSUPPORTED'
-          ? buildInvalidLocationReason(null)
-          : buildInvalidLocationReason(diagnostics?.accuracyMeters ?? null)
-      )
+      const browserErrorCode = resolveBrowserLocationErrorCode(collected.errorCode ?? collected.lastError?.code)
+      const invalidReason = resolveLocationFailureMessage({
+        errorCode: browserErrorCode,
+        accuracyMeters: diagnostics?.accuracyMeters ?? null,
+        policy: locationAccuracyPolicy.value
+      })
       return {
         failure: buildLocationFailurePayload(
           invalidReason,
@@ -1815,7 +1972,57 @@ async function tryCollectBrowserLocationSelection() {
             ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
             : ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID,
           diagnostics,
-          collected.errorCode === 'UNSUPPORTED' ? 'LOCATION_UNSUPPORTED' : 'INVALID'
+          collected.errorCode === 'UNSUPPORTED' ? 'LOCATION_UNSUPPORTED' : 'INVALID',
+          {
+            errorCode: browserErrorCode,
+            locationSource: 'BROWSER_GEO',
+            provider: 'BROWSER',
+            stage: 'BROWSER_GEOLOCATION',
+            rawMessage: collected.lastError?.message || collected.errorMessage || '',
+            suggestion: buildLocationDiagnosticPayload({
+              env: 'BROWSER',
+              provider: 'BROWSER_GEO',
+              stage: 'BROWSER_GEOLOCATION',
+              errorCode: browserErrorCode,
+              rawMessage: collected.lastError?.message || collected.errorMessage || '',
+              diagnostics,
+              policy: locationAccuracyPolicy.value
+            }).suggestion
+          }
+        )
+      }
+    }
+    const accuracyState = classifyLocationAccuracy(collected.diagnostics.accuracyMeters, locationAccuracyPolicy.value)
+    if (accuracyState.category === 'INVALID' || accuracyState.category === 'WEAK') {
+      const errorCode = accuracyState.category === 'INVALID'
+        ? 'BROWSER_GEO_ACCURACY_INVALID'
+        : 'BROWSER_GEO_ACCURACY_WEAK'
+      const reason = accuracyState.category === 'INVALID'
+        ? buildInvalidLocationReason(collected.diagnostics.accuracyMeters)
+        : buildWeakLocationReason(collected.diagnostics.accuracyMeters)
+      return {
+        failure: buildLocationFailurePayload(
+          reason,
+          accuracyState.category === 'INVALID'
+            ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
+            : ATTENDANCE_CHECK_IN_STATUS.LOCATION_WEAK,
+          collected.diagnostics,
+          accuracyState.category === 'INVALID' ? 'BROWSER_LOCATION_INVALID' : 'BROWSER_LOCATION_WEAK',
+          {
+            errorCode,
+            locationSource: 'BROWSER_GEO',
+            provider: 'BROWSER',
+            stage: 'BROWSER_GEOLOCATION',
+            rawMessage: '',
+            suggestion: buildLocationDiagnosticPayload({
+              env: 'BROWSER',
+              provider: 'BROWSER_GEO',
+              stage: 'BROWSER_GEOLOCATION',
+              errorCode,
+              diagnostics: collected.diagnostics,
+              policy: locationAccuracyPolicy.value
+            }).suggestion
+          }
         )
       }
     }
@@ -1828,20 +2035,31 @@ async function tryCollectBrowserLocationSelection() {
       }
     }
   } catch (error) {
-    if (isTestIpLoginEnv()) {
-      const fallback = handleNonBlockingGeolocationFailure(
-        error?.code === 1
-          ? '定位权限被拒绝，可继续打卡（测试环境）'
-          : TEST_GEOLOCATION_FALLBACK_MESSAGE
-      )
-      return fallback ? { selection: fallback } : { failure: null }
-    }
+    const browserErrorCode = resolveBrowserLocationErrorCode(error?.code)
     return {
       failure: buildLocationFailurePayload(
-        buildInvalidLocationReason(null),
+        resolveLocationFailureMessage({
+          errorCode: browserErrorCode,
+          policy: locationAccuracyPolicy.value
+        }),
         error?.code === 1 ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID : ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED,
         null,
-        error?.code === 1 ? 'INVALID' : 'LOCATION_ERROR'
+        error?.code === 1 ? 'INVALID' : 'LOCATION_ERROR',
+        {
+          errorCode: browserErrorCode,
+          locationSource: 'BROWSER_GEO',
+          provider: 'BROWSER',
+          stage: 'BROWSER_GEOLOCATION',
+          rawMessage: error?.message || String(error || ''),
+          suggestion: buildLocationDiagnosticPayload({
+            env: 'BROWSER',
+            provider: 'BROWSER_GEO',
+            stage: 'BROWSER_GEOLOCATION',
+            errorCode: browserErrorCode,
+            rawMessage: error?.message || String(error || ''),
+            policy: locationAccuracyPolicy.value
+          }).suggestion
+        }
       )
     }
   }
@@ -1866,14 +2084,37 @@ async function tryCollectWechatLocationSelection(jsapiConfig) {
     })
     const accuracyThreshold = Number.isFinite(jsapiConfig.accuracyThreshold)
       ? Number(jsapiConfig.accuracyThreshold)
-      : null
-    if (accuracyThreshold != null && diagnostics.accuracyMeters != null && diagnostics.accuracyMeters > accuracyThreshold) {
+      : locationAccuracyPolicy.value.goodThreshold
+    const accuracyState = classifyLocationAccuracy(diagnostics.accuracyMeters, locationAccuracyPolicy.value)
+    if (accuracyState.category === 'INVALID' || accuracyState.category === 'WEAK' || (accuracyThreshold != null && diagnostics.accuracyMeters != null && diagnostics.accuracyMeters > accuracyThreshold)) {
+      const errorCode = accuracyState.category === 'INVALID'
+        ? 'WECHAT_JSAPI_LOCATION_INVALID'
+        : 'WECHAT_JSAPI_LOCATION_WEAK'
       return {
         failure: buildLocationFailurePayload(
-          buildWeakLocationReason(diagnostics?.accuracyMeters),
-          ATTENDANCE_CHECK_IN_STATUS.LOCATION_WEAK,
+          accuracyState.category === 'INVALID'
+            ? buildInvalidLocationReason(diagnostics?.accuracyMeters)
+            : buildWeakLocationReason(diagnostics?.accuracyMeters),
+          accuracyState.category === 'INVALID'
+            ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
+            : ATTENDANCE_CHECK_IN_STATUS.LOCATION_WEAK,
           diagnostics,
-          'WECHAT_LOCATION_WEAK'
+          accuracyState.category === 'INVALID' ? 'WECHAT_LOCATION_INVALID' : 'WECHAT_LOCATION_WEAK',
+          {
+            errorCode,
+            locationSource: 'WECHAT_JSAPI',
+            provider: 'WECHAT',
+            stage: 'WECHAT_JSAPI_LOCATION',
+            rawMessage: '',
+            suggestion: buildLocationDiagnosticPayload({
+              env: 'WECHAT',
+              provider: 'WECHAT_JSAPI',
+              stage: 'WECHAT_JSAPI_LOCATION',
+              errorCode,
+              diagnostics,
+              policy: locationAccuracyPolicy.value
+            }).suggestion
+          }
         )
       }
     }
@@ -1890,14 +2131,33 @@ async function tryCollectWechatLocationSelection(jsapiConfig) {
       }
     }
   } catch (error) {
+    const wechatErrorCode = resolveWechatLocationErrorCode(error)
     return {
       failure: buildLocationFailurePayload(
-        buildInvalidLocationReason(null),
+        resolveLocationFailureMessage({
+          errorCode: wechatErrorCode,
+          policy: locationAccuracyPolicy.value
+        }),
         error?.code === 'CANCEL'
           ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
           : ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED,
         null,
-        'WECHAT_LOCATION_ERROR'
+        'WECHAT_LOCATION_ERROR',
+        {
+          errorCode: wechatErrorCode,
+          locationSource: 'WECHAT_JSAPI',
+          provider: 'WECHAT',
+          stage: 'WECHAT_JSAPI_LOCATION',
+          rawMessage: error?.detail?.errMsg || error?.message || '',
+          suggestion: buildLocationDiagnosticPayload({
+            env: 'WECHAT',
+            provider: 'WECHAT_JSAPI',
+            stage: 'WECHAT_JSAPI_LOCATION',
+            errorCode: wechatErrorCode,
+            rawMessage: error?.detail?.errMsg || error?.message || '',
+            policy: locationAccuracyPolicy.value
+          }).suggestion
+        }
       )
     }
   }
@@ -1907,19 +2167,37 @@ async function resolveLocationSelectionOrFail() {
   console.info('[attendance geolocation environment]', buildLocationEnvironmentDiagnostics())
   const jsapiConfig = await queryWechatJsapiConfigForCheckIn()
   const inWechat = isWechatBrowser()
+  const allowBrowserFallback = jsapiConfig.fallback === 'BROWSER'
+  if (inWechat && jsapiConfig.loadFailed) {
+    showToast(allowBrowserFallback ? '微信定位配置获取失败，已尝试切换浏览器定位' : '微信定位配置获取失败，请联系管理员检查签名与接口')
+  }
   const canUseWechatLocation = inWechat
     && jsapiConfig.enabled
     && jsapiConfig.locationEnabled
     && jsapiConfig.jsApiList.includes('getLocation')
-  const allowBrowserFallback = jsapiConfig.fallback === 'BROWSER'
   const priority = canUseWechatLocation ? jsapiConfig.priority : WECHAT_JSAPI_DEFAULT_PRIORITY
 
   if (!inWechat && jsapiConfig.enabled && !allowBrowserFallback) {
-    applyTerminalLocationFailure(buildLocationFailurePayload(
+    await applyTerminalLocationFailure(buildLocationFailurePayload(
       '当前不是微信环境，且系统未开启浏览器定位兜底',
       ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED,
       null,
-      'NON_WECHAT_BLOCKED'
+      'NON_WECHAT_BLOCKED',
+      {
+        errorCode: 'NON_WECHAT_BLOCKED',
+        locationSource: 'WECHAT_JSAPI',
+        provider: 'WECHAT',
+        stage: 'LOCATION_SELECTION',
+        rawMessage: 'Current browser is not WeChat and browser fallback is disabled.',
+        suggestion: buildLocationDiagnosticPayload({
+          env: 'BROWSER',
+          provider: 'WECHAT_JSAPI',
+          stage: 'LOCATION_SELECTION',
+          errorCode: 'NON_WECHAT_BLOCKED',
+          rawMessage: 'Current browser is not WeChat and browser fallback is disabled.',
+          policy: locationAccuracyPolicy.value
+        }).suggestion
+      }
     ))
     return null
   }
@@ -1927,7 +2205,7 @@ async function resolveLocationSelectionOrFail() {
   if (!canUseWechatLocation) {
     const browserResult = await tryCollectBrowserLocationSelection()
     if (browserResult.failure) {
-      applyTerminalLocationFailure(browserResult.failure)
+      await applyTerminalLocationFailure(browserResult.failure)
       return null
     }
     return browserResult.selection
@@ -1936,7 +2214,7 @@ async function resolveLocationSelectionOrFail() {
   if (priority === 'WECHAT_ONLY') {
     const wechatResult = await tryCollectWechatLocationSelection(jsapiConfig)
     if (wechatResult.failure) {
-      applyTerminalLocationFailure(wechatResult.failure)
+      await applyTerminalLocationFailure(wechatResult.failure)
       return null
     }
     return wechatResult.selection
@@ -1949,7 +2227,7 @@ async function resolveLocationSelectionOrFail() {
     }
     const wechatResult = await tryCollectWechatLocationSelection(jsapiConfig)
     if (wechatResult.failure) {
-      applyTerminalLocationFailure(wechatResult.failure)
+      await applyTerminalLocationFailure(wechatResult.failure)
       return null
     }
     return wechatResult.selection
@@ -1962,59 +2240,28 @@ async function resolveLocationSelectionOrFail() {
   if (allowBrowserFallback) {
     const browserResult = await tryCollectBrowserLocationSelection()
     if (browserResult.selection) {
+      showToast('微信定位失败，已切换浏览器定位')
       return browserResult.selection
     }
     if (browserResult.failure) {
-      applyTerminalLocationFailure(browserResult.failure)
+      await applyTerminalLocationFailure(browserResult.failure)
       return null
     }
   }
-  applyTerminalLocationFailure(wechatResult.failure)
+  await applyTerminalLocationFailure(wechatResult.failure)
   return null
 }
 
 function buildCheckInSubmissionPayload(locationSelection) {
-  const usingTestFallback = locationSelection?.source === 'TEST_FALLBACK'
   const usingWechatJsapi = locationSelection?.source === 'WECHAT_JSAPI'
   return {
-    address: usingTestFallback
-      ? `${TEST_GEOLOCATION_FALLBACK_ADDRESS}${state.locationInfo.locationName ? `（${state.locationInfo.locationName}）` : ''}`
-      : `${usingWechatJsapi ? '微信定位' : '浏览器定位'}：${locationSelection.latitude}, ${locationSelection.longitude}`,
+    address: `${usingWechatJsapi ? '微信定位' : '浏览器定位'}：${locationSelection.latitude}, ${locationSelection.longitude}`,
     latitude: locationSelection.latitude,
     longitude: locationSelection.longitude,
     accuracyMeters: locationSelection.accuracy ?? null,
-    locationSource: usingTestFallback ? 'BROWSER_GEO_TEST_FALLBACK' : (locationSelection.source || 'BROWSER_GEO'),
-    locationProvider: usingTestFallback ? 'TEST_ENV' : (locationSelection.provider || 'BROWSER')
+    locationSource: locationSelection.source || 'BROWSER_GEO',
+    locationProvider: locationSelection.provider || 'BROWSER'
   }
-}
-
-function handleNonBlockingGeolocationFailure(reason = TEST_GEOLOCATION_FALLBACK_MESSAGE) {
-  const fallback = createTestFallbackLocation(reason)
-  if (!fallback) {
-    state.checkInResult.success = false
-    state.checkInResult.allowCheckIn = false
-    state.checkInResult.action = ''
-    state.checkInResult.status = ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
-    state.checkInResult.distanceMeters = null
-    state.checkInResult.reason = state.locationInfo.reason || reason
-    updateCheckInVisualization({
-      stageText: reason,
-      hasUsableLocation: false,
-      error: ''
-    })
-    showToast(state.checkInResult.reason)
-    return null
-  }
-  updateCheckInVisualization({
-    ...fallback.diagnostics,
-    decisionBranch: 'TEST_FALLBACK',
-    stageText: reason,
-    hasUsableLocation: false,
-    error: '',
-    sampleTimestamp: fallback.diagnostics.timestamp ?? null
-  })
-  showToast(reason)
-  return fallback
 }
 
 function updateCheckInVisualization(payload = {}) {
@@ -2303,6 +2550,9 @@ function clearTrendDateLinkage(options = {}) {
 }
 
 const locationGuide = computed(() => {
+  if (isDesktopLocationEnvironment()) {
+    return buildDesktopLocationHint()
+  }
   if (state.locationInfo.status === ATTENDANCE_CHECK_IN_STATUS.LOCATION_NOT_CONFIGURED) {
     return '所属单位尚未配置打卡点，请联系管理员前往“单位管理 > 打卡点设置”完成配置。'
   }
@@ -2508,6 +2758,8 @@ async function fetchCurrentLocation() {
     state.locationInfo.latitude = data.latitude ?? null
     state.locationInfo.longitude = data.longitude ?? null
     state.locationInfo.radiusMeters = data.radiusMeters ?? null
+    state.locationInfo.accuracyGoodThreshold = Number(data.accuracyGoodThreshold ?? 100)
+    state.locationInfo.accuracyMaxThreshold = Number(data.accuracyMaxThreshold ?? 1000)
     state.locationInfo.allowCheckIn = Boolean(data.allowCheckIn)
     state.locationInfo.status = data.status || ''
     state.locationInfo.reason = data.reason || ''
@@ -2519,6 +2771,8 @@ async function fetchCurrentLocation() {
     state.locationInfo.latitude = null
     state.locationInfo.longitude = null
     state.locationInfo.radiusMeters = null
+    state.locationInfo.accuracyGoodThreshold = 100
+    state.locationInfo.accuracyMaxThreshold = 1000
     state.locationInfo.allowCheckIn = false
     state.locationInfo.status = ''
     state.locationInfo.reason = error.message || '打卡点信息加载失败'
@@ -2718,13 +2972,21 @@ function resolveCheckInRequestErrorMessage(error) {
     : (error?.message && String(error.message).trim() ? String(error.message).trim() : '')
   const inferredStatus = inferCheckInStatusFromErrorMessage(rawMessage)
   if (inferredStatus === ATTENDANCE_CHECK_IN_STATUS.OUT_OF_RANGE) {
-    return CHECK_IN_RANGE_OUT_MESSAGE
+    return buildOutOfRangeReason(
+      state.checkInVisualization.localDistanceMeters,
+      state.locationInfo.radiusMeters,
+      state.checkInVisualization.accuracyMeters
+    )
   }
   if (inferredStatus === ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED || inferredStatus === ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID) {
-    return CHECK_IN_LOCATION_REQUIRED_MESSAGE
+    return resolveLocationFailureMessage({
+      errorCode: rawMessage.includes('超时') ? 'LOCATION_TIMEOUT' : 'LOCATION_INVALID',
+      accuracyMeters: state.checkInVisualization.accuracyMeters,
+      policy: locationAccuracyPolicy.value
+    })
   }
   if (inferredStatus === ATTENDANCE_CHECK_IN_STATUS.LOCATION_WEAK) {
-    return CHECK_IN_LOCATION_WEAK_MESSAGE
+    return buildWeakLocationReason(state.checkInVisualization.accuracyMeters)
   }
   return rawMessage || CHECK_IN_FAILURE_MESSAGE
 }
@@ -2781,35 +3043,48 @@ async function legacyHandleCheckInBrowserOnly() {
       })
 
       if (!collected.diagnostics) {
-        if (isTestIpLoginEnv()) {
-          locationSelection = handleNonBlockingGeolocationFailure(TEST_GEOLOCATION_FALLBACK_MESSAGE)
-        } else {
-          const invalidReason = collected.invalidReason || (
-            collected.errorCode === 'UNSUPPORTED'
-              ? buildInvalidLocationReason(null)
-              : buildInvalidLocationReason(collected.samples[collected.samples.length - 1]?.accuracyMeters ?? null)
-          )
-          updateCheckInVisualization({
-            ...(collected.samples[collected.samples.length - 1] || {}),
-            error: invalidReason,
-            decisionBranch: collected.errorCode === 'UNSUPPORTED' ? 'LOCATION_UNSUPPORTED' : 'INVALID',
-            overlap: false,
-            weakToleranceApplied: false,
-            stageText: '未获取到可用定位',
-            hasUsableLocation: false,
-            sampleTimestamp: collected.samples[collected.samples.length - 1]?.timestamp ?? null
-          })
-          state.checkInResult.success = false
-          state.checkInResult.allowCheckIn = false
-          state.checkInResult.action = ''
-          state.checkInResult.status = collected.errorCode === 'UNSUPPORTED'
-            ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
-            : ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
-          state.checkInResult.distanceMeters = null
-          state.checkInResult.reason = invalidReason
-          showToast(state.checkInResult.reason)
-          return
-        }
+        const invalidReason = collected.invalidReason || (
+          collected.errorCode === 'UNSUPPORTED'
+            ? buildInvalidLocationReason(null)
+            : buildInvalidLocationReason(collected.samples[collected.samples.length - 1]?.accuracyMeters ?? null)
+        )
+        const environment = buildLocationEnvironmentDiagnostics()
+        updateCheckInVisualization({
+          ...(collected.samples[collected.samples.length - 1] || {}),
+          error: invalidReason,
+          decisionBranch: collected.errorCode === 'UNSUPPORTED' ? 'LOCATION_UNSUPPORTED' : 'INVALID',
+          overlap: false,
+          weakToleranceApplied: false,
+          stageText: '未获取到可用定位',
+          hasUsableLocation: false,
+          sampleTimestamp: collected.samples[collected.samples.length - 1]?.timestamp ?? null
+        })
+        console.warn('[attendance check-in location failure]', {
+          errorCode: resolveBrowserLocationErrorCode(collected.errorCode ?? collected.lastError?.code),
+          locationSource: 'BROWSER_GEO',
+          provider: 'BROWSER',
+          stage: 'LEGACY_BROWSER_GEOLOCATION',
+          latitude: collected.samples[collected.samples.length - 1]?.submitLatitude ?? null,
+          longitude: collected.samples[collected.samples.length - 1]?.submitLongitude ?? null,
+          accuracy: collected.samples[collected.samples.length - 1]?.accuracyMeters ?? null,
+          distanceMeters: collected.samples[collected.samples.length - 1]?.localDistanceMeters ?? null,
+          radiusMeters: collected.samples[collected.samples.length - 1]?.radiusMeters ?? state.locationInfo.radiusMeters ?? null,
+          fallbackEnabled: false,
+          rawMessage: collected.lastError?.message || collected.errorMessage || '',
+          currentUrl: environment.url || '',
+          userAgent: environment.userAgent || '',
+          isWeChatEnv: isWechatBrowser()
+        })
+        state.checkInResult.success = false
+        state.checkInResult.allowCheckIn = false
+        state.checkInResult.action = ''
+        state.checkInResult.status = collected.errorCode === 'UNSUPPORTED'
+          ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
+          : ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
+        state.checkInResult.distanceMeters = null
+        state.checkInResult.reason = invalidReason
+        showToast(state.checkInResult.reason)
+        return
       } else {
         locationSelection = {
           ...collected,
@@ -2823,14 +3098,16 @@ async function legacyHandleCheckInBrowserOnly() {
       updateCheckInVisualization({
         ...diagnostics,
         error: '',
-        stageText: locationSelection.source === 'TEST_FALLBACK' ? '测试环境容错提交中...' : '正在提交打卡...',
-        hasUsableLocation: locationSelection.source !== 'TEST_FALLBACK',
+        stageText: '正在提交打卡...',
+        hasUsableLocation: true,
         sampleTimestamp: diagnostics.timestamp ?? null
       })
+      const environment = buildLocationEnvironmentDiagnostics()
       console.info('[attendance check-in submit diagnostics]', {
-        environment: buildLocationEnvironmentDiagnostics(),
         source: locationSelection.source,
+        provider: locationSelection.provider || 'BROWSER',
         errorCode: locationSelection.errorCode || '',
+        stage: 'LEGACY_CHECK_IN_SUBMIT',
         selectedTimestamp: diagnostics.timestamp,
         rawLatitude: diagnostics.rawLatitude,
         rawLongitude: diagnostics.rawLongitude,
@@ -2845,7 +3122,11 @@ async function legacyHandleCheckInBrowserOnly() {
         localDistanceMeters: diagnostics.localDistanceMeters,
         overlap: diagnostics.overlap,
         submitLatitude: diagnostics.submitLatitude,
-        submitLongitude: diagnostics.submitLongitude
+        submitLongitude: diagnostics.submitLongitude,
+        fallbackEnabled: false,
+        currentUrl: environment.url || '',
+        userAgent: environment.userAgent || '',
+        isWeChatEnv: isWechatBrowser()
       })
       const response = await checkInApi(buildCheckInSubmissionPayload(locationSelection))
       const result = response.data || {}
@@ -2862,10 +3143,8 @@ async function legacyHandleCheckInBrowserOnly() {
         decisionBranch: result.decisionBranch || '',
         weakToleranceApplied: Boolean(result.weakToleranceApplied),
         error: '',
-        stageText: result.success
-          ? (locationSelection.source === 'TEST_FALLBACK' ? '测试环境容错打卡已提交' : '已获取到可用定位，打卡已提交')
-          : (locationSelection.source === 'TEST_FALLBACK' ? '测试环境容错打卡已完成业务校验' : '已获取到可用定位，已完成业务校验'),
-        hasUsableLocation: locationSelection.source !== 'TEST_FALLBACK',
+        stageText: result.success ? '已获取到可用定位，打卡已提交' : '已获取到可用定位，已完成业务校验',
+        hasUsableLocation: true,
         sampleTimestamp: diagnostics.timestamp ?? null
       })
       state.checkInResult.success = Boolean(result.success)
@@ -2889,51 +3168,29 @@ async function legacyHandleCheckInBrowserOnly() {
         showToast(state.checkInResult.reason || result.reason || CHECK_IN_FAILURE_MESSAGE)
       }
     } catch (error) {
-      if (isTestIpLoginEnv()) {
-        locationSelection = handleNonBlockingGeolocationFailure(
-          error?.code === 1
-            ? '定位权限被拒绝，可继续打卡（测试环境）'
-            : TEST_GEOLOCATION_FALLBACK_MESSAGE
-        )
-        if (!locationSelection) {
-          return
-        }
-        const diagnostics = locationSelection.diagnostics
-        updateCheckInVisualization({
-          ...diagnostics,
-          error: '',
-          stageText: '测试环境容错提交中...',
-          hasUsableLocation: false,
-          sampleTimestamp: diagnostics.timestamp ?? null
-        })
-        const response = await checkInApi(buildCheckInSubmissionPayload(locationSelection))
-        const result = response.data || {}
-        updateCheckInVisualization({
-          ...diagnostics,
-          localDistanceMeters: result.distanceMeters ?? diagnostics.localDistanceMeters,
-          decisionBranch: result.decisionBranch || 'TEST_FALLBACK',
-          weakToleranceApplied: Boolean(result.weakToleranceApplied),
-          error: '',
-          stageText: result.success ? '测试环境容错打卡已提交' : '测试环境容错打卡已完成业务校验',
-          hasUsableLocation: false,
-          sampleTimestamp: diagnostics.timestamp ?? null
-        })
-        state.checkInResult.success = Boolean(result.success)
-        state.checkInResult.allowCheckIn = Boolean(result.allowCheckIn)
-        state.checkInResult.action = result.action || ''
-        state.checkInResult.status = result.status || ''
-        state.checkInResult.distanceMeters = result.distanceMeters ?? null
-        state.checkInResult.reason = result.failReason || result.reason || ''
-        await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
-        showToast(result.success ? (result.action === 'CHECK_OUT' ? CHECK_OUT_SUCCESS_MESSAGE : CHECK_IN_SUCCESS_MESSAGE) : (state.checkInResult.reason || CHECK_IN_FAILURE_MESSAGE))
-        return
-      }
+      const environment = buildLocationEnvironmentDiagnostics()
       state.checkInResult.success = false
       state.checkInResult.allowCheckIn = false
       state.checkInResult.action = ''
       state.checkInResult.status = error?.code === 1 ? ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID : ATTENDANCE_CHECK_IN_STATUS.LOCATION_REQUIRED
       state.checkInResult.distanceMeters = null
       state.checkInResult.reason = buildInvalidLocationReason(null)
+      console.warn('[attendance check-in location failure]', {
+        errorCode: resolveBrowserLocationErrorCode(error?.code),
+        locationSource: 'BROWSER_GEO',
+        provider: 'BROWSER',
+        stage: 'LEGACY_BROWSER_GEOLOCATION',
+        latitude: null,
+        longitude: null,
+        accuracy: null,
+        distanceMeters: null,
+        radiusMeters: state.locationInfo.radiusMeters ?? null,
+        fallbackEnabled: false,
+        rawMessage: error?.message || String(error || ''),
+        currentUrl: environment.url || '',
+        userAgent: environment.userAgent || '',
+        isWeChatEnv: isWechatBrowser()
+      })
       updateCheckInVisualization({
         decisionBranch: error?.code === 1 ? 'INVALID' : 'LOCATION_ERROR',
         error: state.checkInResult.reason,
@@ -2945,13 +3202,34 @@ async function legacyHandleCheckInBrowserOnly() {
     }
   } catch (error) {
     const message = resolveCheckInRequestErrorMessage(error)
+    const inferredLocationSource = state.checkInVisualization.coordinateSource === 'wechat-gcj02'
+      ? 'WECHAT_JSAPI'
+      : (state.checkInVisualization.coordinateSource ? 'BROWSER_GEO' : '')
+    const inferredProvider = inferredLocationSource === 'WECHAT_JSAPI'
+      ? 'WECHAT'
+      : (inferredLocationSource ? 'BROWSER' : '')
+    const environment = buildLocationEnvironmentDiagnostics()
     if (error?.response) {
       await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
     }
     console.warn('[attendance check-in error]', {
-      message,
+      errorCode: error?.response?.data?.code || inferCheckInStatusFromErrorMessage(message) || 'API_EXCEPTION',
+      locationSource: inferredLocationSource,
+      provider: inferredProvider,
+      stage: 'LEGACY_CHECK_IN_EXCEPTION',
+      latitude: state.checkInVisualization.submitLatitude,
+      longitude: state.checkInVisualization.submitLongitude,
+      accuracy: state.checkInVisualization.accuracyMeters,
+      distanceMeters: state.checkInVisualization.localDistanceMeters,
+      radiusMeters: state.checkInVisualization.radiusMeters ?? state.locationInfo.radiusMeters ?? null,
+      fallbackEnabled: false,
+      rawMessage: error?.response?.data?.message || error?.message || '',
+      currentUrl: environment.url || '',
+      userAgent: environment.userAgent || '',
+      isWeChatEnv: isWechatBrowser(),
       status: error?.response?.status,
-      data: error?.response?.data
+      data: error?.response?.data,
+      message
     })
     state.checkInResult.success = false
     state.checkInResult.allowCheckIn = false
@@ -2987,24 +3265,22 @@ async function handleCheckIn() {
     }
 
     const diagnostics = locationSelection.diagnostics
-    const usingTestFallback = locationSelection.source === 'TEST_FALLBACK'
     const usingWechatJsapi = locationSelection.source === 'WECHAT_JSAPI'
 
     updateCheckInVisualization({
       ...diagnostics,
       error: '',
-      stageText: usingTestFallback
-        ? '测试环境容错提交中...'
-        : (usingWechatJsapi ? '正在提交微信定位打卡...' : '正在提交打卡...'),
-      hasUsableLocation: !usingTestFallback,
+      stageText: usingWechatJsapi ? '正在提交微信定位打卡...' : '正在提交打卡...',
+      hasUsableLocation: true,
       sampleTimestamp: diagnostics?.timestamp ?? null
     })
 
+    const environment = buildLocationEnvironmentDiagnostics()
     console.info('[attendance check-in submit diagnostics]', {
-      environment: buildLocationEnvironmentDiagnostics(),
       source: locationSelection.source,
       provider: locationSelection.provider || '',
       errorCode: locationSelection.errorCode || '',
+      stage: 'CHECK_IN_SUBMIT',
       selectedTimestamp: diagnostics?.timestamp,
       rawLatitude: diagnostics?.rawLatitude,
       rawLongitude: diagnostics?.rawLongitude,
@@ -3019,7 +3295,11 @@ async function handleCheckIn() {
       localDistanceMeters: diagnostics?.localDistanceMeters,
       overlap: diagnostics?.overlap,
       submitLatitude: diagnostics?.submitLatitude,
-      submitLongitude: diagnostics?.submitLongitude
+      submitLongitude: diagnostics?.submitLongitude,
+      fallbackEnabled: false,
+      currentUrl: environment.url || '',
+      userAgent: environment.userAgent || '',
+      isWeChatEnv: isWechatBrowser()
     })
 
     const response = await checkInApi(buildCheckInSubmissionPayload(locationSelection))
@@ -3040,13 +3320,9 @@ async function handleCheckIn() {
       weakToleranceApplied: Boolean(result.weakToleranceApplied),
       error: '',
       stageText: result.success
-        ? (usingTestFallback
-          ? '测试环境容错打卡已提交'
-          : (usingWechatJsapi ? '微信定位已提交，打卡已完成' : '已获取到可用定位，打卡已提交'))
-        : (usingTestFallback
-          ? '测试环境容错打卡已完成业务校验'
-          : (usingWechatJsapi ? '微信定位已完成业务校验' : '已获取到可用定位，已完成业务校验')),
-      hasUsableLocation: !usingTestFallback,
+        ? (usingWechatJsapi ? '微信定位已提交，打卡已完成' : '已获取到可用定位，打卡已提交')
+        : (usingWechatJsapi ? '微信定位已完成业务校验' : '已获取到可用定位，已完成业务校验'),
+      hasUsableLocation: true,
       sampleTimestamp: diagnostics?.timestamp ?? null
     })
 
@@ -3073,17 +3349,76 @@ async function handleCheckIn() {
     if (result.success) {
       showToast(result.action === 'CHECK_OUT' ? CHECK_OUT_SUCCESS_MESSAGE : CHECK_IN_SUCCESS_MESSAGE)
     } else {
+      await reportLog(
+        result.status === ATTENDANCE_CHECK_IN_STATUS.OUT_OF_RANGE
+          || result.status === ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
+          || result.status === ATTENDANCE_CHECK_IN_STATUS.LOCATION_WEAK
+          ? LOG_TYPES.FRONTEND_LOCATION_ERROR
+          : LOG_TYPES.FRONTEND_API_ERROR,
+        {
+          traceId: response.traceId || '',
+          module: 'ATTENDANCE',
+          subModule: 'CHECK_IN',
+          title: '打卡失败',
+          summary: state.checkInResult.reason || result.reason || CHECK_IN_FAILURE_MESSAGE,
+          diagnosis: buildLocationDiagnosticPayload({
+            env: usingWechatJsapi ? 'WECHAT' : 'BROWSER',
+            provider: locationSelection.source,
+            stage: 'CHECK_IN_RESULT',
+            errorCode: result.status || 'CHECK_IN_FAILED',
+            rawMessage: result.failReason || result.reason || '',
+            diagnostics,
+            policy: locationAccuracyPolicy.value,
+            extra: {
+              result,
+              locationSelectionSource: locationSelection.source
+            }
+          }).suggestion,
+          errorCode: result.status || 'CHECK_IN_FAILED',
+          message: result.failReason || result.reason || '',
+          requestUrl: '/attendance/check-in',
+          requestMethod: 'POST',
+          requestParams: buildCheckInSubmissionPayload(locationSelection),
+          responseStatus: 200,
+          rawData: {
+            result,
+            diagnostics,
+            visualization: state.checkInVisualization
+          }
+        }
+      )
       showToast(state.checkInResult.reason || result.reason || CHECK_IN_FAILURE_MESSAGE)
     }
   } catch (error) {
     const message = resolveCheckInRequestErrorMessage(error)
+    const inferredLocationSource = state.checkInVisualization.coordinateSource === 'wechat-gcj02'
+      ? 'WECHAT_JSAPI'
+      : (state.checkInVisualization.coordinateSource ? 'BROWSER_GEO' : '')
+    const inferredProvider = inferredLocationSource === 'WECHAT_JSAPI'
+      ? 'WECHAT'
+      : (inferredLocationSource ? 'BROWSER' : '')
+    const environment = buildLocationEnvironmentDiagnostics()
     if (error?.response) {
       await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
     }
     console.warn('[attendance check-in error]', {
-      message,
+      errorCode: error?.response?.data?.code || inferCheckInStatusFromErrorMessage(message) || 'API_EXCEPTION',
+      locationSource: inferredLocationSource,
+      provider: inferredProvider,
+      stage: 'CHECK_IN_EXCEPTION',
+      latitude: state.checkInVisualization.submitLatitude,
+      longitude: state.checkInVisualization.submitLongitude,
+      accuracy: state.checkInVisualization.accuracyMeters,
+      distanceMeters: state.checkInVisualization.localDistanceMeters,
+      radiusMeters: state.checkInVisualization.radiusMeters ?? state.locationInfo.radiusMeters ?? null,
+      fallbackEnabled: false,
+      rawMessage: error?.response?.data?.message || error?.message || '',
+      currentUrl: environment.url || '',
+      userAgent: environment.userAgent || '',
+      isWeChatEnv: isWechatBrowser(),
       status: error?.response?.status,
-      data: error?.response?.data
+      data: error?.response?.data,
+      message
     })
     state.checkInResult.success = false
     state.checkInResult.allowCheckIn = false
@@ -3094,6 +3429,29 @@ async function handleCheckIn() {
     updateCheckInVisualization({
       stageText: state.checkInVisualization.hasUsableLocation ? '已获取到可用定位，但提交失败' : state.checkInVisualization.stageText,
       error: message
+    })
+    await reportLog(LOG_TYPES.FRONTEND_API_ERROR, {
+      traceId: error?.response?.headers?.['x-trace-id'] || error?.response?.data?.traceId || '',
+      module: 'ATTENDANCE',
+      subModule: 'CHECK_IN',
+      title: '打卡接口异常',
+      summary: message || CHECK_IN_FAILURE_MESSAGE,
+      diagnosis: '打卡请求在提交阶段失败，请结合 traceId、接口响应和当前定位快照继续排查。',
+      errorCode: error?.response?.data?.code || inferCheckInStatusFromErrorMessage(message) || 'CHECK_IN_API_EXCEPTION',
+      message,
+      requestUrl: '/attendance/check-in',
+      requestMethod: 'POST',
+      requestParams: {
+        latitude: state.checkInVisualization.submitLatitude,
+        longitude: state.checkInVisualization.submitLongitude,
+        accuracyMeters: state.checkInVisualization.accuracyMeters
+      },
+      responseStatus: error?.response?.status ?? null,
+      rawData: {
+        responseData: error?.response?.data || null,
+        visualization: state.checkInVisualization,
+        stack: error?.stack || ''
+      }
     })
     if (!error?.response) {
       showToast(message || CHECK_IN_FAILURE_MESSAGE)

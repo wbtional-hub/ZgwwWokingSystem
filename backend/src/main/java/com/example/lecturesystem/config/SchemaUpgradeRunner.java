@@ -82,7 +82,48 @@ public class SchemaUpgradeRunner implements ApplicationRunner {
                         + "WHERE NOT EXISTS (SELECT 1 FROM sys_param WHERE param_code = 'WECHAT_JSAPI_ACCURACY_THRESHOLD' AND is_deleted = FALSE)",
                 "INSERT INTO sys_param (param_code, param_name, param_value, status, remark, create_time, update_time, create_user, update_user, is_deleted) "
                         + "SELECT 'WECHAT_JSAPI_TIMEOUT_MS', '微信定位超时毫秒数', '8000', 1, '前端等待微信定位的超时时间，单位毫秒', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'system', 'system', FALSE "
-                        + "WHERE NOT EXISTS (SELECT 1 FROM sys_param WHERE param_code = 'WECHAT_JSAPI_TIMEOUT_MS' AND is_deleted = FALSE)"
+                        + "WHERE NOT EXISTS (SELECT 1 FROM sys_param WHERE param_code = 'WECHAT_JSAPI_TIMEOUT_MS' AND is_deleted = FALSE)",
+                "INSERT INTO sys_param (param_code, param_name, param_value, status, remark, create_time, update_time, create_user, update_user, is_deleted) "
+                        + "SELECT 'ATTENDANCE_LOCATION_ACCURACY_GOOD_THRESHOLD', '考勤定位正常精度阈值', '100', 1, '小于等于该值时允许进入打卡围栏判断，单位米', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'system', 'system', FALSE "
+                        + "WHERE NOT EXISTS (SELECT 1 FROM sys_param WHERE param_code = 'ATTENDANCE_LOCATION_ACCURACY_GOOD_THRESHOLD' AND is_deleted = FALSE)",
+                "INSERT INTO sys_param (param_code, param_name, param_value, status, remark, create_time, update_time, create_user, update_user, is_deleted) "
+                        + "SELECT 'ATTENDANCE_LOCATION_ACCURACY_MAX_THRESHOLD', '考勤定位最大精度阈值', '1000', 1, '超过该值直接判定定位精度过低，单位米', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'system', 'system', FALSE "
+                        + "WHERE NOT EXISTS (SELECT 1 FROM sys_param WHERE param_code = 'ATTENDANCE_LOCATION_ACCURACY_MAX_THRESHOLD' AND is_deleted = FALSE)",
+                "CREATE TABLE IF NOT EXISTS sys_log_center ("
+                        + "id BIGSERIAL PRIMARY KEY,"
+                        + "trace_id VARCHAR(64) NOT NULL,"
+                        + "log_type VARCHAR(64) NOT NULL,"
+                        + "module VARCHAR(64) NOT NULL,"
+                        + "sub_module VARCHAR(64),"
+                        + "level VARCHAR(16) NOT NULL,"
+                        + "title VARCHAR(255) NOT NULL,"
+                        + "summary TEXT,"
+                        + "diagnosis TEXT,"
+                        + "error_code VARCHAR(128),"
+                        + "message TEXT,"
+                        + "raw_data TEXT,"
+                        + "request_url VARCHAR(1000),"
+                        + "request_method VARCHAR(16),"
+                        + "request_params TEXT,"
+                        + "response_status INT,"
+                        + "user_id BIGINT,"
+                        + "user_name VARCHAR(128),"
+                        + "org_id BIGINT,"
+                        + "org_name VARCHAR(255),"
+                        + "client_ip VARCHAR(64),"
+                        + "user_agent VARCHAR(1000),"
+                        + "device_type VARCHAR(32),"
+                        + "platform VARCHAR(32),"
+                        + "page_url VARCHAR(1000),"
+                        + "referer VARCHAR(1000),"
+                        + "env VARCHAR(32),"
+                        + "create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"
+                        + ")",
+                "CREATE INDEX IF NOT EXISTS idx_sys_log_center_trace_time ON sys_log_center(trace_id, create_time DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_sys_log_center_type_time ON sys_log_center(log_type, create_time DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_sys_log_center_module_time ON sys_log_center(module, create_time DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_sys_log_center_user_time ON sys_log_center(user_id, create_time DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_sys_log_center_time ON sys_log_center(create_time DESC)"
         );
 
         for (String statement : statements) {

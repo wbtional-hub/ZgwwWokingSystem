@@ -1,0 +1,2 @@
+ALTER TABLE sys_user
+    ADD COLUMN IF NOT EXISTS force_password_change BOOLEAN NOT NULL DEFAULT FALSE;

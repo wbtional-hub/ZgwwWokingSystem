@@ -16,6 +16,10 @@ public interface UserMapper {
 
     UserEntity findByUsername(@Param("username") String username);
 
+    UserEntity findByWechatOpenId(@Param("wechatOpenId") String wechatOpenId);
+
+    UserEntity findByWechatUnionId(@Param("wechatUnionId") String wechatUnionId);
+
     long countPageByUserId(@Param("userId") Long userId, @Param("request") UserQueryRequest request);
 
     List<UserListItemVO> queryPageByUserId(@Param("userId") Long userId, @Param("request") UserQueryRequest request);
@@ -36,12 +40,27 @@ public interface UserMapper {
 
     int updateUser(UserEntity entity);
 
+    int updateWechatBinding(@Param("id") Long id,
+                            @Param("wechatOpenId") String wechatOpenId,
+                            @Param("wechatUnionId") String wechatUnionId,
+                            @Param("updateUser") String updateUser,
+                            @Param("updateTime") LocalDateTime updateTime);
+
     int logicalDelete(@Param("id") Long id,
                       @Param("updateUser") String updateUser,
                       @Param("updateTime") LocalDateTime updateTime);
 
     int updatePassword(@Param("id") Long id,
                        @Param("passwordHash") String passwordHash,
+                       @Param("passwordAlgo") String passwordAlgo,
+                       @Param("passwordSalt") String passwordSalt,
+                       @Param("forcePasswordChange") Boolean forcePasswordChange,
                        @Param("updateUser") String updateUser,
                        @Param("updateTime") LocalDateTime updateTime);
+
+    int updateLoginSecurityState(@Param("id") Long id,
+                                 @Param("loginFailCount") Integer loginFailCount,
+                                 @Param("lockUntil") LocalDateTime lockUntil,
+                                 @Param("updateUser") String updateUser,
+                                 @Param("updateTime") LocalDateTime updateTime);
 }

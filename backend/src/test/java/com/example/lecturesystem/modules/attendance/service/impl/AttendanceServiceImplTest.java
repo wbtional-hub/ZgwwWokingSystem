@@ -25,6 +25,7 @@ import com.example.lecturesystem.modules.user.mapper.UserMapper;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -67,6 +68,7 @@ public class AttendanceServiceImplTest {
         Assert.assertEquals(AttendanceCheckInStatus.CHECK_IN_SUCCESS, result.get("status"));
         Assert.assertEquals(1, attendanceMapper.data.size());
         Assert.assertEquals(LocalDate.now(), attendanceMapper.data.get(1L).getAttendanceDate());
+        Assert.assertEquals("CHECK_IN", attendanceMapper.data.get(1L).getCheckType());
         Assert.assertNotNull(attendanceMapper.data.get(1L).getCheckInTime());
         Assert.assertEquals(new BigDecimal("39.909230"), attendanceMapper.data.get(1L).getCheckInLatitude());
         Assert.assertEquals(new BigDecimal("116.397428"), attendanceMapper.data.get(1L).getCheckInLongitude());
@@ -103,8 +105,261 @@ public class AttendanceServiceImplTest {
         Assert.assertEquals(Boolean.TRUE, result.get("success"));
         Assert.assertEquals("CHECK_OUT", result.get("action"));
         Assert.assertEquals(AttendanceCheckInStatus.CHECK_OUT_SUCCESS, result.get("status"));
+        Assert.assertEquals("CHECK_OUT", attendanceMapper.data.get(existed.getId()).getCheckType());
         Assert.assertNotNull(attendanceMapper.data.get(existed.getId()).getCheckOutTime());
         Assert.assertEquals("园区大门", attendanceMapper.data.get(existed.getId()).getCheckOutAddress());
+    }
+
+    @Test
+    public void checkOutActionShouldFailWhenNoCheckInExists() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        attendanceMapper.unitNames.put(2L, "平台单位");
+        attendanceMapper.attendanceLocations.put(2L, attendanceLocation(2L, "平台主打卡点", "116.397428", "39.909230", 300));
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        mockLoginUser(3L, false);
+        CheckInRequest request = new CheckInRequest();
+        request.setAction("CHECK_OUT");
+        request.setAddress("园区大门");
+        request.setLongitude(new BigDecimal("116.397428"));
+        request.setLatitude(new BigDecimal("39.909230"));
+
+        Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
+
+        Assert.assertEquals(Boolean.FALSE, result.get("success"));
+        Assert.assertEquals("请先完成上班打卡", result.get("reason"));
+        Assert.assertEquals(AttendanceCheckInStatus.LOCATION_REQUIRED, result.get("status"));
+        Assert.assertEquals(0, attendanceMapper.data.size());
+    }
+
+    @Test
+    public void checkInActionShouldFailWhenTodayCheckInAlreadyExists() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        attendanceMapper.unitNames.put(2L, "平台单位");
+        attendanceMapper.attendanceLocations.put(2L, attendanceLocation(2L, "平台主打卡点", "116.397428", "39.909230", 300));
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        AttendanceRecordEntity existed = new AttendanceRecordEntity();
+        existed.setUnitId(2L);
+        existed.setUserId(3L);
+        existed.setAttendanceDate(LocalDate.now());
+        existed.setCheckType("CHECK_IN");
+        existed.setCheckTime(LocalDateTime.now().minusHours(8));
+        existed.setCheckInTime(LocalDateTime.now().minusHours(8));
+        existed.setCheckInAddress("办公楼");
+        existed.setValidFlag(1);
+        attendanceMapper.insert(existed);
+
+        mockLoginUser(3L, false);
+        CheckInRequest request = new CheckInRequest();
+        request.setAction("CHECK_IN");
+        request.setAddress("办公楼");
+        request.setLongitude(new BigDecimal("116.397428"));
+        request.setLatitude(new BigDecimal("39.909230"));
+
+        Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
+
+        Assert.assertEquals(Boolean.FALSE, result.get("success"));
+        Assert.assertEquals("今日已完成上班打卡", result.get("reason"));
+        Assert.assertEquals(AttendanceCheckInStatus.ALREADY_FINISHED, result.get("status"));
+        Assert.assertNull(attendanceMapper.data.get(existed.getId()).getCheckOutTime());
+    }
+
+    @Test
+    public void checkOutActionShouldFailWhenTodayAlreadyFinished() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        attendanceMapper.unitNames.put(2L, "平台单位");
+        attendanceMapper.attendanceLocations.put(2L, attendanceLocation(2L, "平台主打卡点", "116.397428", "39.909230", 300));
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        AttendanceRecordEntity existed = new AttendanceRecordEntity();
+        existed.setUnitId(2L);
+        existed.setUserId(3L);
+        existed.setAttendanceDate(LocalDate.now());
+        existed.setCheckType("CHECK_OUT");
+        existed.setCheckInTime(LocalDateTime.now().minusHours(8));
+        existed.setCheckOutTime(LocalDateTime.now().minusHours(1));
+        existed.setCheckTime(existed.getCheckOutTime());
+        existed.setCheckInAddress("办公楼");
+        existed.setCheckOutAddress("园区大门");
+        existed.setValidFlag(1);
+        attendanceMapper.insert(existed);
+
+        mockLoginUser(3L, false);
+        CheckInRequest request = new CheckInRequest();
+        request.setAction("CHECK_OUT");
+        request.setAddress("园区大门");
+        request.setLongitude(new BigDecimal("116.397428"));
+        request.setLatitude(new BigDecimal("39.909230"));
+
+        Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
+
+        Assert.assertEquals(Boolean.FALSE, result.get("success"));
+        Assert.assertEquals("今日已完成下班打卡", result.get("reason"));
+        Assert.assertEquals(AttendanceCheckInStatus.ALREADY_FINISHED, result.get("status"));
+    }
+
+    @Test
+    public void autoCheckInShouldReturnFinishedWhenTodayAlreadyFinished() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        attendanceMapper.unitNames.put(2L, "平台单位");
+        attendanceMapper.attendanceLocations.put(2L, attendanceLocation(2L, "平台主打卡点", "116.397428", "39.909230", 300));
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        AttendanceRecordEntity existed = new AttendanceRecordEntity();
+        existed.setUnitId(2L);
+        existed.setUserId(3L);
+        existed.setAttendanceDate(LocalDate.now());
+        existed.setCheckType("CHECK_OUT");
+        existed.setCheckInTime(LocalDateTime.now().minusHours(8));
+        existed.setCheckOutTime(LocalDateTime.now().minusHours(1));
+        existed.setCheckTime(existed.getCheckOutTime());
+        existed.setCheckInAddress("办公楼");
+        existed.setCheckOutAddress("园区大门");
+        existed.setValidFlag(1);
+        attendanceMapper.insert(existed);
+
+        mockLoginUser(3L, false);
+        CheckInRequest request = new CheckInRequest();
+        request.setAddress("园区大门");
+        request.setLongitude(new BigDecimal("116.397428"));
+        request.setLatitude(new BigDecimal("39.909230"));
+
+        Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
+
+        Assert.assertEquals(Boolean.FALSE, result.get("success"));
+        Assert.assertEquals("今日打卡已全部完成", result.get("reason"));
+        Assert.assertEquals(AttendanceCheckInStatus.ALREADY_FINISHED, result.get("status"));
+    }
+
+    @Test
+    public void duplicateInsertShouldReturnBusinessMessageInsteadOfUniqueConstraintError() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper() {
+            private boolean staleRead = true;
+
+            @Override
+            public AttendanceRecordEntity findByUserIdAndDate(Long userId, LocalDate attendanceDate) {
+                if (staleRead) {
+                    staleRead = false;
+                    return null;
+                }
+                return super.findByUserIdAndDate(userId, attendanceDate);
+            }
+
+            @Override
+            public int insert(AttendanceRecordEntity entity) {
+                AttendanceRecordEntity existed = super.findByUserIdAndDate(entity.getUserId(), entity.getAttendanceDate());
+                if (existed != null) {
+                    throw new DuplicateKeyException("duplicate key violates unique constraint uk_attendance_record_user_date");
+                }
+                return super.insert(entity);
+            }
+        };
+        StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        attendanceMapper.unitNames.put(2L, "平台单位");
+        attendanceMapper.attendanceLocations.put(2L, attendanceLocation(2L, "平台主打卡点", "116.397428", "39.909230", 300));
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        AttendanceRecordEntity existed = new AttendanceRecordEntity();
+        existed.setUnitId(2L);
+        existed.setUserId(3L);
+        existed.setAttendanceDate(LocalDate.now());
+        existed.setCheckType("CHECK_IN");
+        existed.setCheckTime(LocalDateTime.now().minusMinutes(2));
+        existed.setCheckInTime(LocalDateTime.now().minusMinutes(2));
+        existed.setCheckInAddress("办公楼");
+        existed.setValidFlag(1);
+        superInsert(attendanceMapper, existed);
+
+        mockLoginUser(3L, false);
+        CheckInRequest request = new CheckInRequest();
+        request.setAddress("办公楼");
+        request.setLongitude(new BigDecimal("116.397428"));
+        request.setLatitude(new BigDecimal("39.909230"));
+
+        Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
+
+        Assert.assertEquals(Boolean.FALSE, result.get("success"));
+        Assert.assertEquals("今日已完成上班打卡", result.get("reason"));
+        Assert.assertEquals(AttendanceCheckInStatus.ALREADY_FINISHED, result.get("status"));
+    }
+
+    @Test
+    public void secondCheckInShouldRejectCheckOutWhenOutsideRadius() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        attendanceMapper.unitNames.put(2L, "骞冲彴鍗曚綅");
+        attendanceMapper.attendanceLocations.put(2L, attendanceLocation(2L, "骞冲彴涓绘墦鍗＄偣", "116.397428", "39.909230", 200));
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        AttendanceRecordEntity existed = new AttendanceRecordEntity();
+        existed.setUnitId(2L);
+        existed.setUserId(3L);
+        existed.setAttendanceDate(LocalDate.now());
+        existed.setCheckType("CHECK_IN");
+        existed.setCheckTime(LocalDateTime.now().minusHours(8));
+        existed.setCheckInTime(LocalDateTime.now().minusHours(8));
+        existed.setCheckInAddress("鍔炲叕妤?");
+        existed.setValidFlag(1);
+        attendanceMapper.insert(existed);
+
+        mockLoginUser(3L, false);
+        CheckInRequest request = new CheckInRequest();
+        request.setAddress("杩滃浣嶇疆");
+        request.setLongitude(new BigDecimal("116.407428"));
+        request.setLatitude(new BigDecimal("39.919230"));
+        request.setAccuracyMeters(35);
+
+        Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
+
+        Assert.assertEquals(Boolean.FALSE, result.get("success"));
+        Assert.assertEquals(AttendanceCheckInStatus.OUT_OF_RANGE, result.get("status"));
+        Assert.assertEquals("OUT", result.get("decisionBranch"));
+        Assert.assertNull(attendanceMapper.data.get(existed.getId()).getCheckOutTime());
+        Assert.assertEquals("CHECK_IN", attendanceMapper.data.get(existed.getId()).getCheckType());
+    }
+
+    @Test
+    public void checkInShouldPersistTestFallbackLocationMetadata() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        attendanceMapper.unitNames.put(2L, "平台单位");
+        attendanceMapper.attendanceLocations.put(2L, attendanceLocation(2L, "平台主打卡点", "116.397428", "39.909230", 300));
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        mockLoginUser(3L, false);
+        CheckInRequest request = new CheckInRequest();
+        request.setAddress("测试环境定位失败，按打卡点容错提交");
+        request.setLongitude(new BigDecimal("116.397428"));
+        request.setLatitude(new BigDecimal("39.909230"));
+        request.setLocationSource("BROWSER_GEO_TEST_FALLBACK");
+        request.setLocationProvider("TEST_ENV");
+
+        Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
+
+        Assert.assertEquals(Boolean.TRUE, result.get("success"));
+        Assert.assertEquals("CHECK_IN", result.get("action"));
+        Assert.assertEquals("CHECK_IN", attendanceMapper.data.get(1L).getCheckType());
+        Assert.assertEquals("BROWSER_GEO_TEST_FALLBACK", attendanceMapper.data.get(1L).getLocationSource());
+        Assert.assertEquals("TEST_ENV", attendanceMapper.data.get(1L).getLocationProvider());
     }
 
     @Test
@@ -158,7 +413,7 @@ public class AttendanceServiceImplTest {
     }
 
     @Test
-    public void checkInShouldAppendAccuracyHintWhenAccuracyIsWorseThanRadius() {
+    public void checkInShouldAppendAccuracyHintWhenOutsideRadiusAndAccuracyIsWorseThanRadius() {
         InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
         StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
         StubUserMapper userMapper = new StubUserMapper();
@@ -176,8 +431,9 @@ public class AttendanceServiceImplTest {
 
         Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
 
-        Assert.assertEquals(AttendanceCheckInStatus.LOCATION_WEAK, result.get("status"));
-        Assert.assertEquals("WEAK", result.get("decisionBranch"));
+        Assert.assertEquals(Boolean.FALSE, result.get("success"));
+        Assert.assertEquals(AttendanceCheckInStatus.OUT_OF_RANGE, result.get("status"));
+        Assert.assertEquals("OUT", result.get("decisionBranch"));
         Assert.assertTrue(String.valueOf(result.get("reason")).contains("当前定位质量较差"));
     }
 
@@ -206,7 +462,7 @@ public class AttendanceServiceImplTest {
     }
 
     @Test
-    public void checkInShouldAllowIndoorToleranceWhenAccuracyIsReasonable() {
+    public void checkInShouldRejectOutOfRangeEvenWhenAccuracyIsReasonable() {
         InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
         StubPermissionService permissionService = new StubPermissionService(false, Set.of(3L));
         StubUserMapper userMapper = new StubUserMapper();
@@ -224,11 +480,11 @@ public class AttendanceServiceImplTest {
 
         Map<?, ?> result = (Map<?, ?>) service.checkIn(request);
 
-        Assert.assertEquals(Boolean.TRUE, result.get("success"));
-        Assert.assertEquals(AttendanceCheckInStatus.CHECK_IN_SUCCESS, result.get("status"));
-        Assert.assertEquals("WEAK_SUCCESS", result.get("decisionBranch"));
-        Assert.assertEquals(Boolean.TRUE, result.get("weakToleranceApplied"));
-        Assert.assertEquals(1, attendanceMapper.data.size());
+        Assert.assertEquals(Boolean.FALSE, result.get("success"));
+        Assert.assertEquals(AttendanceCheckInStatus.OUT_OF_RANGE, result.get("status"));
+        Assert.assertEquals("OUT", result.get("decisionBranch"));
+        Assert.assertEquals(Boolean.FALSE, result.get("weakToleranceApplied"));
+        Assert.assertEquals(0, attendanceMapper.data.size());
     }
 
     @Test
@@ -348,6 +604,68 @@ public class AttendanceServiceImplTest {
         IllegalArgumentException error = Assert.assertThrows(IllegalArgumentException.class, () -> service.saveAttendance(request));
 
         Assert.assertEquals("无权操作该用户考勤", error.getMessage());
+    }
+
+    @Test
+    public void saveAttendanceShouldPersistCheckInTypeForManualInsert() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(true, Set.of());
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        mockLoginUser(1L, true);
+        SaveAttendanceRequest request = new SaveAttendanceRequest();
+        request.setUserId(3L);
+        request.setAttendanceDate(LocalDate.now().toString());
+        request.setCheckInTime(LocalDate.now() + " 09:00:00");
+        request.setCheckInAddress("办公楼");
+        request.setValidFlag(1);
+
+        Long id = service.saveAttendance(request);
+
+        Assert.assertNotNull(id);
+        Assert.assertEquals("CHECK_IN", attendanceMapper.data.get(id).getCheckType());
+        Assert.assertEquals("MANUAL", attendanceMapper.data.get(id).getLocationSource());
+        Assert.assertEquals("BACKOFFICE", attendanceMapper.data.get(id).getLocationProvider());
+    }
+
+    @Test
+    public void saveAttendanceShouldPersistCheckOutTypeForManualEdit() {
+        InMemoryAttendanceMapper attendanceMapper = new InMemoryAttendanceMapper();
+        StubPermissionService permissionService = new StubPermissionService(true, Set.of());
+        StubUserMapper userMapper = new StubUserMapper();
+        userMapper.users.put(3L, user(3L, 2L, "/3/"));
+        AttendanceServiceImpl service = new AttendanceServiceImpl(attendanceMapper, permissionService, userMapper);
+
+        AttendanceRecordEntity existed = new AttendanceRecordEntity();
+        existed.setUnitId(2L);
+        existed.setUserId(3L);
+        existed.setAttendanceDate(LocalDate.now());
+        existed.setCheckInTime(LocalDate.now().atTime(9, 0));
+        existed.setCheckType("CHECK_IN");
+        existed.setCheckInAddress("办公楼");
+        existed.setValidFlag(1);
+        attendanceMapper.insert(existed);
+
+        mockLoginUser(1L, true);
+        SaveAttendanceRequest request = new SaveAttendanceRequest();
+        request.setId(existed.getId());
+        request.setUserId(3L);
+        request.setAttendanceDate(LocalDate.now().toString());
+        request.setCheckInTime(LocalDate.now() + " 09:00:00");
+        request.setCheckOutTime(LocalDate.now() + " 18:00:00");
+        request.setCheckInAddress("办公楼");
+        request.setCheckOutAddress("园区大门");
+        request.setValidFlag(1);
+
+        Long id = service.saveAttendance(request);
+
+        Assert.assertEquals(existed.getId(), id);
+        Assert.assertEquals("CHECK_OUT", attendanceMapper.data.get(id).getCheckType());
+        Assert.assertEquals("园区大门", attendanceMapper.data.get(id).getCheckOutAddress());
+        Assert.assertEquals("MANUAL", attendanceMapper.data.get(id).getLocationSource());
+        Assert.assertEquals("BACKOFFICE", attendanceMapper.data.get(id).getLocationProvider());
     }
 
     @Test
@@ -601,6 +919,15 @@ public class AttendanceServiceImplTest {
         return entity;
     }
 
+    private static void superInsert(InMemoryAttendanceMapper attendanceMapper, AttendanceRecordEntity entity) {
+        attendanceMapper.sequence = Math.max(attendanceMapper.sequence, (entity.getId() == null ? 0L : entity.getId()) + 1);
+        if (entity.getId() == null) {
+            entity.setId(attendanceMapper.sequence++);
+        }
+        entity.setCreateTime(LocalDateTime.now());
+        attendanceMapper.data.put(entity.getId(), attendanceMapper.cloneEntity(entity));
+    }
+
     private AttendanceLocationVO attendanceLocation(Long unitId, String name, String longitude, String latitude, Integer radiusMeters) {
         AttendanceLocationVO location = new AttendanceLocationVO();
         location.setId(unitId + 100);
@@ -649,6 +976,16 @@ public class AttendanceServiceImplTest {
 
         @Override
         public UserEntity findByUsername(String username) {
+            return null;
+        }
+
+        @Override
+        public UserEntity findByWechatOpenId(String wechatOpenId) {
+            return null;
+        }
+
+        @Override
+        public UserEntity findByWechatUnionId(String wechatUnionId) {
             return null;
         }
 
@@ -705,16 +1042,44 @@ public class AttendanceServiceImplTest {
         }
 
         @Override
+        public int updateWechatBinding(Long id, String wechatOpenId, String wechatUnionId, String updateUser, LocalDateTime updateTime) {
+            UserEntity target = users.get(id);
+            if (target == null) {
+                return 0;
+            }
+            target.setWechatOpenId(wechatOpenId);
+            target.setWechatUnionId(wechatUnionId);
+            target.setUpdateUser(updateUser);
+            target.setUpdateTime(updateTime);
+            return 1;
+        }
+
+        @Override
         public int logicalDelete(Long id, String updateUser, LocalDateTime updateTime) {
             users.remove(id);
             return 1;
         }
 
         @Override
-        public int updatePassword(Long id, String passwordHash, String updateUser, LocalDateTime updateTime) {
+        public int updatePassword(Long id, String passwordHash, String passwordAlgo, String passwordSalt, Boolean forcePasswordChange, String updateUser, LocalDateTime updateTime) {
             UserEntity target = users.get(id);
             if (target != null) {
                 target.setPasswordHash(passwordHash);
+                target.setPasswordAlgo(passwordAlgo);
+                target.setPasswordSalt(passwordSalt);
+                target.setForcePasswordChange(forcePasswordChange);
+            }
+            return 1;
+        }
+
+        @Override
+        public int updateLoginSecurityState(Long id, Integer loginFailCount, LocalDateTime lockUntil, String updateUser, LocalDateTime updateTime) {
+            UserEntity target = users.get(id);
+            if (target != null) {
+                target.setLoginFailCount(loginFailCount);
+                target.setLockUntil(lockUntil);
+                target.setUpdateUser(updateUser);
+                target.setUpdateTime(updateTime);
             }
             return 1;
         }
@@ -771,10 +1136,14 @@ public class AttendanceServiceImplTest {
             target.setUnitId(entity.getUnitId());
             target.setUserId(entity.getUserId());
             target.setAttendanceDate(entity.getAttendanceDate());
+            target.setCheckType(entity.getCheckType());
+            target.setCheckTime(entity.getCheckTime());
             target.setCheckInTime(entity.getCheckInTime());
             target.setCheckOutTime(entity.getCheckOutTime());
             target.setCheckInAddress(entity.getCheckInAddress());
             target.setCheckOutAddress(entity.getCheckOutAddress());
+            target.setLocationSource(entity.getLocationSource());
+            target.setLocationProvider(entity.getLocationProvider());
             target.setValidFlag(entity.getValidFlag());
             return 1;
         }
@@ -1160,6 +1529,8 @@ public class AttendanceServiceImplTest {
             copy.setUnitId(entity.getUnitId());
             copy.setUserId(entity.getUserId());
             copy.setAttendanceDate(entity.getAttendanceDate());
+            copy.setCheckType(entity.getCheckType());
+            copy.setCheckTime(entity.getCheckTime());
             copy.setCheckInTime(entity.getCheckInTime());
             copy.setCheckOutTime(entity.getCheckOutTime());
             copy.setCheckInAddress(entity.getCheckInAddress());
@@ -1169,6 +1540,8 @@ public class AttendanceServiceImplTest {
             copy.setCheckInDistanceMeters(entity.getCheckInDistanceMeters());
             copy.setCheckInResult(entity.getCheckInResult());
             copy.setCheckInFailReason(entity.getCheckInFailReason());
+            copy.setLocationSource(entity.getLocationSource());
+            copy.setLocationProvider(entity.getLocationProvider());
             copy.setValidFlag(entity.getValidFlag());
             copy.setCreateTime(entity.getCreateTime());
             return copy;

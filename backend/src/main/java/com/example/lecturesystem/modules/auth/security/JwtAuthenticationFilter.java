@@ -18,6 +18,7 @@ import java.util.Set;
 
 import static com.example.lecturesystem.config.SecurityConfig.HEALTH_PATH;
 import static com.example.lecturesystem.config.SecurityConfig.LOGIN_PATH;
+import static com.example.lecturesystem.config.SecurityConfig.LOG_CENTER_REPORT_PATH;
 import static com.example.lecturesystem.config.SecurityConfig.MOBILE_LOGIN_OPTIONS_PATH;
 import static com.example.lecturesystem.config.SecurityConfig.WECHAT_MINI_LOGIN_PATH;
 import static com.example.lecturesystem.config.SecurityConfig.WECHAT_JSAPI_CONFIG_PATH;
@@ -35,6 +36,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             WECHAT_MP_CALLBACK_PATH,
             WECHAT_MP_LOGIN_PATH,
             WECHAT_JSAPI_CONFIG_PATH,
+            LOG_CENTER_REPORT_PATH,
             HEALTH_PATH
     );
 

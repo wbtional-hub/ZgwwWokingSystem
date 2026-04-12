@@ -1,0 +1,61 @@
+<view class="page-shell">
+  <view class="hero-card">
+    <view class="hero-eyebrow">Attendance</view>
+    <view class="hero-title">先把定位拿准，再把签到动作做顺。</view>
+    <view class="hero-subtitle">这一版只保留手机端最关键的打卡动作、打卡点信息和当天记录回看。</view>
+    <view class="meta-row">
+      <view class="meta-pill">{{locationInfo && locationInfo.unitName ? locationInfo.unitName : '单位信息待加载'}}</view>
+      <view class="meta-pill">{{locationInfo && locationInfo.status ? locationInfo.status : '状态待确认'}}</view>
+    </view>
+  </view>
+
+  <view class="panel-card">
+    <view class="section-title">当前打卡点</view>
+    <view wx:if="{{loading}}" class="empty-state">打卡点加载中...</view>
+    <view wx:else>
+      <view class="card-meta">允许打卡：{{locationInfo && locationInfo.allowCheckIn ? '是' : '否'}}</view>
+      <view class="card-meta">点位名称：{{locationInfo && locationInfo.locationName ? locationInfo.locationName : '-'}}</view>
+      <view class="card-meta">地址：{{locationInfo && locationInfo.address ? locationInfo.address : '-'}}</view>
+      <view class="card-meta">半径：{{locationInfo && locationInfo.radiusMeters ? (locationInfo.radiusMeters + ' 米') : '-'}}</view>
+      <view class="card-meta">提示：{{locationInfo && locationInfo.reason ? locationInfo.reason : '定位稳定后可直接打卡'}}</view>
+      <view class="button-row" style="margin-top: 20rpx;">
+        <button class="primary-button" loading="{{checkingIn}}" bindtap="handleCheckIn">
+          {{checkingIn ? '定位中...' : '获取定位并打卡'}}
+        </button>
+      </view>
+      <view class="section-note">当前位置：{{currentPositionText}}</view>
+    </view>
+  </view>
+
+  <view wx:if="{{lastResult}}" class="panel-card">
+    <view class="section-title">最近一次结果</view>
+    <view class="card-meta">结果：{{lastResult.success ? lastResult.actionText : '打卡未通过'}}</view>
+    <view class="card-meta">状态：{{lastResult.statusText}}</view>
+    <view class="card-meta">说明：{{lastResult.reason || lastResult.failReason || '-'}}</view>
+    <view class="card-meta">距离：{{lastResult.distanceMeters !== null && lastResult.distanceMeters !== undefined ? (lastResult.distanceMeters + ' 米') : '-'}}</view>
+    <view class="card-meta">定位精度：{{lastResult.accuracyMeters !== null && lastResult.accuracyMeters !== undefined ? (lastResult.accuracyMeters + ' 米') : '-'}}</view>
+    <view class="card-meta">签到时间：{{lastResult.checkInTimeText}}</view>
+    <view class="card-meta">签退时间：{{lastResult.checkOutTimeText}}</view>
+  </view>
+
+  <view class="panel-card">
+    <view class="section-title">今日记录</view>
+    <view class="section-note">这里只展示今天的记录，先满足移动端“看结果、补确认”的需要。</view>
+    <view wx:if="{{!records.length}}" class="empty-state">今天还没有考勤记录。</view>
+    <view
+      wx:for="{{records}}"
+      wx:key="id"
+      class="list-card"
+    >
+      <view class="card-title-row">
+        <view class="card-title">{{item.attendanceDate}}</view>
+        <view class="status-pill">{{item.checkInResult}}</view>
+      </view>
+      <view class="card-meta">签到时间：{{item.checkInTime || '-'}}</view>
+      <view class="card-meta">签退时间：{{item.checkOutTime || '-'}}</view>
+      <view class="card-meta">签到地点：{{item.checkInAddress || '-'}}</view>
+      <view class="card-meta">距离：{{item.checkInDistanceMeters !== null && item.checkInDistanceMeters !== undefined ? (item.checkInDistanceMeters + ' 米') : '-'}}</view>
+      <view class="card-meta">异常说明：{{item.checkInFailReason || '无'}}</view>
+    </view>
+  </view>
+</view>

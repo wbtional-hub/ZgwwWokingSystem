@@ -14,6 +14,9 @@ public class CreateChildUserRequest {
     private String realName;
     private String jobTitle;
     private String mobile;
+    private String wechatNo;
+    private String wechatOpenId;
+    private String wechatUnionId;
     private Long unitId;
     @NotNull(message = "状态不能为空")
     private Integer status;
@@ -30,6 +33,12 @@ public class CreateChildUserRequest {
     public void setJobTitle(String jobTitle) { this.jobTitle = jobTitle; }
     public String getMobile() { return mobile; }
     public void setMobile(String mobile) { this.mobile = mobile; }
+    public String getWechatNo() { return wechatNo; }
+    public void setWechatNo(String wechatNo) { this.wechatNo = wechatNo; }
+    public String getWechatOpenId() { return wechatOpenId; }
+    public void setWechatOpenId(String wechatOpenId) { this.wechatOpenId = wechatOpenId; }
+    public String getWechatUnionId() { return wechatUnionId; }
+    public void setWechatUnionId(String wechatUnionId) { this.wechatUnionId = wechatUnionId; }
     public Long getUnitId() { return unitId; }
     public void setUnitId(Long unitId) { this.unitId = unitId; }
     public Integer getStatus() { return status; }

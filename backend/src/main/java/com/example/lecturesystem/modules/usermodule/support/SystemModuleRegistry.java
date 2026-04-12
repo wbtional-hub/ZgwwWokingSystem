@@ -18,6 +18,7 @@ public class SystemModuleRegistry {
         register(map, "param", "参数管理", "/params", "params", 20, true, true, null);
         register(map, "knowledge", "知识库中心", "/knowledge", "knowledge", 30, true, false, null);
         register(map, "skill", "Skills 中心", "/skills", "skills", 40, true, false, null);
+        register(map, "policy_consultant", "手机端政策咨询", "/policy-consultant", "policy-consultant", 45, true, false, null);
         register(map, "ai_workbench", "AI 工作台", "/ai-workbench", "ai-workbench", 50, true, false, null);
         register(map, "ai_ledger", "咨询台账", "/ai-ledger", "ai-ledger", 60, true, false, null);
         register(map, "ai_monthly_report", "月度报表", "/ai-monthly-report", "ai-monthly-report", 70, true, false, null);

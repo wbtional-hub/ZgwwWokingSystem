@@ -1,0 +1,4 @@
+.primary-button,
+.ghost-button {
+  flex: 1;
+}

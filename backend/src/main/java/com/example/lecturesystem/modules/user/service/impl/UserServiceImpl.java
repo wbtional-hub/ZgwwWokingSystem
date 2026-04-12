@@ -1,11 +1,15 @@
 package com.example.lecturesystem.modules.user.service.impl;
 
 import com.example.lecturesystem.modules.auth.security.LoginUser;
+import com.example.lecturesystem.modules.auth.service.AuthService;
+import com.example.lecturesystem.modules.auth.support.PasswordPolicyValidator;
+import com.example.lecturesystem.modules.auth.support.Sm3PasswordCodec;
 import com.example.lecturesystem.modules.operationlog.service.OperationLogService;
 import com.example.lecturesystem.modules.permission.support.DataScopeService;
+import com.example.lecturesystem.modules.user.dto.BindWechatMiniRequest;
 import com.example.lecturesystem.modules.user.dto.CreateUserRequest;
-import com.example.lecturesystem.modules.user.dto.UserQueryRequest;
 import com.example.lecturesystem.modules.user.dto.UpdateUserRequest;
+import com.example.lecturesystem.modules.user.dto.UserQueryRequest;
 import com.example.lecturesystem.modules.user.entity.UserEntity;
 import com.example.lecturesystem.modules.user.mapper.UserMapper;
 import com.example.lecturesystem.modules.user.service.UserService;
@@ -14,20 +18,24 @@ import com.example.lecturesystem.modules.user.vo.UserPageVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Service
 public class UserServiceImpl implements UserService {
-    private static final String DEFAULT_PASSWORD = "123456";
+    private static final String DEFAULT_PASSWORD = "Admin2026";
+    private static final String PASSWORD_ALGO_SM3 = "SM3";
 
     private final UserMapper userMapper;
     private final OperationLogService operationLogService;
     private final DataScopeService dataScopeService;
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    private final AuthService authService;
+    private final String defaultPassword;
+    private final Sm3PasswordCodec sm3PasswordCodec = new Sm3PasswordCodec();
 
     public UserServiceImpl(UserMapper userMapper) {
         this(userMapper, new OperationLogService() {
@@ -39,14 +47,42 @@ public class UserServiceImpl implements UserService {
             public Object query(com.example.lecturesystem.modules.operationlog.dto.OperationLogQueryRequest request) {
                 return java.util.List.of();
             }
-        }, new DataScopeService());
+        }, new DataScopeService(), new AuthService() {
+            @Override
+            public com.example.lecturesystem.modules.auth.vo.LoginVO login(com.example.lecturesystem.modules.auth.dto.LoginRequest request) {
+                throw new UnsupportedOperationException("Not implemented in tests");
+            }
+
+            @Override
+            public com.example.lecturesystem.modules.auth.vo.LoginVO wechatMiniLogin(com.example.lecturesystem.modules.auth.dto.WechatMiniLoginRequest request) {
+                throw new UnsupportedOperationException("Not implemented in tests");
+            }
+
+            @Override
+            public WechatMiniIdentity exchangeWechatMiniCode(String code) {
+                throw new UnsupportedOperationException("Not implemented in tests");
+            }
+        }, DEFAULT_PASSWORD);
     }
 
     @Autowired
-    public UserServiceImpl(UserMapper userMapper, OperationLogService operationLogService, DataScopeService dataScopeService) {
+    public UserServiceImpl(UserMapper userMapper,
+                           OperationLogService operationLogService,
+                           DataScopeService dataScopeService,
+                           AuthService authService) {
+        this(userMapper, operationLogService, dataScopeService, authService, DEFAULT_PASSWORD);
+    }
+
+    UserServiceImpl(UserMapper userMapper,
+                    OperationLogService operationLogService,
+                    DataScopeService dataScopeService,
+                    AuthService authService,
+                    String defaultPassword) {
         this.userMapper = userMapper;
         this.operationLogService = operationLogService;
         this.dataScopeService = dataScopeService;
+        this.authService = authService;
+        this.defaultPassword = defaultPassword;
     }
 
     @Override
@@ -86,10 +122,18 @@ public class UserServiceImpl implements UserService {
         UserEntity entity = new UserEntity();
         entity.setUnitId(request.getUnitId());
         entity.setUsername(request.getUsername().trim());
-        entity.setPasswordHash(passwordEncoder.encode(request.getPassword().trim()));
+        String rawPassword = request.getPassword() == null ? null : request.getPassword().trim();
+        PasswordPolicyValidator.validateOrThrow(rawPassword);
+        String salt = sm3PasswordCodec.generateSalt();
+        entity.setPasswordHash(sm3PasswordCodec.encode(rawPassword, salt));
+        entity.setPasswordAlgo(PASSWORD_ALGO_SM3);
+        entity.setPasswordSalt(salt);
         entity.setRealName(request.getRealName().trim());
         entity.setJobTitle(trimToNull(request.getJobTitle()));
         entity.setMobile(trimToNull(request.getMobile()));
+        entity.setWechatNo(trimToNull(request.getWechatNo()));
+        entity.setWechatOpenId(trimToNull(request.getWechatOpenId()));
+        entity.setWechatUnionId(trimToNull(request.getWechatUnionId()));
         entity.setRole("USER");
         entity.setStatus(request.getStatus());
         entity.setCreateTime(now);
@@ -144,6 +188,9 @@ public class UserServiceImpl implements UserService {
         entity.setRealName(request.getRealName().trim());
         entity.setJobTitle(trimToNull(request.getJobTitle()));
         entity.setMobile(trimToNull(request.getMobile()));
+        entity.setWechatNo(trimToNull(request.getWechatNo()));
+        entity.setWechatOpenId(trimToNull(request.getWechatOpenId()));
+        entity.setWechatUnionId(trimToNull(request.getWechatUnionId()));
         entity.setStatus(request.getStatus());
         entity.setUpdateTime(LocalDateTime.now());
         entity.setUpdateUser(currentOperator());
@@ -154,6 +201,56 @@ public class UserServiceImpl implements UserService {
                 entity.getId(),
                 "编辑用户：" + existed.getRealName() + " -> " + entity.getRealName() + "，状态=" + entity.getStatus()
         );
+    }
+
+    @Override
+    @Transactional
+    public Object bindWechatMini(BindWechatMiniRequest request) {
+        requireAdmin();
+        UserEntity targetUser = requireUser(request.getUserId());
+
+        AuthService.WechatMiniIdentity identity = authService.exchangeWechatMiniCode(request.getCode());
+        String openId = trimToNull(identity.openId());
+        String unionId = trimToNull(identity.unionId());
+        if (openId == null) {
+            throw new IllegalArgumentException("微信授权结果缺少 openid，无法完成绑定");
+        }
+
+        UserEntity openIdOwner = userMapper.findByWechatOpenId(openId);
+        if (openIdOwner != null && !openIdOwner.getId().equals(targetUser.getId())) {
+            throw new IllegalArgumentException("该微信小程序 openid 已被其他用户绑定，禁止覆盖");
+        }
+
+        if (unionId != null) {
+            UserEntity unionIdOwner = userMapper.findByWechatUnionId(unionId);
+            if (unionIdOwner != null && !unionIdOwner.getId().equals(targetUser.getId())) {
+                throw new IllegalArgumentException("该微信小程序 unionid 已被其他用户绑定，禁止覆盖");
+            }
+        }
+
+        int updated = userMapper.updateWechatBinding(
+                targetUser.getId(),
+                openId,
+                unionId,
+                currentOperator(),
+                LocalDateTime.now()
+        );
+        if (updated <= 0) {
+            throw new IllegalStateException("微信小程序绑定失败，请稍后重试");
+        }
+
+        operationLogService.log(
+                "USER",
+                "BIND_WECHAT_MINI",
+                targetUser.getId(),
+                "管理员为用户 " + targetUser.getUsername() + " 绑定微信小程序账号"
+        );
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("userId", targetUser.getId());
+        result.put("openIdBound", Boolean.TRUE);
+        result.put("unionIdPresent", unionId != null);
+        return result;
     }
 
     @Override
@@ -170,9 +267,14 @@ public class UserServiceImpl implements UserService {
     public void resetPassword(Long userId) {
         requireAdmin();
         requireUser(userId);
+        PasswordPolicyValidator.validateOrThrow(defaultPassword);
+        String salt = sm3PasswordCodec.generateSalt();
         userMapper.updatePassword(
                 userId,
-                passwordEncoder.encode(DEFAULT_PASSWORD),
+                sm3PasswordCodec.encode(defaultPassword, salt),
+                PASSWORD_ALGO_SM3,
+                salt,
+                Boolean.TRUE,
                 currentOperator(),
                 LocalDateTime.now()
         );
@@ -231,5 +333,4 @@ public class UserServiceImpl implements UserService {
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
     }
-
 }

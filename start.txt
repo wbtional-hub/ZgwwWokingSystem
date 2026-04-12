@@ -11,11 +11,22 @@ D:\softwave\postgresql-18.3-1-windows-x64-binaries\pgsql\bin\pg_isready.exe -h 1
 cd D:\20.develop64\ZgwwWokingSystem\backend
 mvn "-Dspring-boot.run.profiles=wsl" "-Dspring-boot.run.jvmArguments=-DDB_HOST=127.0.0.1" spring-boot:run
 
+
+
 前端
 cd D:\20.develop64\ZgwwWokingSystem\frontend
 npm install
 npm run dev
 
+cd D:\nginx
+taskkill /F /IM nginx.exe
+.\nginx.exe -t
+.\nginx.exe
+
+
+在 D:\nginx 目录下执行：
+.\nginx.exe -t
+.\nginx.exe -s reload
 
 PS D:\20.develop64\ZgwwWokingSystem\backend
 mvn -Dspring-boot.run.profiles=wsl -Dspring-boot.run.jvmArguments="-DDB_HOST=127.0.0.1" spring-boot:run

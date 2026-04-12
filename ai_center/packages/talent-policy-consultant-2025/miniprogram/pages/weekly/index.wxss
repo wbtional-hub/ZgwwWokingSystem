@@ -1,0 +1,4 @@
+.primary-button,
+.ghost-button {
+  width: 100%;
+}

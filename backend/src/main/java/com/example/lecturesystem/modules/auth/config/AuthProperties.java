@@ -5,6 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.auth")
 public class AuthProperties {
     private DemoUser demoUser = new DemoUser();
+    private Mobile mobile = new Mobile();
 
     public DemoUser getDemoUser() {
         return demoUser;
@@ -12,6 +13,38 @@ public class AuthProperties {
 
     public void setDemoUser(DemoUser demoUser) {
         this.demoUser = demoUser;
+    }
+
+    public Mobile getMobile() {
+        return mobile;
+    }
+
+    public void setMobile(Mobile mobile) {
+        this.mobile = mobile;
+    }
+
+    public static class Mobile {
+        private PasswordLogin passwordLogin = new PasswordLogin();
+
+        public PasswordLogin getPasswordLogin() {
+            return passwordLogin;
+        }
+
+        public void setPasswordLogin(PasswordLogin passwordLogin) {
+            this.passwordLogin = passwordLogin;
+        }
+    }
+
+    public static class PasswordLogin {
+        private boolean enabled = false;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
     }
 
     public static class DemoUser {

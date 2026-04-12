@@ -32,6 +32,7 @@ public class SecurityConfig {
     public static final String QR_LOGIN_STATUS_PATH = "/api/auth/qr-login/status";
     public static final String HEALTH_PATH = "/api/health";
     public static final String WECHAT_JSAPI_CONFIG_PATH = "/api/wechat/jsapi-config";
+    public static final String LOG_CENTER_REPORT_PATH = "/api/log-center/report";
 
     public static final List<String> ALLOWED_ORIGINS = List.of(
             "https://www.xmzgww.com",
@@ -73,6 +74,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, QR_LOGIN_STATUS_PATH).permitAll()
                         .requestMatchers(HttpMethod.GET, HEALTH_PATH).permitAll()
                         .requestMatchers(HttpMethod.GET, WECHAT_JSAPI_CONFIG_PATH).permitAll()
+                        .requestMatchers(HttpMethod.POST, LOG_CENTER_REPORT_PATH).permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

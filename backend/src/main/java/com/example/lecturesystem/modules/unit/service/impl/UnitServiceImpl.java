@@ -42,6 +42,16 @@ public class UnitServiceImpl implements UnitService {
             }
 
             @Override
+            public com.example.lecturesystem.modules.user.entity.UserEntity findByWechatOpenId(String wechatOpenId) {
+                return null;
+            }
+
+            @Override
+            public com.example.lecturesystem.modules.user.entity.UserEntity findByWechatUnionId(String wechatUnionId) {
+                return null;
+            }
+
+            @Override
             public long countPageByUserId(Long userId, com.example.lecturesystem.modules.user.dto.UserQueryRequest request) {
                 return 0;
             }
@@ -92,12 +102,22 @@ public class UnitServiceImpl implements UnitService {
             }
 
             @Override
+            public int updateWechatBinding(Long id, String wechatOpenId, String wechatUnionId, String updateUser, java.time.LocalDateTime updateTime) {
+                return 0;
+            }
+
+            @Override
             public int logicalDelete(Long id, String updateUser, java.time.LocalDateTime updateTime) {
                 return 0;
             }
 
             @Override
-            public int updatePassword(Long id, String passwordHash, String updateUser, java.time.LocalDateTime updateTime) {
+            public int updatePassword(Long id, String passwordHash, String passwordAlgo, String passwordSalt, Boolean forcePasswordChange, String updateUser, java.time.LocalDateTime updateTime) {
+                return 0;
+            }
+
+            @Override
+            public int updateLoginSecurityState(Long id, Integer loginFailCount, java.time.LocalDateTime lockUntil, String updateUser, java.time.LocalDateTime updateTime) {
                 return 0;
             }
 

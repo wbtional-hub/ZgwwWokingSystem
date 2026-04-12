@@ -21,6 +21,8 @@ public class AttendanceRecordListItemVO {
     private Integer checkInDistanceMeters;
     private String checkInResult;
     private String checkInFailReason;
+    private String locationSource;
+    private String locationProvider;
     private Integer validFlag;
     private LocalDateTime createTime;
 
@@ -150,6 +152,22 @@ public class AttendanceRecordListItemVO {
 
     public void setCheckInFailReason(String checkInFailReason) {
         this.checkInFailReason = checkInFailReason;
+    }
+
+    public String getLocationSource() {
+        return locationSource;
+    }
+
+    public void setLocationSource(String locationSource) {
+        this.locationSource = locationSource;
+    }
+
+    public String getLocationProvider() {
+        return locationProvider;
+    }
+
+    public void setLocationProvider(String locationProvider) {
+        this.locationProvider = locationProvider;
     }
 
     public Integer getValidFlag() {

@@ -1,0 +1,192 @@
+.page-shell {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, #f7f4ef 0%, #f2efe9 52%, #eeebe5 100%);
+}
+
+.page-glow {
+  position: absolute;
+  border-radius: 999rpx;
+  filter: blur(18rpx);
+  opacity: 0.72;
+}
+
+.page-glow-top {
+  top: -88rpx;
+  right: -36rpx;
+  width: 300rpx;
+  height: 300rpx;
+  background: radial-gradient(circle, rgba(143, 186, 159, 0.28) 0%, rgba(143, 186, 159, 0) 72%);
+}
+
+.page-glow-bottom {
+  left: -92rpx;
+  bottom: 116rpx;
+  width: 260rpx;
+  height: 260rpx;
+  background: radial-gradient(circle, rgba(205, 196, 179, 0.34) 0%, rgba(205, 196, 179, 0) 74%);
+}
+
+.login-stage {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  padding: 168rpx 64rpx 96rpx;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.title-block {
+  width: 100%;
+  text-align: center;
+}
+
+.title {
+  color: #1f2b25;
+  font-size: 56rpx;
+  line-height: 1.24;
+  font-weight: 600;
+  letter-spacing: 3rpx;
+}
+
+.subtitle {
+  margin-top: 18rpx;
+  color: rgba(48, 63, 54, 0.58);
+  font-size: 24rpx;
+  line-height: 1.7;
+  letter-spacing: 1rpx;
+}
+
+.wechat-badge {
+  width: 250rpx;
+  height: 250rpx;
+  margin-top: 92rpx;
+  border-radius: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(247, 245, 240, 0.88) 100%);
+  border: 1rpx solid rgba(86, 108, 95, 0.08);
+  box-shadow:
+    0 32rpx 80rpx rgba(71, 84, 74, 0.12),
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10rpx);
+}
+
+.wechat-mark {
+  position: relative;
+  width: 132rpx;
+  height: 112rpx;
+}
+
+.bubble {
+  position: absolute;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #5d8068 0%, #426951 100%);
+  box-shadow: 0 12rpx 28rpx rgba(66, 105, 81, 0.2);
+}
+
+.bubble-back {
+  top: 6rpx;
+  right: 0;
+  width: 86rpx;
+  height: 72rpx;
+}
+
+.tail {
+  position: absolute;
+  width: 22rpx;
+  height: 18rpx;
+  background: linear-gradient(180deg, #5d8068 0%, #426951 100%);
+}
+
+.tail-back {
+  right: 16rpx;
+  bottom: -8rpx;
+  border-bottom-left-radius: 16rpx;
+  transform: skewX(18deg) rotate(16deg);
+}
+
+.bubble-front {
+  left: 0;
+  bottom: 0;
+  width: 98rpx;
+  height: 82rpx;
+}
+
+.tail-front {
+  left: 18rpx;
+  bottom: -10rpx;
+  border-bottom-right-radius: 18rpx;
+  transform: skewX(-18deg) rotate(-14deg);
+}
+
+.eye {
+  position: absolute;
+  top: 28rpx;
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.bubble-front .eye-left {
+  left: 28rpx;
+}
+
+.bubble-front .eye-right {
+  left: 48rpx;
+}
+
+.bubble-back .eye-left {
+  left: 22rpx;
+}
+
+.bubble-back .eye-right {
+  left: 40rpx;
+}
+
+.action-block {
+  width: 100%;
+  margin-top: 108rpx;
+}
+
+.primary-button {
+  width: 100%;
+  height: 96rpx;
+  border: none;
+  border-radius: 999rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f8fbf8;
+  font-size: 30rpx;
+  font-weight: 600;
+  letter-spacing: 2rpx;
+  background: linear-gradient(180deg, #4d7358 0%, #395844 100%);
+  box-shadow: 0 20rpx 48rpx rgba(57, 88, 68, 0.22);
+}
+
+.primary-button::after {
+  border: none;
+}
+
+.primary-button-hover {
+  transform: translateY(1rpx);
+  box-shadow: 0 12rpx 28rpx rgba(57, 88, 68, 0.2);
+  background: linear-gradient(180deg, #486d53 0%, #34513f 100%);
+}
+
+.hint {
+  margin-top: 28rpx;
+  text-align: center;
+  color: rgba(52, 66, 59, 0.42);
+  font-size: 22rpx;
+  line-height: 1.6;
+  letter-spacing: 1rpx;
+}

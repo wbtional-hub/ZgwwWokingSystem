@@ -9,6 +9,8 @@ public class AttendanceRecordEntity {
     private Long unitId;
     private Long userId;
     private LocalDate attendanceDate;
+    private String checkType;
+    private LocalDateTime checkTime;
     private LocalDateTime checkInTime;
     private LocalDateTime checkOutTime;
     private String checkInAddress;
@@ -18,6 +20,8 @@ public class AttendanceRecordEntity {
     private Integer checkInDistanceMeters;
     private String checkInResult;
     private String checkInFailReason;
+    private String locationSource;
+    private String locationProvider;
     private Integer validFlag;
     private LocalDateTime createTime;
 
@@ -29,6 +33,10 @@ public class AttendanceRecordEntity {
     public void setUserId(Long userId) { this.userId = userId; }
     public LocalDate getAttendanceDate() { return attendanceDate; }
     public void setAttendanceDate(LocalDate attendanceDate) { this.attendanceDate = attendanceDate; }
+    public String getCheckType() { return checkType; }
+    public void setCheckType(String checkType) { this.checkType = checkType; }
+    public LocalDateTime getCheckTime() { return checkTime; }
+    public void setCheckTime(LocalDateTime checkTime) { this.checkTime = checkTime; }
     public LocalDateTime getCheckInTime() { return checkInTime; }
     public void setCheckInTime(LocalDateTime checkInTime) { this.checkInTime = checkInTime; }
     public LocalDateTime getCheckOutTime() { return checkOutTime; }
@@ -47,6 +55,10 @@ public class AttendanceRecordEntity {
     public void setCheckInResult(String checkInResult) { this.checkInResult = checkInResult; }
     public String getCheckInFailReason() { return checkInFailReason; }
     public void setCheckInFailReason(String checkInFailReason) { this.checkInFailReason = checkInFailReason; }
+    public String getLocationSource() { return locationSource; }
+    public void setLocationSource(String locationSource) { this.locationSource = locationSource; }
+    public String getLocationProvider() { return locationProvider; }
+    public void setLocationProvider(String locationProvider) { this.locationProvider = locationProvider; }
     public Integer getValidFlag() { return validFlag; }
     public void setValidFlag(Integer validFlag) { this.validFlag = validFlag; }
     public LocalDateTime getCreateTime() { return createTime; }

@@ -115,7 +115,19 @@ export async function ensureWechatJsapiReady(config) {
     })
 
     wx.error((error) => {
-      console.error('[wechat jsapi config failed]', error)
+      console.error('[wechat jsapi config failed]', {
+        errorCode: 'WECHAT_JSAPI_CONFIG_FAILED',
+        locationSource: 'WECHAT_JSAPI',
+        stage: 'WECHAT_JSAPI_CONFIG',
+        latitude: null,
+        longitude: null,
+        accuracy: null,
+        distanceMeters: null,
+        radiusMeters: null,
+        fallbackEnabled: false,
+        rawMessage: error?.errMsg || '',
+        detail: error || null
+      })
       rejectOnce(new Error(error?.errMsg || '微信 JS-SDK 初始化失败'))
     })
 

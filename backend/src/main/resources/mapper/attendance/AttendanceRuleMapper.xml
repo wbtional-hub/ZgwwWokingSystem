@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.attendance.mapper.AttendanceRuleMapper">
+    <resultMap id="AttendanceRuleEntityMap" type="com.example.lecturesystem.modules.attendance.entity.AttendanceRuleEntity">
+        <id property="id" column="id"/>
+        <result property="unitId" column="unit_id"/>
+        <result property="workStartTime" column="work_start_time"/>
+        <result property="workEndTime" column="work_end_time"/>
+        <result property="lateGraceMinutes" column="late_grace_minutes"/>
+        <result property="earlyLeaveGraceMinutes" column="early_leave_grace_minutes"/>
+        <result property="status" column="status"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <select id="findByUnitId" resultMap="AttendanceRuleEntityMap">
+        SELECT id, unit_id, work_start_time, work_end_time, late_grace_minutes, early_leave_grace_minutes, status, create_time, update_time
+        FROM attendance_rule
+        WHERE unit_id = #{unitId}
+        LIMIT 1
+    </select>
+
+    <select id="detailByUnitId" resultType="com.example.lecturesystem.modules.attendance.vo.AttendanceRuleVO">
+        SELECT a.id, a.unit_id, su.unit_name, a.work_start_time, a.work_end_time,
+               a.late_grace_minutes, a.early_leave_grace_minutes, a.status, a.create_time, a.update_time
+        FROM attendance_rule a
+        LEFT JOIN sys_org_unit su ON su.id = a.unit_id
+        WHERE a.unit_id = #{unitId}
+        LIMIT 1
+    </select>
+
+    <select id="queryByUnitIds" resultMap="AttendanceRuleEntityMap">
+        SELECT id, unit_id, work_start_time, work_end_time, late_grace_minutes, early_leave_grace_minutes, status, create_time, update_time
+        FROM attendance_rule
+        WHERE unit_id IN
+        <foreach item="item" collection="unitIds" open="(" separator="," close=")">
+            #{item}
+        </foreach>
+          AND status = 1
+    </select>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.attendance.entity.AttendanceRuleEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO attendance_rule (
+            unit_id, work_start_time, work_end_time, late_grace_minutes, early_leave_grace_minutes, status, create_time, update_time
+        )
+        VALUES (
+            #{unitId}, #{workStartTime}, #{workEndTime}, #{lateGraceMinutes}, #{earlyLeaveGraceMinutes}, #{status}, #{createTime}, #{updateTime}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.example.lecturesystem.modules.attendance.entity.AttendanceRuleEntity">
+        UPDATE attendance_rule
+        SET work_start_time = #{workStartTime},
+            work_end_time = #{workEndTime},
+            late_grace_minutes = #{lateGraceMinutes},
+            early_leave_grace_minutes = #{earlyLeaveGraceMinutes},
+            status = #{status},
+            update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+</mapper>

@@ -80,6 +80,18 @@
           AND is_deleted = FALSE
     </select>
 
+    <select id="findFirstEnabledSuccess" resultMap="ProviderConfigEntityMap">
+        SELECT id, provider_code, provider_name, api_base_url, api_token_cipher, token_mask,
+               default_model, connect_status, status, remark, create_time, update_time,
+               create_user, update_user, is_deleted
+        FROM ai_provider_config
+        WHERE is_deleted = FALSE
+          AND status = 1
+          AND connect_status = 'SUCCESS'
+        ORDER BY update_time DESC, id DESC
+        LIMIT 1
+    </select>
+
     <insert id="insert" parameterType="com.example.lecturesystem.modules.aiconfig.entity.ProviderConfigEntity" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO ai_provider_config (
             provider_code, provider_name, api_base_url, api_token_cipher, token_mask,

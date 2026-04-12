@@ -1,5 +1,6 @@
 package com.example.lecturesystem.modules.knowledge.support;
 
+import org.apache.poi.openxml4j.util.ZipSecureFile;
 import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
@@ -13,11 +14,16 @@ import java.util.List;
 
 @Component
 public class DocxPolicyParser {
+    static {
+        // Internal policy compilations can legitimately contain many embedded docx entries.
+        ZipSecureFile.setMaxFileCount(20000L);
+    }
+
     public ParsedDocResult parse(InputStream inputStream) throws IOException {
         try (XWPFDocument document = new XWPFDocument(inputStream)) {
             ParsedDocResult result = new ParsedDocResult();
             List<ParsedDocSection> sections = new ArrayList<>();
-            String currentHeading = "正文";
+            String currentHeading = "\u6b63\u6587";
             int sectionNo = 1;
 
             for (IBodyElement element : document.getBodyElements()) {
@@ -60,7 +66,7 @@ public class DocxPolicyParser {
 
             result.setSections(sections);
             if (result.getTitle() == null) {
-                result.setTitle("未命名文档");
+                result.setTitle("\u672a\u547d\u540d\u6587\u6863");
             }
             if (result.getSummary() == null) {
                 result.setSummary(result.getTitle());
@@ -72,7 +78,7 @@ public class DocxPolicyParser {
     private boolean isHeading(XWPFParagraph paragraph, String text) {
         String style = paragraph.getStyle();
         return (style != null && style.toLowerCase().contains("heading"))
-                || (text.length() <= 30 && text.matches("^[一二三四五六七八九十0-9A-Za-z（(].*"));
+                || (text.length() <= 30 && text.matches("^[\\u4e00-\\u9fa5A-Za-z0-9\\(\\)\\uff08\\uff09\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341].*"));
     }
 
     private String normalize(String text) {

@@ -492,6 +492,16 @@ public class WeeklyWorkServiceImplTest {
         }
 
         @Override
+        public UserEntity findByWechatOpenId(String wechatOpenId) {
+            return null;
+        }
+
+        @Override
+        public UserEntity findByWechatUnionId(String wechatUnionId) {
+            return null;
+        }
+
+        @Override
         public int insertUser(UserEntity entity) {
             users.put(entity.getId(), entity);
             return 1;
@@ -544,16 +554,44 @@ public class WeeklyWorkServiceImplTest {
         }
 
         @Override
+        public int updateWechatBinding(Long id, String wechatOpenId, String wechatUnionId, String updateUser, LocalDateTime updateTime) {
+            UserEntity target = users.get(id);
+            if (target == null) {
+                return 0;
+            }
+            target.setWechatOpenId(wechatOpenId);
+            target.setWechatUnionId(wechatUnionId);
+            target.setUpdateUser(updateUser);
+            target.setUpdateTime(updateTime);
+            return 1;
+        }
+
+        @Override
         public int logicalDelete(Long id, String updateUser, LocalDateTime updateTime) {
             users.remove(id);
             return 1;
         }
 
         @Override
-        public int updatePassword(Long id, String passwordHash, String updateUser, LocalDateTime updateTime) {
+        public int updatePassword(Long id, String passwordHash, String passwordAlgo, String passwordSalt, Boolean forcePasswordChange, String updateUser, LocalDateTime updateTime) {
             UserEntity target = users.get(id);
             if (target != null) {
                 target.setPasswordHash(passwordHash);
+                target.setPasswordAlgo(passwordAlgo);
+                target.setPasswordSalt(passwordSalt);
+                target.setForcePasswordChange(forcePasswordChange);
+            }
+            return 1;
+        }
+
+        @Override
+        public int updateLoginSecurityState(Long id, Integer loginFailCount, LocalDateTime lockUntil, String updateUser, LocalDateTime updateTime) {
+            UserEntity target = users.get(id);
+            if (target != null) {
+                target.setLoginFailCount(loginFailCount);
+                target.setLockUntil(lockUntil);
+                target.setUpdateUser(updateUser);
+                target.setUpdateTime(updateTime);
             }
             return 1;
         }

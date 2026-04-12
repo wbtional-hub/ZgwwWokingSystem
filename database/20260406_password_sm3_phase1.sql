@@ -1,0 +1,5 @@
+ALTER TABLE sys_user
+    ADD COLUMN IF NOT EXISTS password_algo VARCHAR(20);
+
+ALTER TABLE sys_user
+    ADD COLUMN IF NOT EXISTS password_salt VARCHAR(64);

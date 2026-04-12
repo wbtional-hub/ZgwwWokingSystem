@@ -1,0 +1,8 @@
+.quick-button {
+  width: 100%;
+}
+
+.primary-button,
+.ghost-button {
+  width: 100%;
+}

@@ -35,3 +35,39 @@ export function saveAttendanceApi(data) {
 export function deleteAttendanceApi(id) {
   return request.delete(`/attendance/${id}`)
 }
+
+export function submitAttendancePatchApplyApi(data) {
+  return request.post('/attendance/patch-apply/submit', data)
+}
+
+export function queryMyAttendancePatchApplyPageApi(data) {
+  return request.post('/attendance/patch-apply/my-page', data)
+}
+
+export function queryPendingAttendancePatchApplyPageApi(data) {
+  return request.post('/attendance/patch-apply/pending-page', data)
+}
+
+export function queryAttendancePatchApplyDetailApi(id) {
+  return request.get(`/attendance/patch-apply/${id}`)
+}
+
+export function approveAttendancePatchApplyApi(id, data) {
+  return request.post(`/attendance/patch-apply/${id}/approve`, data)
+}
+
+export function rejectAttendancePatchApplyApi(id, data) {
+  return request.post(`/attendance/patch-apply/${id}/reject`, data)
+}
+
+export function queryCurrentAttendanceRuleApi() {
+  return request.get('/attendance/rule/current')
+}
+
+export function saveAttendanceRuleApi(data) {
+  return request.post('/attendance/rule/save', data)
+}
+
+export function queryAttendanceTeamStatisticsApi(data) {
+  return request.post('/attendance/team-statistics/query', data)
+}

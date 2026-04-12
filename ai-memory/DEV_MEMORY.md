@@ -363,3 +363,53 @@
 - 知识库网页导入区当前已拆出“网页地址导入 / 网页快照导入”两个子模式，继续共用同一块默认折叠的反馈信息能力
 - 网页快照导入当前支持 `.mhtml / .html / .htm`：`.html/.htm` 直接按 HTML 解析，`.mhtml` 会按 MIME 结构提取主 HTML，并兼容 `base64 / quoted-printable / 8bit` 三类常见正文编码
 - 网页快照导入继续复用 `ai_knowledge_document + ai_knowledge_chunk` 模型，不新增表结构；入库时 `sourceType=WEB_SNAPSHOT`，并保留上传文件名与存储路径
+## 2026-04-11 Attendance Leadership Dashboard
+
+### Completed
+- Reworked the leadership attendance experience into a single-page workspace inside `frontend/src/views/attendance/AttendanceCheckInView.vue`.
+- Added a top overview section, reminder section, subordinate member cards, and current-page detail expansion without introducing a new page jump flow.
+- Added three focused UI components:
+  - `frontend/src/components/attendance/AttendanceLeadershipSummarySection.vue`
+  - `frontend/src/components/attendance/AttendanceLeadershipMemberCards.vue`
+  - `frontend/src/components/attendance/AttendanceLeadershipDetailPanel.vue`
+- Wired desktop behavior as left list plus right detail panel, and mobile behavior as inline expansion inside the selected member card.
+- Finished the parent-page data flow:
+  - team roster loading
+  - today and this-week attendance aggregation
+  - card filtering by status, department, and keyword
+  - selected-member detail refresh
+  - recent abnormal record loading
+
+### Reused APIs
+- Reused `queryUserPageApi()` to load the visible subordinate/team roster under existing scope rules.
+- Reused `queryAttendanceListApi()` for:
+  - today's records
+  - this week's records
+  - recent abnormal records
+- This round did not add or change backend attendance APIs.
+
+### Interaction Notes
+- Desktop: dual-column workspace with a sticky detail panel on the right.
+- Mobile: single-column list with detail expansion rendered inline under the active member card.
+- The old attendance query/list/check-in areas were kept below the new leadership workspace, so existing attendance flow was not removed.
+
+### Data Interpretation Limits
+- Current attendance data does not expose full structured late/early/fieldwork metrics.
+- Leadership status is therefore inferred from existing record result and fail-reason text:
+  - missing: no record today
+  - normal: success record without abnormal signal
+  - late: result or reason text contains late signal
+  - field: result or reason text contains out-of-range or field signal
+  - abnormal: other abnormal cases
+- If the backend does not return a precise duration, the detail panel must not fabricate late/early minutes.
+
+### Verification
+- Frontend build passed with `npm.cmd run build`.
+
+### Next Suggested Step
+- Run browser-level validation on both desktop and mobile for:
+  - initial load
+  - filter switching
+  - member selection
+  - inline detail expansion on mobile
+  - detail refresh after changing the selected member

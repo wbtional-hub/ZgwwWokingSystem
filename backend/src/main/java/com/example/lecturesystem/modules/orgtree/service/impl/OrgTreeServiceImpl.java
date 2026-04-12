@@ -13,9 +13,10 @@ import com.example.lecturesystem.modules.permission.mapper.PermissionMapper;
 import com.example.lecturesystem.modules.permission.service.PermissionService;
 import com.example.lecturesystem.modules.user.entity.UserEntity;
 import com.example.lecturesystem.modules.user.mapper.UserMapper;
+import com.example.lecturesystem.modules.auth.support.PasswordPolicyValidator;
+import com.example.lecturesystem.modules.auth.support.Sm3PasswordCodec;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,12 +32,13 @@ import java.time.LocalDateTime;
 @Service
 public class OrgTreeServiceImpl implements OrgTreeService {
     private static final String ROLE_ORG_USER = "ORG_USER";
+    private static final String PASSWORD_ALGO_SM3 = "SM3";
 
     private final OrgTreeMapper orgTreeMapper;
     private final UserMapper userMapper;
     private final PermissionService permissionService;
     private final PermissionMapper permissionMapper;
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    private final Sm3PasswordCodec sm3PasswordCodec = new Sm3PasswordCodec();
 
     public OrgTreeServiceImpl(OrgTreeMapper orgTreeMapper,
                               UserMapper userMapper,
@@ -73,12 +75,19 @@ public class OrgTreeServiceImpl implements OrgTreeService {
 
         UserEntity newUser = new UserEntity();
         Long targetUnitId = skipParentUnitInheritance ? request.getUnitId() : parentNode.getUnitId();
+        PasswordPolicyValidator.validateOrThrow(request.getPassword());
+        String salt = sm3PasswordCodec.generateSalt();
         newUser.setUnitId(targetUnitId);
         newUser.setUsername(request.getUsername());
-        newUser.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        newUser.setPasswordHash(sm3PasswordCodec.encode(request.getPassword(), salt));
+        newUser.setPasswordAlgo(PASSWORD_ALGO_SM3);
+        newUser.setPasswordSalt(salt);
         newUser.setRealName(request.getRealName());
         newUser.setJobTitle(request.getJobTitle());
         newUser.setMobile(request.getMobile());
+        newUser.setWechatNo(trimToNull(request.getWechatNo()));
+        newUser.setWechatOpenId(trimToNull(request.getWechatOpenId()));
+        newUser.setWechatUnionId(trimToNull(request.getWechatUnionId()));
         newUser.setRole("USER");
         newUser.setStatus(request.getStatus());
         newUser.setCreateTime(LocalDateTime.now());
@@ -192,6 +201,9 @@ public class OrgTreeServiceImpl implements OrgTreeService {
         targetUser.setRealName(request.getRealName().trim());
         targetUser.setJobTitle(trimToNull(request.getJobTitle()));
         targetUser.setMobile(trimToNull(request.getMobile()));
+        targetUser.setWechatNo(trimToNull(request.getWechatNo()));
+        targetUser.setWechatOpenId(trimToNull(request.getWechatOpenId()));
+        targetUser.setWechatUnionId(trimToNull(request.getWechatUnionId()));
         targetUser.setUnitId(nextUnitId);
         targetUser.setUpdateTime(LocalDateTime.now());
         targetUser.setUpdateUser(loginUser.getUsername());

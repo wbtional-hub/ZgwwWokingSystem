@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.attendance.mapper.AttendancePatchApplyMapper">
+    <resultMap id="AttendancePatchApplyEntityMap" type="com.example.lecturesystem.modules.attendance.entity.AttendancePatchApplyEntity">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="unitId" column="unit_id"/>
+        <result property="attendanceDate" column="attendance_date"/>
+        <result property="patchType" column="patch_type"/>
+        <result property="patchTime" column="patch_time"/>
+        <result property="reason" column="reason"/>
+        <result property="status" column="status"/>
+        <result property="approveUserId" column="approve_user_id"/>
+        <result property="approveTime" column="approve_time"/>
+        <result property="approveComment" column="approve_comment"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="validFlag" column="valid_flag"/>
+    </resultMap>
+
+    <resultMap id="AttendancePatchApplyListItemMap" type="com.example.lecturesystem.modules.attendance.vo.AttendancePatchApplyListItemVO">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="unitId" column="unit_id"/>
+        <result property="attendanceDate" column="attendance_date"/>
+        <result property="patchType" column="patch_type"/>
+        <result property="patchTime" column="patch_time"/>
+        <result property="reason" column="reason"/>
+        <result property="status" column="status"/>
+        <result property="approveUserId" column="approve_user_id"/>
+        <result property="approveTime" column="approve_time"/>
+        <result property="approveComment" column="approve_comment"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="validFlag" column="valid_flag"/>
+        <result property="username" column="username"/>
+        <result property="realName" column="real_name"/>
+        <result property="unitName" column="unit_name"/>
+        <result property="approveUsername" column="approve_username"/>
+        <result property="approveRealName" column="approve_real_name"/>
+    </resultMap>
+
+    <resultMap id="AttendancePatchApplyDetailMap" type="com.example.lecturesystem.modules.attendance.vo.AttendancePatchApplyDetailVO" extends="AttendancePatchApplyListItemMap"/>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.attendance.entity.AttendancePatchApplyEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO attendance_patch_apply (
+            user_id, unit_id, attendance_date, patch_type, patch_time, reason, status,
+            approve_user_id, approve_time, approve_comment, create_time, update_time, valid_flag
+        )
+        VALUES (
+            #{userId}, #{unitId}, #{attendanceDate}, #{patchType}, #{patchTime}, #{reason}, #{status},
+            #{approveUserId}, #{approveTime}, #{approveComment}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, #{validFlag}
+        )
+    </insert>
+
+    <select id="findById" resultMap="AttendancePatchApplyEntityMap">
+        SELECT id, user_id, unit_id, attendance_date, patch_type, patch_time, reason, status,
+               approve_user_id, approve_time, approve_comment, create_time, update_time, valid_flag
+        FROM attendance_patch_apply
+        WHERE id = #{id}
+    </select>
+
+    <select id="findPendingByUserDateType" resultMap="AttendancePatchApplyEntityMap">
+        SELECT id, user_id, unit_id, attendance_date, patch_type, patch_time, reason, status,
+               approve_user_id, approve_time, approve_comment, create_time, update_time, valid_flag
+        FROM attendance_patch_apply
+        WHERE user_id = #{userId}
+          AND attendance_date = #{attendanceDate}
+          AND patch_type = #{patchType}
+          AND status = 'PENDING'
+          AND valid_flag = 1
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="countMyPage" resultType="long">
+        SELECT COUNT(1)
+        FROM attendance_patch_apply a
+        WHERE a.user_id = #{userId}
+          AND a.valid_flag = 1
+        <if test="request.patchType != null and request.patchType != ''">
+            AND a.patch_type = #{request.patchType}
+        </if>
+        <if test="request.status != null and request.status != ''">
+            AND a.status = #{request.status}
+        </if>
+        <if test="request.dateFrom != null and request.dateFrom != ''">
+            AND a.attendance_date <![CDATA[>=]]> CAST(#{request.dateFrom} AS date)
+        </if>
+        <if test="request.dateTo != null and request.dateTo != ''">
+            AND a.attendance_date <![CDATA[<=]]> CAST(#{request.dateTo} AS date)
+        </if>
+    </select>
+
+    <select id="queryMyPage" resultMap="AttendancePatchApplyListItemMap">
+        SELECT a.id, a.user_id, a.unit_id, a.attendance_date, a.patch_type, a.patch_time, a.reason, a.status,
+               a.approve_user_id, a.approve_time, a.approve_comment, a.create_time, a.update_time, a.valid_flag,
+               u.username, u.real_name, su.unit_name,
+               au.username AS approve_username, au.real_name AS approve_real_name
+        FROM attendance_patch_apply a
+        INNER JOIN sys_user u ON u.id = a.user_id
+        LEFT JOIN sys_org_unit su ON su.id = a.unit_id
+        LEFT JOIN sys_user au ON au.id = a.approve_user_id
+        WHERE a.user_id = #{userId}
+          AND a.valid_flag = 1
+        <if test="request.patchType != null and request.patchType != ''">
+            AND a.patch_type = #{request.patchType}
+        </if>
+        <if test="request.status != null and request.status != ''">
+            AND a.status = #{request.status}
+        </if>
+        <if test="request.dateFrom != null and request.dateFrom != ''">
+            AND a.attendance_date <![CDATA[>=]]> CAST(#{request.dateFrom} AS date)
+        </if>
+        <if test="request.dateTo != null and request.dateTo != ''">
+            AND a.attendance_date <![CDATA[<=]]> CAST(#{request.dateTo} AS date)
+        </if>
+        ORDER BY a.create_time DESC, a.id DESC
+        LIMIT #{request.pageSize} OFFSET #{request.offset}
+    </select>
+
+    <select id="countPendingPage" resultType="long">
+        SELECT COUNT(1)
+        FROM attendance_patch_apply a
+        INNER JOIN sys_user u ON u.id = a.user_id
+        LEFT JOIN sys_org_unit su ON su.id = a.unit_id
+        WHERE a.valid_flag = 1
+          AND u.is_deleted = FALSE
+          AND a.user_id != #{currentUserId}
+        <if test="treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{treePathPrefix}, '%')
+        </if>
+        <if test="request.keywords != null and request.keywords != ''">
+            AND (
+                u.username LIKE CONCAT('%', #{request.keywords}, '%')
+                OR u.real_name LIKE CONCAT('%', #{request.keywords}, '%')
+            )
+        </if>
+        <if test="request.patchType != null and request.patchType != ''">
+            AND a.patch_type = #{request.patchType}
+        </if>
+        <if test="request.status != null and request.status != ''">
+            AND a.status = #{request.status}
+        </if>
+        <if test="request.dateFrom != null and request.dateFrom != ''">
+            AND a.attendance_date <![CDATA[>=]]> CAST(#{request.dateFrom} AS date)
+        </if>
+        <if test="request.dateTo != null and request.dateTo != ''">
+            AND a.attendance_date <![CDATA[<=]]> CAST(#{request.dateTo} AS date)
+        </if>
+    </select>
+
+    <select id="queryPendingPage" resultMap="AttendancePatchApplyListItemMap">
+        SELECT a.id, a.user_id, a.unit_id, a.attendance_date, a.patch_type, a.patch_time, a.reason, a.status,
+               a.approve_user_id, a.approve_time, a.approve_comment, a.create_time, a.update_time, a.valid_flag,
+               u.username, u.real_name, su.unit_name,
+               au.username AS approve_username, au.real_name AS approve_real_name
+        FROM attendance_patch_apply a
+        INNER JOIN sys_user u ON u.id = a.user_id
+        LEFT JOIN sys_org_unit su ON su.id = a.unit_id
+        LEFT JOIN sys_user au ON au.id = a.approve_user_id
+        WHERE a.valid_flag = 1
+          AND u.is_deleted = FALSE
+          AND a.user_id != #{currentUserId}
+        <if test="treePathPrefix != null">
+            AND u.tree_path LIKE CONCAT(#{treePathPrefix}, '%')
+        </if>
+        <if test="request.keywords != null and request.keywords != ''">
+            AND (
+                u.username LIKE CONCAT('%', #{request.keywords}, '%')
+                OR u.real_name LIKE CONCAT('%', #{request.keywords}, '%')
+            )
+        </if>
+        <if test="request.patchType != null and request.patchType != ''">
+            AND a.patch_type = #{request.patchType}
+        </if>
+        <if test="request.status != null and request.status != ''">
+            AND a.status = #{request.status}
+        </if>
+        <if test="request.dateFrom != null and request.dateFrom != ''">
+            AND a.attendance_date <![CDATA[>=]]> CAST(#{request.dateFrom} AS date)
+        </if>
+        <if test="request.dateTo != null and request.dateTo != ''">
+            AND a.attendance_date <![CDATA[<=]]> CAST(#{request.dateTo} AS date)
+        </if>
+        ORDER BY
+            CASE WHEN a.status = 'PENDING' THEN 0 ELSE 1 END,
+            a.create_time DESC,
+            a.id DESC
+        LIMIT #{request.pageSize} OFFSET #{request.offset}
+    </select>
+
+    <select id="detailById" resultMap="AttendancePatchApplyDetailMap">
+        SELECT a.id, a.user_id, a.unit_id, a.attendance_date, a.patch_type, a.patch_time, a.reason, a.status,
+               a.approve_user_id, a.approve_time, a.approve_comment, a.create_time, a.update_time, a.valid_flag,
+               u.username, u.real_name, su.unit_name,
+               au.username AS approve_username, au.real_name AS approve_real_name
+        FROM attendance_patch_apply a
+        INNER JOIN sys_user u ON u.id = a.user_id
+        LEFT JOIN sys_org_unit su ON su.id = a.unit_id
+        LEFT JOIN sys_user au ON au.id = a.approve_user_id
+        WHERE a.id = #{id}
+    </select>
+
+    <update id="updateReview" parameterType="com.example.lecturesystem.modules.attendance.entity.AttendancePatchApplyEntity">
+        UPDATE attendance_patch_apply
+        SET status = #{status},
+            approve_user_id = #{approveUserId},
+            approve_time = #{approveTime},
+            approve_comment = #{approveComment},
+            update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+</mapper>

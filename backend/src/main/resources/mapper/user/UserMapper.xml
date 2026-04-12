@@ -9,11 +9,19 @@
         <result property="unitId" column="unit_id"/>
         <result property="username" column="username"/>
         <result property="passwordHash" column="password_hash"/>
+        <result property="passwordAlgo" column="password_algo"/>
+        <result property="passwordSalt" column="password_salt"/>
         <result property="realName" column="real_name"/>
         <result property="jobTitle" column="job_title"/>
         <result property="mobile" column="mobile"/>
+        <result property="wechatNo" column="wechat_no"/>
+        <result property="wechatOpenId" column="wechat_open_id"/>
+        <result property="wechatUnionId" column="wechat_union_id"/>
         <result property="role" column="role"/>
         <result property="status" column="status"/>
+        <result property="forcePasswordChange" column="force_password_change"/>
+        <result property="loginFailCount" column="login_fail_count"/>
+        <result property="lockUntil" column="lock_until"/>
         <result property="parentUserId" column="parent_user_id"/>
         <result property="levelNo" column="level_no"/>
         <result property="treePath" column="tree_path"/>
@@ -25,7 +33,9 @@
     </resultMap>
 
     <select id="findById" resultMap="UserEntityMap">
-        SELECT id, unit_id, username, password_hash, real_name, job_title, mobile, role, status,
+        SELECT id, unit_id, username, password_hash, password_algo, password_salt, real_name, job_title, mobile,
+               wechat_no, wechat_open_id, wechat_union_id, role, status, force_password_change,
+               login_fail_count, lock_until,
                parent_user_id, level_no, tree_path,
                create_time, update_time, create_user, update_user, is_deleted
         FROM sys_user
@@ -34,7 +44,9 @@
     </select>
 
     <select id="findByUsername" resultMap="UserEntityMap">
-        SELECT id, unit_id, username, password_hash, real_name, job_title, mobile, role, status,
+        SELECT id, unit_id, username, password_hash, password_algo, password_salt, real_name, job_title, mobile,
+               wechat_no, wechat_open_id, wechat_union_id, role, status, force_password_change,
+               login_fail_count, lock_until,
                parent_user_id, level_no, tree_path,
                create_time, update_time, create_user, update_user, is_deleted
         FROM sys_user
@@ -42,14 +54,40 @@
           AND is_deleted = FALSE
     </select>
 
+    <select id="findByWechatOpenId" resultMap="UserEntityMap">
+        SELECT id, unit_id, username, password_hash, password_algo, password_salt, real_name, job_title, mobile,
+               wechat_no, wechat_open_id, wechat_union_id, role, status, force_password_change,
+               login_fail_count, lock_until,
+               parent_user_id, level_no, tree_path,
+               create_time, update_time, create_user, update_user, is_deleted
+        FROM sys_user
+        WHERE wechat_open_id = #{wechatOpenId}
+          AND is_deleted = FALSE
+        LIMIT 1
+    </select>
+
+    <select id="findByWechatUnionId" resultMap="UserEntityMap">
+        SELECT id, unit_id, username, password_hash, password_algo, password_salt, real_name, job_title, mobile,
+               wechat_no, wechat_open_id, wechat_union_id, role, status, force_password_change,
+               login_fail_count, lock_until,
+               parent_user_id, level_no, tree_path,
+               create_time, update_time, create_user, update_user, is_deleted
+        FROM sys_user
+        WHERE wechat_union_id = #{wechatUnionId}
+          AND is_deleted = FALSE
+        LIMIT 1
+    </select>
+
     <insert id="insertUser" parameterType="com.example.lecturesystem.modules.user.entity.UserEntity" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO sys_user (
-            unit_id, username, password_hash, real_name, job_title, mobile, role, status,
+            unit_id, username, password_hash, password_algo, password_salt, real_name, job_title, mobile,
+            wechat_no, wechat_open_id, wechat_union_id, role, status,
             parent_user_id, level_no, tree_path,
             create_time, update_time, create_user, update_user, is_deleted
         )
         VALUES (
-            #{unitId}, #{username}, #{passwordHash}, #{realName}, #{jobTitle}, #{mobile}, #{role}, #{status},
+            #{unitId}, #{username}, #{passwordHash}, #{passwordAlgo}, #{passwordSalt}, #{realName}, #{jobTitle}, #{mobile},
+            #{wechatNo}, #{wechatOpenId}, #{wechatUnionId}, #{role}, #{status},
             #{parentUserId}, #{levelNo}, #{treePath},
             #{createTime}, #{updateTime}, #{createUser}, #{updateUser}, #{isDeleted}
         )
@@ -64,6 +102,7 @@
                 username LIKE CONCAT('%', #{keywords}, '%')
                 OR real_name LIKE CONCAT('%', #{keywords}, '%')
                 OR mobile LIKE CONCAT('%', #{keywords}, '%')
+                OR wechat_no LIKE CONCAT('%', #{keywords}, '%')
             )
         </if>
         <if test="status != null">
@@ -75,7 +114,7 @@
     </select>
 
     <select id="queryPage" resultType="com.example.lecturesystem.modules.user.vo.UserListItemVO">
-        SELECT u.id, u.unit_id, su.unit_name, u.username, u.real_name, u.job_title, u.mobile, u.status,
+        SELECT u.id, u.unit_id, su.unit_name, u.username, u.real_name, u.job_title, u.mobile, u.wechat_no, u.status,
                u.parent_user_id, u.level_no, u.create_time, u.update_time
         FROM sys_user u
         LEFT JOIN sys_org_unit su ON su.id = u.unit_id
@@ -85,6 +124,7 @@
                 u.username LIKE CONCAT('%', #{keywords}, '%')
                 OR u.real_name LIKE CONCAT('%', #{keywords}, '%')
                 OR u.mobile LIKE CONCAT('%', #{keywords}, '%')
+                OR u.wechat_no LIKE CONCAT('%', #{keywords}, '%')
             )
         </if>
         <if test="status != null">
@@ -107,6 +147,7 @@
                 username LIKE CONCAT('%', #{request.keywords}, '%')
                 OR real_name LIKE CONCAT('%', #{request.keywords}, '%')
                 OR mobile LIKE CONCAT('%', #{request.keywords}, '%')
+                OR wechat_no LIKE CONCAT('%', #{request.keywords}, '%')
             )
         </if>
         <if test="request.status != null">
@@ -115,7 +156,7 @@
     </select>
 
     <select id="queryPageByUserId" resultType="com.example.lecturesystem.modules.user.vo.UserListItemVO">
-        SELECT u.id, u.unit_id, su.unit_name, u.username, u.real_name, u.job_title, u.mobile, u.status,
+        SELECT u.id, u.unit_id, su.unit_name, u.username, u.real_name, u.job_title, u.mobile, u.wechat_no, u.status,
                u.parent_user_id, u.level_no, u.create_time, u.update_time
         FROM sys_user u
         LEFT JOIN sys_org_unit su ON su.id = u.unit_id
@@ -126,6 +167,7 @@
                 u.username LIKE CONCAT('%', #{request.keywords}, '%')
                 OR u.real_name LIKE CONCAT('%', #{request.keywords}, '%')
                 OR u.mobile LIKE CONCAT('%', #{request.keywords}, '%')
+                OR u.wechat_no LIKE CONCAT('%', #{request.keywords}, '%')
             )
         </if>
         <if test="request.status != null">
@@ -145,6 +187,7 @@
                 username LIKE CONCAT('%', #{request.keywords}, '%')
                 OR real_name LIKE CONCAT('%', #{request.keywords}, '%')
                 OR mobile LIKE CONCAT('%', #{request.keywords}, '%')
+                OR wechat_no LIKE CONCAT('%', #{request.keywords}, '%')
             )
         </if>
         <if test="request.status != null">
@@ -153,7 +196,7 @@
     </select>
 
     <select id="queryPageByTreePath" resultType="com.example.lecturesystem.modules.user.vo.UserListItemVO">
-        SELECT u.id, u.unit_id, su.unit_name, u.username, u.real_name, u.job_title, u.mobile, u.status,
+        SELECT u.id, u.unit_id, su.unit_name, u.username, u.real_name, u.job_title, u.mobile, u.wechat_no, u.status,
                u.parent_user_id, u.level_no, u.create_time, u.update_time
         FROM sys_user u
         LEFT JOIN sys_org_unit su ON su.id = u.unit_id
@@ -164,6 +207,7 @@
                 u.username LIKE CONCAT('%', #{request.keywords}, '%')
                 OR u.real_name LIKE CONCAT('%', #{request.keywords}, '%')
                 OR u.mobile LIKE CONCAT('%', #{request.keywords}, '%')
+                OR u.wechat_no LIKE CONCAT('%', #{request.keywords}, '%')
             )
         </if>
         <if test="request.status != null">
@@ -175,7 +219,8 @@
 
     <select id="detailById" resultType="com.example.lecturesystem.modules.user.vo.UserDetailVO">
         SELECT u.id, u.unit_id, su.unit_name, u.parent_user_id, u.level_no, u.tree_path,
-               u.username, u.real_name, u.job_title, u.mobile, u.status, u.create_time, u.update_time
+               u.username, u.real_name, u.job_title, u.mobile, u.wechat_no, u.wechat_open_id, u.wechat_union_id,
+               u.status, u.create_time, u.update_time
         FROM sys_user u
         LEFT JOIN sys_org_unit su ON su.id = u.unit_id
         WHERE u.id = #{id}
@@ -184,7 +229,8 @@
 
     <select id="detailByIdAndTreePath" resultType="com.example.lecturesystem.modules.user.vo.UserDetailVO">
         SELECT u.id, u.unit_id, su.unit_name, u.parent_user_id, u.level_no, u.tree_path,
-               u.username, u.real_name, u.job_title, u.mobile, u.status, u.create_time, u.update_time
+               u.username, u.real_name, u.job_title, u.mobile, u.wechat_no, u.wechat_open_id, u.wechat_union_id,
+               u.status, u.create_time, u.update_time
         FROM sys_user u
         LEFT JOIN sys_org_unit su ON su.id = u.unit_id
         WHERE u.id = #{id}
@@ -198,7 +244,20 @@
             real_name = #{realName},
             job_title = #{jobTitle},
             mobile = #{mobile},
+            wechat_no = #{wechatNo},
+            wechat_open_id = #{wechatOpenId},
+            wechat_union_id = #{wechatUnionId},
             status = #{status},
+            update_time = #{updateTime},
+            update_user = #{updateUser}
+        WHERE id = #{id}
+          AND is_deleted = FALSE
+    </update>
+
+    <update id="updateWechatBinding">
+        UPDATE sys_user
+        SET wechat_open_id = #{wechatOpenId},
+            wechat_union_id = #{wechatUnionId},
             update_time = #{updateTime},
             update_user = #{updateUser}
         WHERE id = #{id}
@@ -217,6 +276,19 @@
     <update id="updatePassword">
         UPDATE sys_user
         SET password_hash = #{passwordHash},
+            password_algo = #{passwordAlgo},
+            password_salt = #{passwordSalt},
+            force_password_change = #{forcePasswordChange},
+            update_time = #{updateTime},
+            update_user = #{updateUser}
+        WHERE id = #{id}
+          AND is_deleted = FALSE
+    </update>
+
+    <update id="updateLoginSecurityState">
+        UPDATE sys_user
+        SET login_fail_count = #{loginFailCount},
+            lock_until = #{lockUntil},
             update_time = #{updateTime},
             update_user = #{updateUser}
         WHERE id = #{id}

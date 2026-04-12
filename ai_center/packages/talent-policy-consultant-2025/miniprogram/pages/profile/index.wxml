@@ -1,0 +1,38 @@
+<view class="page-shell">
+  <view class="hero-card">
+    <view class="hero-eyebrow">Profile</view>
+    <view class="hero-title">{{session && session.userInfo ? (session.userInfo.realName || session.userInfo.username) : '当前用户'}}</view>
+    <view class="hero-subtitle">这里保留最必要的身份信息、模块权限和安全退出入口，不把后台个人页完整搬到小程序。</view>
+    <view class="meta-row">
+      <view class="meta-pill">{{session && session.userInfo && session.userInfo.isAdmin ? '管理员账号' : '授权账号'}}</view>
+      <view class="meta-pill">模块 {{session && session.moduleCodes ? session.moduleCodes.length : 0}} 个</view>
+    </view>
+  </view>
+
+  <view class="panel-card">
+    <view class="section-title">账号信息</view>
+    <view wx:if="{{loading}}" class="empty-state">个人信息加载中...</view>
+    <view wx:else>
+      <view class="card-meta">用户名：{{session && session.userInfo ? session.userInfo.username : '-'}}</view>
+      <view class="card-meta">姓名：{{session && session.userInfo ? session.userInfo.realName : '-'}}</view>
+      <view class="card-meta">角色：{{session && session.userInfo ? session.userInfo.role : '-'}}</view>
+      <view class="card-meta">后端地址：{{apiBaseUrl}}</view>
+    </view>
+  </view>
+
+  <view class="panel-card">
+    <view class="section-title">当前模块权限</view>
+    <view wx:if="{{session && session.moduleCodes && session.moduleCodes.length}}" class="tag-row">
+      <view wx:for="{{session.moduleCodes}}" wx:key="*this" class="meta-pill">{{item}}</view>
+    </view>
+    <view wx:else class="empty-state">当前账号没有额外模块授权或仍在加载中。</view>
+  </view>
+
+  <view class="panel-card">
+    <view class="section-title">安全操作</view>
+    <view class="button-row" style="margin-top: 18rpx;">
+      <button class="ghost-button" bindtap="handleOpenWorkspace">回到工作台</button>
+      <button class="primary-button" bindtap="handleLogout">退出登录</button>
+    </view>
+  </view>
+</view>

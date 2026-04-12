@@ -7,8 +7,12 @@ server:
       force: true
   tomcat:
     uri-encoding: UTF-8
-#172.24.16.1  127.0.0.1
+
 spring:
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
   datasource:
     url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5432}/${DB_NAME:lecture_team}
     username: ${DB_USERNAME:postgres}
@@ -22,12 +26,29 @@ mybatis:
 
 app:
   auth:
+    mobile:
+      password-login:
+        enabled: ${MOBILE_PASSWORD_LOGIN_ENABLED:false}
     demo-user:
       user-id: 1
       username: admin
       password: admin123
-      real-name: 超级管理员
+      real-name: Super Admin
       super-admin: true
   jwt:
-    secret: change-this-secret-in-production
-    expire-seconds: 7200
+    secret: ${APP_JWT_SECRET:change-this-secret-in-production}
+    expire-seconds: ${APP_JWT_EXPIRE_SECONDS:7200}
+
+wechat:
+  mp:
+    enabled: ${WECHAT_MP_ENABLED:false}
+    app-id: ${WECHAT_MP_APP_ID:}
+    app-secret: ${WECHAT_MP_APP_SECRET:}
+    token: ${WECHAT_MP_TOKEN:}
+    aes-key: ${WECHAT_MP_AES_KEY:}
+    oauth-redirect-uri: ${WECHAT_MP_OAUTH_REDIRECT_URI:https://www.xmzgww.com/api/auth/wechat-mp-callback}
+    authorize-scope: ${WECHAT_MP_AUTHORIZE_SCOPE:snsapi_base}
+  mini:
+    enabled: ${WECHAT_MINI_ENABLED:false}
+    app-id: ${WECHAT_MINI_APP_ID:}
+    app-secret: ${WECHAT_MINI_APP_SECRET:}

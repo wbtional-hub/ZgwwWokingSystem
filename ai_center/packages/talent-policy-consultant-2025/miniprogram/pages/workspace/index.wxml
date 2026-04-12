@@ -1,0 +1,32 @@
+<view class="page-shell">
+  <view class="hero-card">
+    <view class="hero-eyebrow">Mobile Workspace</view>
+    <view class="hero-title">{{userInfo.realName || userInfo.username || '当前用户'}}</view>
+    <view class="hero-subtitle">
+      已为当前账号整理出更适合手机场景的高频入口，先把最常用的咨询、签到和周报跑顺，再逐步扩展。
+    </view>
+    <view class="meta-row">
+      <view class="meta-pill">{{accessContext.isAdmin ? '管理员账号' : '授权账号'}}</view>
+      <view class="meta-pill">已授权 {{items.length}} 个入口</view>
+    </view>
+  </view>
+
+  <view class="panel-card">
+    <view class="section-title">今日常用</view>
+    <view class="section-note">首版先聚焦移动高频动作，不把后台管理全部搬进小程序。</view>
+    <view wx:if="{{loading}}" class="empty-state">工作台加载中...</view>
+    <view wx:else class="tile-grid">
+      <button
+        wx:for="{{items}}"
+        wx:key="key"
+        class="tile-button"
+        data-path="{{item.path}}"
+        bindtap="handleOpen"
+      >
+        <view class="tile-badge">{{item.badge}}</view>
+        <view class="tile-title">{{item.title}}</view>
+        <view class="tile-text">{{item.description}}</view>
+      </button>
+    </view>
+  </view>
+</view>

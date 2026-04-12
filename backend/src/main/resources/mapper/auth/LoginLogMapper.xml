@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.auth.mapper.LoginLogMapper">
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.auth.entity.LoginLogEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_login_log (
+            user_id, username, login_time, login_ip, login_result, login_type, device_type, fail_reason, user_agent
+        ) VALUES (
+            #{userId},
+            #{username},
+            #{loginTime},
+            #{loginIp},
+            split_part(#{loginResult}, '#', 1),
+            NULLIF(split_part(#{loginResult}, '#', 2), ''),
+            CASE
+                WHEN LOWER(COALESCE(#{userAgent}, '')) LIKE '%mobile%' THEN 'MOBILE'
+                ELSE 'WEB'
+            END,
+            #{failReason},
+            #{userAgent}
+        )
+    </insert>
+</mapper>

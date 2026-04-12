@@ -1,12 +1,20 @@
 package com.example.lecturesystem.modules.user.controller;
 
 import com.example.lecturesystem.common.ApiResponse;
+import com.example.lecturesystem.modules.user.dto.BindWechatMiniRequest;
 import com.example.lecturesystem.modules.user.dto.CreateUserRequest;
-import com.example.lecturesystem.modules.user.dto.UserQueryRequest;
 import com.example.lecturesystem.modules.user.dto.UpdateUserRequest;
+import com.example.lecturesystem.modules.user.dto.UserQueryRequest;
 import com.example.lecturesystem.modules.user.service.UserService;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api")
@@ -45,14 +53,17 @@ public class UserController {
         return ApiResponse.success("ok");
     }
 
-    // 兼容当前骨架里的旧接口，避免已有调用被破坏。
+    @PostMapping("/users/bind-wechat-mini")
+    public ApiResponse<?> bindWechatMini(@Validated @RequestBody BindWechatMiniRequest request) {
+        return ApiResponse.success(userService.bindWechatMini(request));
+    }
+
     @PostMapping("/user/update")
     public ApiResponse<?> update(@Validated @RequestBody UpdateUserRequest request) {
         userService.updateUser(request);
         return ApiResponse.success("ok");
     }
 
-    // 兼容当前骨架里的旧接口，避免已有调用被破坏。
     @PostMapping("/user/reset-password/{userId}")
     public ApiResponse<?> resetPassword(@PathVariable("userId") Long userId) {
         userService.resetPassword(userId);

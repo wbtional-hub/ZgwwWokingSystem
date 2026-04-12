@@ -9,6 +9,7 @@ public class LoginVO {
     private String realName;
     private String role;
     private Boolean superAdmin;
+    private Boolean forcePasswordChange;
 
     public static LoginVO fromLoginUser(LoginUser loginUser) {
         LoginVO vo = new LoginVO();
@@ -32,4 +33,6 @@ public class LoginVO {
     public void setRole(String role) { this.role = role; }
     public Boolean getSuperAdmin() { return superAdmin; }
     public void setSuperAdmin(Boolean superAdmin) { this.superAdmin = superAdmin; }
+    public Boolean getForcePasswordChange() { return forcePasswordChange; }
+    public void setForcePasswordChange(Boolean forcePasswordChange) { this.forcePasswordChange = forcePasswordChange; }
 }

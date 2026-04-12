@@ -1146,8 +1146,8 @@ async function handleResetPassword(userId, options = {}) {
       await showDetail(userId)
     }
     const targetName = target?.realName || target?.username || `用户ID ${userId}`
-    updateActionFeedback(`${targetName} 的密码已重置为默认值 123456，列表状态已重新回刷。`)
-    showToast('密码已重置为默认值 123456')
+    updateActionFeedback(`${targetName} 的密码已重置为默认值 Admin2026，列表状态已重新回刷。`)
+    showToast('密码已重置为默认值 Admin2026')
   } catch (error) {
     if (!isActionCancelled(error) && error?.message) {
       showToast(error.message)

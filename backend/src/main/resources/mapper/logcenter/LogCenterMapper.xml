@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.logcenter.mapper.LogCenterMapper">
+
+    <resultMap id="LogCenterListItemMap" type="com.example.lecturesystem.modules.logcenter.vo.LogCenterListItemVO">
+        <id property="id" column="id"/>
+        <result property="traceId" column="trace_id"/>
+        <result property="logType" column="log_type"/>
+        <result property="module" column="module"/>
+        <result property="subModule" column="sub_module"/>
+        <result property="level" column="level"/>
+        <result property="title" column="title"/>
+        <result property="summary" column="summary"/>
+        <result property="diagnosis" column="diagnosis"/>
+        <result property="errorCode" column="error_code"/>
+        <result property="message" column="message"/>
+        <result property="userId" column="user_id"/>
+        <result property="userName" column="user_name"/>
+        <result property="orgId" column="org_id"/>
+        <result property="orgName" column="org_name"/>
+        <result property="env" column="env"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <resultMap id="LogCenterDetailMap" type="com.example.lecturesystem.modules.logcenter.vo.LogCenterDetailVO" extends="LogCenterListItemMap">
+        <result property="rawData" column="raw_data"/>
+        <result property="requestUrl" column="request_url"/>
+        <result property="requestMethod" column="request_method"/>
+        <result property="requestParams" column="request_params"/>
+        <result property="responseStatus" column="response_status"/>
+        <result property="clientIp" column="client_ip"/>
+        <result property="userAgent" column="user_agent"/>
+        <result property="deviceType" column="device_type"/>
+        <result property="platform" column="platform"/>
+        <result property="pageUrl" column="page_url"/>
+        <result property="referer" column="referer"/>
+    </resultMap>
+
+    <sql id="BaseWhere">
+        <where>
+            <if test="request.traceId != null and request.traceId != ''">
+                AND l.trace_id = #{request.traceId}
+            </if>
+            <if test="request.logType != null and request.logType != ''">
+                AND l.log_type = #{request.logType}
+            </if>
+            <if test="request.module != null and request.module != ''">
+                AND l.module = #{request.module}
+            </if>
+            <if test="request.level != null and request.level != ''">
+                AND l.level = #{request.level}
+            </if>
+            <if test="request.userKeyword != null and request.userKeyword != ''">
+                AND (
+                    l.user_name ILIKE CONCAT('%', #{request.userKeyword}, '%')
+                    OR CAST(COALESCE(l.user_id, 0) AS TEXT) = #{request.userKeyword}
+                    OR l.org_name ILIKE CONCAT('%', #{request.userKeyword}, '%')
+                )
+            </if>
+            <if test="request.keyword != null and request.keyword != ''">
+                AND (
+                    l.title ILIKE CONCAT('%', #{request.keyword}, '%')
+                    OR l.summary ILIKE CONCAT('%', #{request.keyword}, '%')
+                    OR l.diagnosis ILIKE CONCAT('%', #{request.keyword}, '%')
+                    OR l.message ILIKE CONCAT('%', #{request.keyword}, '%')
+                    OR l.error_code ILIKE CONCAT('%', #{request.keyword}, '%')
+                    OR l.request_url ILIKE CONCAT('%', #{request.keyword}, '%')
+                    OR l.page_url ILIKE CONCAT('%', #{request.keyword}, '%')
+                    OR l.trace_id ILIKE CONCAT('%', #{request.keyword}, '%')
+                )
+            </if>
+            <if test="startTime != null">
+                AND l.create_time <![CDATA[>=]]> #{startTime}
+            </if>
+            <if test="endTime != null">
+                AND l.create_time <![CDATA[<=]]> #{endTime}
+            </if>
+        </where>
+    </sql>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.logcenter.entity.LogCenterEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_log_center (
+            trace_id, log_type, module, sub_module, level, title, summary, diagnosis, error_code, message,
+            raw_data, request_url, request_method, request_params, response_status,
+            user_id, user_name, org_id, org_name, client_ip, user_agent, device_type, platform,
+            page_url, referer, env, create_time
+        ) VALUES (
+            #{traceId}, #{logType}, #{module}, #{subModule}, #{level}, #{title}, #{summary}, #{diagnosis}, #{errorCode}, #{message},
+            #{rawData}, #{requestUrl}, #{requestMethod}, #{requestParams}, #{responseStatus},
+            #{userId}, #{userName}, #{orgId}, #{orgName}, #{clientIp}, #{userAgent}, #{deviceType}, #{platform},
+            #{pageUrl}, #{referer}, #{env}, #{createTime}
+        )
+    </insert>
+
+    <select id="countByQuery" resultType="long">
+        SELECT COUNT(1)
+        FROM sys_log_center l
+        <include refid="BaseWhere"/>
+    </select>
+
+    <select id="queryPage" resultMap="LogCenterListItemMap">
+        SELECT l.id, l.trace_id, l.log_type, l.module, l.sub_module, l.level, l.title, l.summary, l.diagnosis,
+               l.error_code, l.message, l.user_id, l.user_name, l.org_id, l.org_name, l.env, l.create_time
+        FROM sys_log_center l
+        <include refid="BaseWhere"/>
+        ORDER BY l.create_time DESC, l.id DESC
+        LIMIT #{request.pageSize} OFFSET #{request.offset}
+    </select>
+
+    <select id="findDetailById" resultMap="LogCenterDetailMap">
+        SELECT l.id, l.trace_id, l.log_type, l.module, l.sub_module, l.level, l.title, l.summary, l.diagnosis,
+               l.error_code, l.message, l.raw_data, l.request_url, l.request_method, l.request_params, l.response_status,
+               l.user_id, l.user_name, l.org_id, l.org_name, l.client_ip, l.user_agent, l.device_type, l.platform,
+               l.page_url, l.referer, l.env, l.create_time
+        FROM sys_log_center l
+        WHERE l.id = #{id}
+    </select>
+</mapper>

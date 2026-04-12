@@ -1,0 +1,25 @@
+{
+  "pages": [
+    "pages/login/index",
+    "pages/workspace/index",
+    "pages/policy/index",
+    "pages/attendance/index",
+    "pages/weekly/index",
+    "pages/weekly-edit/index",
+    "pages/profile/index"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#f8f1e6",
+    "navigationBarTitleText": "\u4eba\u624d\u653f\u7b56\u54a8\u8be2",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#efe7dc",
+    "backgroundTextStyle": "dark"
+  },
+  "permission": {
+    "scope.userLocation": {
+      "desc": "\u7528\u4e8e\u83b7\u53d6\u5f53\u524d\u4f4d\u7f6e\u5b8c\u6210\u8003\u52e4\u7b7e\u5230"
+    }
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

@@ -6,8 +6,10 @@ import com.example.lecturesystem.modules.agent.dto.CreateAgentSessionRequest;
 import com.example.lecturesystem.modules.agent.dto.UpdateAgentSessionStatusRequest;
 import com.example.lecturesystem.modules.agent.entity.AgentMessageEntity;
 import com.example.lecturesystem.modules.agent.entity.AgentSessionEntity;
+import com.example.lecturesystem.modules.agent.entity.AgentUserPreferenceEntity;
 import com.example.lecturesystem.modules.agent.mapper.AgentMessageMapper;
 import com.example.lecturesystem.modules.agent.mapper.AgentSessionMapper;
+import com.example.lecturesystem.modules.agent.mapper.AgentUserPreferenceMapper;
 import com.example.lecturesystem.modules.agent.service.AgentService;
 import com.example.lecturesystem.modules.agent.support.KnowledgeCitationContext;
 import com.example.lecturesystem.modules.agent.support.OpenAiCompatibleChatClient;
@@ -51,6 +53,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -61,9 +64,18 @@ public class AgentServiceImpl implements AgentService {
     private static final String STATUS_ACTIVE = "ACTIVE";
     private static final String STATUS_ARCHIVED = "ARCHIVED";
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final String FALLBACK_REASON_NO_AI_PERMISSION = "当前账号未开通 AI 问答权限，已切换为知识库兜底模式。";
+    private static final String FALLBACK_REASON_NO_PROVIDER = "当前系统未检测到可用的 AI Provider，已切换为知识库兜底模式。";
+    private static final String FALLBACK_REASON_AI_UNAVAILABLE = "当前 AI 服务暂不可用，已切换为知识库兜底模式。";
+    private static final List<String> SEARCH_STOP_TERMS = List.of("请问", "目前", "现在", "有哪些", "有啥", "什么", "怎么", "如何", "可以", "吗", "呢", "一下");
+    private static final List<String> SEARCH_HINT_TERMS = List.of(
+            "厦门市", "厦门", "福建省", "福建", "人才", "政策", "人才政策", "补贴", "住房", "安居",
+            "认定", "申报", "创业", "项目", "企业", "引进", "高层次", "落户", "奖励", "经费", "支持"
+    );
 
     private final AgentSessionMapper agentSessionMapper;
     private final AgentMessageMapper agentMessageMapper;
+    private final AgentUserPreferenceMapper agentUserPreferenceMapper;
     private final SkillVersionMapper skillVersionMapper;
     private final ProviderConfigMapper providerConfigMapper;
     private final KnowledgeChunkMapper knowledgeChunkMapper;
@@ -76,6 +88,7 @@ public class AgentServiceImpl implements AgentService {
 
     public AgentServiceImpl(AgentSessionMapper agentSessionMapper,
                             AgentMessageMapper agentMessageMapper,
+                            AgentUserPreferenceMapper agentUserPreferenceMapper,
                             SkillVersionMapper skillVersionMapper,
                             ProviderConfigMapper providerConfigMapper,
                             KnowledgeChunkMapper knowledgeChunkMapper,
@@ -87,6 +100,7 @@ public class AgentServiceImpl implements AgentService {
                             OperationLogService operationLogService) {
         this.agentSessionMapper = agentSessionMapper;
         this.agentMessageMapper = agentMessageMapper;
+        this.agentUserPreferenceMapper = agentUserPreferenceMapper;
         this.skillVersionMapper = skillVersionMapper;
         this.providerConfigMapper = providerConfigMapper;
         this.knowledgeChunkMapper = knowledgeChunkMapper;
@@ -320,9 +334,9 @@ public class AgentServiceImpl implements AgentService {
         requireKnowledgeAnalyze(user, session.getBaseId());
 
         SkillVersionEntity version = requireVersion(session.getSkillVersionId());
-        ProviderConfigEntity provider = requireProvider(session.getProviderConfigId());
-        String apiToken = aiTokenCipherSupport.decrypt(provider.getApiTokenCipher());
         KnowledgeCitationContext context = buildContext(session.getBaseId(), request.getQuestion(), 5);
+        AgentUserPreferenceEntity preference = agentUserPreferenceMapper.findByUserId(user.getUserId());
+        boolean canUseAi = permissionService.isSuperAdmin(user.getUserId()) || aiPermissionService.canUseAi(user.getUserId());
 
         AgentMessageEntity userMessage = new AgentMessageEntity();
         userMessage.setSessionId(session.getId());
@@ -331,13 +345,26 @@ public class AgentServiceImpl implements AgentService {
         userMessage.setCreateTime(LocalDateTime.now());
         agentMessageMapper.insert(userMessage);
 
-        String answer = chatClient.chat(
-                provider.getApiBaseUrl(),
-                apiToken,
-                session.getModelCode(),
-                buildSystemPrompt(version),
-                buildUserPrompt(version, request.getQuestion(), context)
-        );
+        String answer;
+        ProviderResolution providerResolution = canUseAi ? resolveProvider(session, version) : null;
+        if (providerResolution == null) {
+            answer = buildFallbackAnswer(request.getQuestion(), context, preference,
+                    canUseAi ? FALLBACK_REASON_NO_PROVIDER : FALLBACK_REASON_NO_AI_PERMISSION);
+        } else {
+            try {
+                String apiToken = aiTokenCipherSupport.decrypt(providerResolution.provider().getApiTokenCipher());
+                answer = chatClient.chat(
+                        providerResolution.provider().getApiBaseUrl(),
+                        apiToken,
+                        providerResolution.modelCode(),
+                        buildSystemPrompt(version, preference),
+                        buildUserPrompt(version, request.getQuestion(), context, preference)
+                );
+            } catch (Exception ex) {
+                answer = buildFallbackAnswer(request.getQuestion(), context, preference,
+                        FALLBACK_REASON_AI_UNAVAILABLE + "原因：" + normalizeText(ex.getMessage()));
+            }
+        }
 
         AgentMessageEntity assistantMessage = new AgentMessageEntity();
         assistantMessage.setSessionId(session.getId());
@@ -353,6 +380,7 @@ public class AgentServiceImpl implements AgentService {
             agentSessionMapper.updateTitle(session.getId(), newTitle);
         }
 
+        updateUserPreference(user.getUserId(), request.getQuestion(), preference);
         operationLogService.log("AGENT", "CHAT", session.getId(), "chat in AI workbench");
 
         AgentChatResultVO result = new AgentChatResultVO();
@@ -661,31 +689,89 @@ public class AgentServiceImpl implements AgentService {
         return entity;
     }
 
-    private ProviderConfigEntity requireProvider(Long providerId) {
-        ProviderConfigEntity entity = providerConfigMapper.findById(providerId);
-        if (entity == null) {
-            throw new IllegalArgumentException("AI provider not found");
+    private ProviderResolution resolveProvider(AgentSessionEntity session, SkillVersionEntity version) {
+        ProviderConfigEntity provider = findUsableProvider(session == null ? null : session.getProviderConfigId());
+        String modelCode = normalizeText(session == null ? null : session.getModelCode());
+        if (provider != null) {
+            if (modelCode == null) {
+                modelCode = normalizeText(provider.getDefaultModel());
+            }
+            if (modelCode != null) {
+                return new ProviderResolution(provider, modelCode);
+            }
         }
-        return entity;
+
+        provider = findUsableProvider(version == null ? null : version.getProviderConfigId());
+        modelCode = normalizeText(version == null ? null : version.getModelCode());
+        if (provider != null) {
+            if (modelCode == null) {
+                modelCode = normalizeText(provider.getDefaultModel());
+            }
+            if (modelCode != null) {
+                return new ProviderResolution(provider, modelCode);
+            }
+        }
+
+        provider = providerConfigMapper.findFirstEnabledSuccess();
+        if (!isProviderUsable(provider)) {
+            return null;
+        }
+        modelCode = normalizeText(provider.getDefaultModel());
+        if (modelCode == null) {
+            return null;
+        }
+        return new ProviderResolution(provider, modelCode);
+    }
+
+    private ProviderConfigEntity findUsableProvider(Long providerId) {
+        if (providerId == null) {
+            return null;
+        }
+        ProviderConfigEntity provider = providerConfigMapper.findById(providerId);
+        return isProviderUsable(provider) ? provider : null;
+    }
+
+    private boolean isProviderUsable(ProviderConfigEntity provider) {
+        return provider != null
+                && Integer.valueOf(1).equals(provider.getStatus())
+                && "SUCCESS".equalsIgnoreCase(normalizeText(provider.getConnectStatus()))
+                && normalizeText(provider.getApiBaseUrl()) != null
+                && normalizeText(provider.getApiTokenCipher()) != null;
     }
 
     private KnowledgeCitationContext buildContext(Long baseId, String question, int topN) {
-        KnowledgeSearchRequest request = new KnowledgeSearchRequest();
-        request.setBaseId(baseId);
-        request.setKeywords(question);
-        request.setEffectiveOnly(Boolean.TRUE);
-        request.setTopN(topN);
-        List<KnowledgeSearchResultVO> list = knowledgeChunkMapper.search(request);
         KnowledgeCitationContext context = new KnowledgeCitationContext();
-        if (list != null) {
-            context.getChunks().addAll(list);
+        if (baseId == null || topN <= 0) {
+            return context;
+        }
+        LinkedHashSet<Long> chunkIds = new LinkedHashSet<>();
+        for (String candidate : extractSearchCandidates(question)) {
+            KnowledgeSearchRequest request = new KnowledgeSearchRequest();
+            request.setBaseId(baseId);
+            request.setKeywords(candidate);
+            request.setEffectiveOnly(Boolean.TRUE);
+            request.setTopN(topN);
+            List<KnowledgeSearchResultVO> list = knowledgeChunkMapper.search(request);
+            if (list == null || list.isEmpty()) {
+                continue;
+            }
+            for (KnowledgeSearchResultVO item : list) {
+                Long chunkId = item.getChunkId();
+                if (chunkId != null && !chunkIds.add(chunkId)) {
+                    continue;
+                }
+                context.getChunks().add(item);
+                if (context.getChunks().size() >= topN) {
+                    return context;
+                }
+            }
         }
         return context;
     }
 
     private void requireAgentPermission(LoginUser user) {
         if (!permissionService.isSuperAdmin(user.getUserId())
-                && (!aiPermissionService.canUseAi(user.getUserId()) || !aiPermissionService.canUseAgent(user.getUserId()))) {
+                && !aiPermissionService.canUseAgent(user.getUserId())) {
             throw new IllegalArgumentException("current user cannot use AI workbench");
         }
     }
@@ -701,9 +787,12 @@ public class AgentServiceImpl implements AgentService {
             throw new IllegalArgumentException("current user cannot analyze this knowledge base");
         }
     }
-    private String buildSystemPrompt(SkillVersionEntity version) {
+    private String buildSystemPrompt(SkillVersionEntity version, AgentUserPreferenceEntity preference) {
         StringBuilder builder = new StringBuilder();
         builder.append(version.getSystemPrompt() == null ? "You are a professional assistant." : version.getSystemPrompt());
+        if (preference != null && normalizeText(preference.getHabitSummary()) != null) {
+            builder.append("\nUser habit profile: ").append(preference.getHabitSummary());
+        }
         if (version.getForbiddenRules() != null) {
             builder.append("\nForbidden rules: ").append(version.getForbiddenRules());
         }
@@ -716,10 +805,16 @@ public class AgentServiceImpl implements AgentService {
         return builder.toString();
     }
 
-    private String buildUserPrompt(SkillVersionEntity version, String question, KnowledgeCitationContext context) {
+    private String buildUserPrompt(SkillVersionEntity version, String question, KnowledgeCitationContext context, AgentUserPreferenceEntity preference) {
         StringBuilder builder = new StringBuilder();
         if (version.getTaskPrompt() != null) {
             builder.append(version.getTaskPrompt()).append("\n\n");
+        }
+        if (preference != null && normalizeText(preference.getPreferredAnswerStyle()) != null) {
+            builder.append("Preferred answer style: ").append(preference.getPreferredAnswerStyle()).append("\n");
+        }
+        if (preference != null && normalizeText(preference.getRecentTopics()) != null) {
+            builder.append("Recent user topics: ").append(preference.getRecentTopics()).append("\n\n");
         }
         builder.append("Answer strictly based on the knowledge below and include a citation section at the end.\n\nKnowledge context:\n")
                 .append(context.toPromptContext())
@@ -739,6 +834,143 @@ public class AgentServiceImpl implements AgentService {
         return trimmed.length() > 24 ? trimmed.substring(0, 24) : trimmed;
     }
 
+    private String buildFallbackAnswer(String question, KnowledgeCitationContext context, AgentUserPreferenceEntity preference, String fallbackReason) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("当前为知识库兜底答复。\n");
+        if (preference != null && normalizeText(preference.getHabitSummary()) != null) {
+            builder.append("已参考你的咨询习惯：").append(preference.getHabitSummary().trim()).append("\n");
+        }
+        if (normalizeText(fallbackReason) != null) {
+            builder.append(fallbackReason.trim()).append("\n\n");
+        } else {
+            builder.append("\n");
+        }
+
+        if (context == null || context.getChunks().isEmpty()) {
+            builder.append("暂未在知识库中检索到与该问题直接对应的政策依据。\n")
+                    .append("建议补充以下信息后再提问：\n")
+                    .append("1. 所在地区，例如厦门市、福建省。\n")
+                    .append("2. 人才层次、企业类型或申报主体。\n")
+                    .append("3. 具体主题，例如认定、补贴、住房、创业扶持。\n");
+            if (normalizeText(question) != null) {
+                builder.append("\n本次问题：").append(question.trim()).append("\n");
+            }
+            return builder.toString();
+        }
+
+        builder.append("根据知识库检索，当前最相关的政策信息如下：\n");
+        int limit = Math.min(context.getChunks().size(), 3);
+        for (int i = 0; i < limit; i++) {
+            KnowledgeSearchResultVO item = context.getChunks().get(i);
+            builder.append(i + 1).append(". ").append(valueOrDefault(item.getDocTitle(), "未命名政策"));
+            if (normalizeText(item.getHeadingPath()) != null) {
+                builder.append(" / ").append(item.getHeadingPath().trim());
+            }
+            if (normalizeText(item.getPolicyRegion()) != null) {
+                builder.append(" / ").append(item.getPolicyRegion().trim());
+            }
+            builder.append("\n   ")
+                    .append(valueOrDefault(abbreviate(item.getSnippet(), 160), "该条命中未返回摘要内容。"))
+                    .append("\n");
+        }
+
+        builder.append("\n建议：\n")
+                .append("1. 先根据以上政策标题确认地区和适用对象是否匹配。\n")
+                .append("2. 若你希望我继续聚焦，请补充“人才层次、企业类型、补贴主题、办理阶段”中的至少一项。\n")
+                .append("3. 接入 AI 后，系统可以进一步把这些依据整理成更自然的专业答复。\n");
+
+        LinkedHashSet<String> citations = new LinkedHashSet<>();
+        for (KnowledgeSearchResultVO item : context.getChunks()) {
+            String title = valueOrDefault(item.getDocTitle(), "未命名政策");
+            String chunkLabel = item.getChunkId() == null ? "-" : String.valueOf(item.getChunkId());
+            citations.add("- " + title + "（Chunk " + chunkLabel + "）");
+            if (citations.size() >= 5) {
+                break;
+            }
+        }
+        if (!citations.isEmpty()) {
+            builder.append("\n政策依据：\n");
+            citations.forEach(line -> builder.append(line).append("\n"));
+        }
+        return builder.toString();
+    }
+
+    private void updateUserPreference(Long userId, String question, AgentUserPreferenceEntity existed) {
+        if (userId == null || normalizeText(question) == null) {
+            return;
+        }
+        AgentUserPreferenceEntity entity = existed == null ? new AgentUserPreferenceEntity() : existed;
+        entity.setUserId(userId);
+        entity.setPreferredAnswerStyle(detectPreferredAnswerStyle(question, existed));
+        entity.setRecentTopics(mergeRecentTopics(existed == null ? null : existed.getRecentTopics(), question));
+        entity.setLastQuestion(abbreviate(question, 500));
+        entity.setHabitSummary(buildHabitSummary(entity));
+        entity.setUpdateTime(LocalDateTime.now());
+        agentUserPreferenceMapper.upsert(entity);
+    }
+
+    private String detectPreferredAnswerStyle(String question, AgentUserPreferenceEntity existed) {
+        String normalized = normalizeText(question);
+        if (normalized == null) {
+            return existed == null ? "PROFESSIONAL" : valueOrDefault(existed.getPreferredAnswerStyle(), "PROFESSIONAL");
+        }
+        if (normalized.contains("简洁") || normalized.contains("直接") || normalized.contains("一句话")) {
+            return "CONCISE";
+        }
+        if (normalized.contains("详细") || normalized.contains("解读") || normalized.contains("全面") || normalized.contains("分析")) {
+            return "DETAILED";
+        }
+        if (normalized.contains("流程") || normalized.contains("步骤") || normalized.contains("怎么申请") || normalized.contains("如何申请")) {
+            return "STEP_BY_STEP";
+        }
+        if (normalized.contains("依据") || normalized.contains("出处") || normalized.contains("引用")) {
+            return "CITATION_FIRST";
+        }
+        return existed == null ? "PROFESSIONAL" : valueOrDefault(existed.getPreferredAnswerStyle(), "PROFESSIONAL");
+    }
+
+    private String mergeRecentTopics(String existingTopics, String question) {
+        LinkedHashSet<String> topics = new LinkedHashSet<>();
+        for (String topic : splitCsv(existingTopics)) {
+            if (normalizeText(topic) != null) {
+                topics.add(topic.trim());
+            }
+        }
+        for (String candidate : extractSearchCandidates(question)) {
+            String normalized = normalizeText(candidate);
+            if (normalized == null || normalized.length() < 2) {
+                continue;
+            }
+            topics.add(abbreviate(normalized.replace(" ", ""), 32));
+            if (topics.size() >= 6) {
+                break;
+            }
+        }
+        return String.join(",", topics);
+    }
+
+    private String buildHabitSummary(AgentUserPreferenceEntity entity) {
+        List<String> parts = new ArrayList<>();
+        if (normalizeText(entity.getPreferredAnswerStyle()) != null) {
+            parts.add("偏好" + entity.getPreferredAnswerStyle() + "风格");
+        }
+        if (normalizeText(entity.getRecentTopics()) != null) {
+            parts.add("近期关注" + entity.getRecentTopics().replace(",", "、"));
+        }
+        return String.join("；", parts);
+    }
+
+    private List<String> splitCsv(String value) {
+        String normalized = normalizeText(value);
+        if (normalized == null) {
+            return List.of();
+        }
+        return Arrays.stream(normalized.split(","))
+                .map(this::normalizeText)
+                .filter(item -> item != null && !item.isBlank())
+                .collect(Collectors.toList());
+    }
+
     private String normalizeStatus(String status) {
         if (status == null) {
             throw new IllegalArgumentException("status is required");
@@ -748,6 +980,67 @@ public class AgentServiceImpl implements AgentService {
             throw new IllegalArgumentException("unsupported session status");
         }
         return value;
+    }
+
+    private String normalizeText(String text) {
+        if (text == null) {
+            return null;
+        }
+        String value = text.trim();
+        return value.isEmpty() ? null : value;
+    }
+
+    private List<String> extractSearchCandidates(String question) {
+        LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        String normalized = normalizeText(question);
+        if (normalized == null) {
+            return List.of();
+        }
+        candidates.add(normalized);
+
+        String simplified = normalized
+                .replace('？', ' ')
+                .replace('?', ' ')
+                .replace('，', ' ')
+                .replace(',', ' ')
+                .replace('。', ' ')
+                .replace('；', ' ')
+                .replace(';', ' ')
+                .replace('：', ' ')
+                .replace(':', ' ')
+                .replace('、', ' ');
+        for (String stop : SEARCH_STOP_TERMS) {
+            simplified = simplified.replace(stop, " ");
+        }
+        simplified = simplified.replaceAll("\\s+", " ").trim();
+        if (!simplified.isEmpty()) {
+            candidates.add(simplified);
+            candidates.add(simplified.replace(" ", ""));
+        }
+
+        for (String term : SEARCH_HINT_TERMS) {
+            if (normalized.contains(term)) {
+                candidates.add(term);
+            }
+        }
+
+        if (normalized.contains("厦门") && normalized.contains("人才") && normalized.contains("政策")) {
+            candidates.add("厦门市人才政策");
+            candidates.add("厦门人才政策");
+        }
+        if (normalized.contains("福建") && normalized.contains("人才") && normalized.contains("政策")) {
+            candidates.add("福建省人才政策");
+            candidates.add("福建人才政策");
+        }
+        return new ArrayList<>(candidates);
+    }
+
+    private String abbreviate(String text, int maxLength) {
+        String normalized = normalizeText(text);
+        if (normalized == null || maxLength <= 0 || normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, maxLength) + "...";
     }
 
     private String csvValue(Object value) {
@@ -771,6 +1064,10 @@ public class AgentServiceImpl implements AgentService {
         return value == null ? "" : String.valueOf(value);
     }
 
+    private String valueOrDefault(String value, String defaultValue) {
+        return normalizeText(value) == null ? defaultValue : value.trim();
+    }
+
     private String buildExportLogContent(String type, AgentSessionQueryRequest request, int count) {
         AgentSessionQueryRequest safeRequest = request == null ? new AgentSessionQueryRequest() : request;
         return "export consultation ledger type=" + type
@@ -779,5 +1076,8 @@ public class AgentServiceImpl implements AgentService {
                 + ", endDate=" + valueOrBlank(safeRequest.getEndDate())
                 + ", skillId=" + valueOrBlank(safeRequest.getSkillId())
                 + ", status=" + valueOrBlank(safeRequest.getStatus());
+    }
+
+    private record ProviderResolution(ProviderConfigEntity provider, String modelCode) {
     }
 }

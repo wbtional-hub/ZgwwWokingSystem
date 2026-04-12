@@ -1,8 +1,18 @@
 <template>
-  <AppPageShell title="AI 工作台" description="按技能调用 AI 分析知识库内容，并沉淀历史咨询记录。">
-    <section class="panel-grid header-grid" data-guide="ai-workbench-capability">
-      <section class="panel">
-        <div class="panel-title">我的 AI 能力</div>
+  <AppPageShell
+    title="AI 工作台"
+    description="按技能调用 AI 分析知识库内容，并沉淀历史咨询记录与当前会话上下文。"
+  >
+    <section class="overview-grid" data-guide="ai-workbench-capability">
+      <section class="workspace-card hero-card">
+        <div class="card-head">
+          <div>
+            <div class="section-kicker">AI Workbench</div>
+            <div class="card-title">我的AI能力</div>
+          </div>
+          <div class="brand-badge">Skills Ready</div>
+        </div>
+
         <div class="status-list">
           <div class="status-item">
             <span>使用 AI</span>
@@ -23,11 +33,17 @@
         </div>
       </section>
 
-      <section class="panel">
-        <div class="panel-title">我的专家身份</div>
+      <section class="workspace-card" data-guide="ai-workbench-expert">
+        <div class="card-head">
+          <div>
+            <div class="section-kicker">Expert Identity</div>
+            <div class="card-title">我的专家身份</div>
+          </div>
+        </div>
         <van-empty v-if="!state.expertList.length" description="当前还没有绑定专家身份" />
         <div v-else class="expert-badges">
           <div v-for="item in state.expertList" :key="item.id" class="expert-badge">
+            <div class="expert-badge-chip">Frontend Skill</div>
             <div class="expert-badge-title">{{ item.skillName }}</div>
             <div class="meta-line">等级：{{ item.expertLevel || '-' }}</div>
             <div class="meta-line">版本：{{ item.versionNo || '-' }}</div>
@@ -36,18 +52,38 @@
       </section>
     </section>
 
-    <section class="panel-grid main-grid">
-      <section class="panel history-panel" data-guide="ai-workbench-session">
-        <div class="panel-title">历史会话 / 咨询记录</div>
-        <van-field v-model.trim="state.sessionQuery.keywords" label="关键字" placeholder="按标题、技能或知识库过滤" />
+    <section class="workspace-main">
+      <section class="workspace-card history-panel" data-guide="ai-workbench-session">
+        <div class="card-head">
+          <div>
+            <div class="section-kicker">Session Ledger</div>
+            <div class="card-title">历史会话 / 咨询记录</div>
+          </div>
+        </div>
+
+        <div class="field-stack">
+          <van-field
+            v-model.trim="state.sessionQuery.keywords"
+            label="关键词"
+            placeholder="按标题、技能或知识库过滤"
+          />
+        </div>
+
         <div class="action-row history-actions">
           <van-button size="small" type="primary" :loading="state.loadingSessions" @click="fetchSessions">查询</van-button>
           <van-button size="small" plain @click="resetSessionQuery">重置</van-button>
         </div>
+
         <van-loading v-if="state.loadingSessions" class="state-block" size="24px" vertical>加载中...</van-loading>
         <van-empty v-else-if="!state.sessionList.length" description="还没有历史会话" />
         <div v-else class="session-list">
-          <div v-for="item in state.sessionList" :key="item.id" class="session-item" :class="{ active: state.sessionInfo?.id === item.id }" @click="handleSelectSession(item)">
+          <div
+            v-for="item in state.sessionList"
+            :key="item.id"
+            class="session-item"
+            :class="{ active: state.sessionInfo?.id === item.id }"
+            @click="handleSelectSession(item)"
+          >
             <div class="session-title">{{ item.sessionTitle || '未命名会话' }}</div>
             <div class="meta-line">技能：{{ item.skillName || '-' }}</div>
             <div class="meta-line">知识库：{{ item.baseName || '-' }}</div>
@@ -56,49 +92,90 @@
         </div>
       </section>
 
-      <section class="panel" data-guide="ai-workbench-config">
-        <div class="panel-title">会话配置</div>
-        <div class="select-field">
-          <span class="select-label">技能</span>
-          <select v-model="state.selectedSkillId" @change="handleSkillChange">
-            <option value="">请选择技能</option>
-            <option v-for="item in state.skillOptions" :key="item.id" :value="String(item.id)">
-              {{ item.skillName }}（{{ item.baseName || '未绑定知识库' }}）
-            </option>
-          </select>
-        </div>
-        <div class="selected-card" v-if="selectedSkill">
-          <div class="selected-title">{{ selectedSkill.skillName }}</div>
-          <div class="meta-line">知识库：{{ selectedSkill.baseName || '-' }}</div>
-          <div class="meta-line">已发布版本：{{ selectedSkill.publishedVersionNo || '未发布' }}</div>
-          <div class="meta-line">专家身份：{{ selectedExpert ? `${selectedExpert.expertLevel || 'NORMAL'} 专家` : '未绑定' }}</div>
-        </div>
-        <div class="action-row">
-          <van-button size="small" type="primary" :loading="state.creatingSession" :disabled="!state.selectedSkillId" @click="handleCreateSession">打开新会话</van-button>
-          <van-button size="small" plain @click="reloadAll">刷新数据</van-button>
-        </div>
-        <div class="meta-line">当前会话：{{ state.sessionInfo?.sessionTitle || '未创建' }}</div>
-      </section>
+      <div class="workspace-side">
+        <section class="workspace-card" data-guide="ai-workbench-config">
+          <div class="card-head">
+            <div>
+              <div class="section-kicker">Workspace Setup</div>
+              <div class="card-title">会话配置</div>
+            </div>
+          </div>
 
-      <section class="panel ask-panel" data-guide="ai-workbench-ask">
-        <div class="panel-title">提问</div>
-        <van-field v-model="state.question" label="问题" type="textarea" rows="5" autosize placeholder="例如：A 类人才在上海可以申请哪些补贴？" :disabled="!state.sessionInfo?.id" />
-        <div class="action-row">
-          <van-button size="small" type="primary" :loading="state.asking" :disabled="!state.sessionInfo?.id" @click="handleAsk">发送问题</van-button>
-        </div>
-        <div v-if="state.lastAnswer" class="answer-box">
-          <div class="answer-title">最新回答</div>
-          <div class="answer-text">{{ state.lastAnswer.answer }}</div>
-          <div class="meta-line">引用文档：{{ (state.lastAnswer.citedTitles || []).join(' / ') || '-' }}</div>
-          <div class="meta-line">引用 Chunk：{{ (state.lastAnswer.citedChunkIdList || []).join(', ') || '-' }}</div>
-        </div>
-      </section>
+          <div class="select-field">
+            <span class="select-label">技能</span>
+            <select v-model="state.selectedSkillId" @change="handleSkillChange">
+              <option value="">请选择技能</option>
+              <option v-for="item in state.skillOptions" :key="item.id" :value="String(item.id)">
+                {{ item.skillName }}（{{ item.baseName || '未绑定知识库' }}）
+              </option>
+            </select>
+          </div>
+
+          <div class="selected-card" v-if="selectedSkill">
+            <div class="selected-chip">Skills Center</div>
+            <div class="selected-title">{{ selectedSkill.skillName }}</div>
+            <div class="meta-line">知识库：{{ selectedSkill.baseName || '-' }}</div>
+            <div class="meta-line">已发布版本：{{ selectedSkill.publishedVersionNo || '未发布' }}</div>
+            <div class="meta-line">专家身份：{{ selectedExpert ? `${selectedExpert.expertLevel || 'NORMAL'} 专家` : '未绑定' }}</div>
+          </div>
+
+          <div class="action-row">
+            <van-button size="small" type="primary" :loading="state.creatingSession" :disabled="!state.selectedSkillId" @click="handleCreateSession">打开新会话</van-button>
+            <van-button size="small" plain @click="reloadAll">刷新数据</van-button>
+          </div>
+          <div class="meta-line current-session-line">当前会话：{{ state.sessionInfo?.sessionTitle || '未创建' }}</div>
+        </section>
+
+        <section class="workspace-card ask-panel" data-guide="ai-workbench-ask">
+          <div class="card-head">
+            <div>
+              <div class="section-kicker">Ask AI</div>
+              <div class="card-title">提问</div>
+            </div>
+          </div>
+
+          <van-field
+            v-model="state.question"
+            label="问题"
+            type="textarea"
+            rows="5"
+            autosize
+            placeholder="例如：A 类人才在上海可以申请哪些补贴？"
+            :disabled="!state.sessionInfo?.id"
+          />
+
+          <div class="action-row">
+            <van-button size="small" type="primary" :loading="state.asking" :disabled="!state.sessionInfo?.id" @click="handleAsk">发送问题</van-button>
+          </div>
+
+          <div v-if="state.lastAnswer" class="answer-box">
+            <div class="answer-head">
+              <div class="selected-chip">Latest Answer</div>
+              <div class="answer-title">最新回答</div>
+            </div>
+            <div class="answer-text">{{ state.lastAnswer.answer }}</div>
+            <div class="meta-line">引用文档：{{ (state.lastAnswer.citedTitles || []).join(' / ') || '-' }}</div>
+            <div class="meta-line">引用 Chunk：{{ (state.lastAnswer.citedChunkIdList || []).join(', ') || '-' }}</div>
+          </div>
+        </section>
+      </div>
     </section>
 
-    <section class="panel" data-guide="ai-workbench-messages">
-      <div class="panel-title">会话记录</div>
+    <section class="workspace-card messages-panel" data-guide="ai-workbench-messages">
+      <div class="card-head">
+        <div>
+          <div class="section-kicker">Conversation Trace</div>
+          <div class="card-title">会话记录</div>
+        </div>
+      </div>
+
       <div class="message-list">
-        <div v-for="item in state.messageList" :key="item.id" class="message-item" :class="`message-item--${item.messageRole}`">
+        <div
+          v-for="item in state.messageList"
+          :key="item.id"
+          class="message-item"
+          :class="`message-item--${item.messageRole}`"
+        >
           <div class="message-role">{{ item.messageRole === 'user' ? '我' : 'AI' }}</div>
           <div class="message-text">{{ item.messageText }}</div>
           <div class="meta-line">引用 Chunk：{{ (item.citedChunkIdList || []).join(', ') || '-' }}</div>
@@ -264,73 +341,102 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.panel {
-  margin-bottom: 16px;
-  padding: 16px;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  background: #fff;
-}
-
-.panel-grid {
+.overview-grid,
+.workspace-main {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 18px;
+  margin-bottom: 18px;
 }
 
-.main-grid {
-  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr) minmax(0, 1fr);
+.overview-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.workspace-main {
+  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
   align-items: start;
 }
 
-.panel-title,
+.workspace-side {
+  display: grid;
+  gap: 18px;
+}
+
+.workspace-card {
+  padding: 24px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #eef2f7;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.hero-card {
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.1), transparent 22%),
+    #ffffff;
+}
+
+.card-head,
+.answer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.section-kicker,
+.brand-badge,
+.expert-badge-chip,
+.selected-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.section-kicker {
+  background: #eef2ff;
+  color: #3b82f6;
+}
+
+.brand-badge,
+.selected-chip,
+.expert-badge-chip {
+  background: #eef2ff;
+  color: #3b82f6;
+}
+
+.card-title,
 .answer-title,
-.message-role,
 .selected-title,
 .session-title,
-.expert-badge-title {
-  font-weight: 600;
-  color: #1f2937;
+.expert-badge-title,
+.message-role {
+  color: #111827;
+  font-weight: 700;
 }
 
-.action-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.card-title {
+  margin-top: 12px;
+  font-size: 18px;
+  letter-spacing: -0.02em;
 }
 
-.history-actions {
-  margin-bottom: 12px;
-}
-
-.select-field {
-  display: flex;
-  align-items: center;
+.field-stack {
+  display: grid;
   gap: 12px;
-  margin: 10px 0;
-  padding: 10px 12px;
-  border: 1px solid #ebedf0;
-  border-radius: 8px;
 }
 
-.select-label {
-  flex: 0 0 72px;
-}
-
-.select-field select {
-  flex: 1;
-  border: 0;
-  background: transparent;
-}
-
-.status-list,
-.expert-badges,
-.message-list,
-.session-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.status-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .status-item,
@@ -339,56 +445,175 @@ onMounted(() => {
 .answer-box,
 .message-item,
 .session-item {
-  padding: 12px;
-  border-radius: 10px;
-  background: #f8fafc;
+  border-radius: 14px;
+  border: 1px solid #eef2f7;
+  background: #ffffff;
 }
 
 .status-item {
+  padding: 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 14px;
 }
 
-.selected-card,
+.status-item span {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.status-item strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.expert-badges,
+.message-list,
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .expert-badge,
+.selected-card,
+.answer-box,
+.message-item,
 .session-item {
-  border: 1px solid #e5e7eb;
+  padding: 14px;
+}
+
+.expert-badge-title,
+.selected-title,
+.session-title {
+  margin: 10px 0 4px;
+  font-size: 16px;
 }
 
 .session-item {
   cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.session-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(143, 168, 211, 0.88);
 }
 
 .session-item.active {
-  border-color: #1677ff;
+  border-color: #3b82f6;
   background: #eff6ff;
+  box-shadow: 0 8px 18px rgba(59, 130, 246, 0.08);
+}
+
+.select-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.select-label {
+  flex: 0 0 58px;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.select-field select {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: #374151;
+  font-size: 14px;
+  outline: none;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.history-actions {
+  margin: 12px 0 14px;
+}
+
+.current-session-line {
+  margin-top: 12px;
+}
+
+.answer-text,
+.message-text,
+.meta-line {
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .message-item--assistant {
   background: #eff6ff;
 }
 
-.answer-text,
-.message-text,
-.meta-line {
-  color: #4b5563;
-  font-size: 13px;
-  line-height: 1.8;
+.state-block {
+  padding: 24px 0;
 }
 
-.state-block {
-  padding: 20px 0;
+:deep(.van-field) {
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+:deep(.van-cell) {
+  background: transparent;
+}
+
+:deep(.van-field__label) {
+  width: 58px;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+:deep(.van-field__control) {
+  color: #374151;
+  font-size: 14px;
+}
+
+:deep(.van-field__control::placeholder) {
+  color: #9ca3af;
+}
+
+:deep(.van-button) {
+  min-height: 40px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+:deep(.van-button--primary) {
+  border-color: #2563eb;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.18);
 }
 
 @media (max-width: 1200px) {
-  .main-grid {
+  .workspace-main {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 960px) {
-  .panel-grid {
+  .overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .status-list {
     grid-template-columns: 1fr;
   }
 }

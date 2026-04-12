@@ -1,0 +1,9 @@
+{
+  "desc": "\u4eba\u624d\u653f\u7b56\u54a8\u8be2\u5c0f\u7a0b\u5e8f\u7ad9\u70b9\u5730\u56fe",
+  "rules": [
+    {
+      "action": "allow",
+      "page": "*"
+    }
+  ]
+}
