@@ -359,7 +359,9 @@
       <div class="panel-hint">当前链路已接入浏览器定位、后端距离校验与结果回显。</div>
       <div class="location-card">
         <div class="attendance-meta">结果：{{ state.checkInResult.success === null ? '未打卡' : state.checkInResult.success ? '打卡成功' : '打卡失败' }}</div>
-        <div class="attendance-meta">动作：{{ state.checkInResult.action || '-' }}</div>
+        
+        <div class="attendance-meta">动作：{{ resolveCheckInActionLabel(state.checkInResult.action) || '-' }}</div>
+        
         <div class="attendance-meta">定位阶段：{{ state.checkInVisualization.stageText || '-' }}</div>
         <div class="attendance-meta">可用定位：{{ state.checkInVisualization.stageText ? (state.checkInVisualization.hasUsableLocation ? '已获取' : '未获取') : '-' }}</div>
         <div class="attendance-meta">距离：{{ state.checkInResult.distanceMeters == null ? '-' : `${state.checkInResult.distanceMeters}米` }}</div>
@@ -441,11 +443,18 @@
         </button>
       </div>
       <div v-else-if="state.userPicker.searched && !state.userPicker.loading" class="attendance-meta">未找到匹配用户，请尝试姓名或手机号关键字。</div>
+      
       <van-field v-model="state.form.attendanceDate" label="考勤日期" type="date" :disabled="pageBusy" />
-      <van-field v-model="state.form.checkInTime" label="上班时间" type="datetime-local" :disabled="pageBusy" />
-      <van-field v-model="state.form.checkOutTime" label="下班时间" type="datetime-local" :disabled="pageBusy" />
-      <van-field v-model="state.form.checkInAddress" label="上班地点" placeholder="请输入上班地点" :disabled="pageBusy" />
-      <van-field v-model="state.form.checkOutAddress" label="下班地点" placeholder="请输入下班地点" :disabled="pageBusy" />
+<van-field v-model="state.form.checkInTime" label="上午上班时间" type="datetime-local" :disabled="pageBusy" />
+<van-field v-model="state.form.amOffTime" label="上午下班时间" type="datetime-local" :disabled="pageBusy" />
+<van-field v-model="state.form.pmOnTime" label="下午上班时间" type="datetime-local" :disabled="pageBusy" />
+<van-field v-model="state.form.checkOutTime" label="下午下班时间" type="datetime-local" :disabled="pageBusy" />
+
+<van-field v-model="state.form.checkInAddress" label="上午上班地点" placeholder="请输入上午上班地点" :disabled="pageBusy" />
+<van-field v-model="state.form.amOffAddress" label="上午下班地点" placeholder="请输入上午下班地点" :disabled="pageBusy" />
+<van-field v-model="state.form.pmOnAddress" label="下午上班地点" placeholder="请输入下午上班地点" :disabled="pageBusy" />
+<van-field v-model="state.form.checkOutAddress" label="下午下班地点" placeholder="请输入下午下班地点" :disabled="pageBusy" />
+
       <div class="select-field">
         <span class="select-label">状态</span>
         <select v-model="state.form.validFlag" :disabled="pageBusy">
@@ -503,24 +512,43 @@
               </div>
             </div>
           </template>
+          
           <template #desc>
-        <div class="attendance-meta">用户ID：{{ item.userId }}</div>
-        <div class="attendance-meta">账号：{{ item.username || '-' }}</div>
-        <div class="attendance-meta">组织：{{ item.unitName || '-' }}</div>
-        <div class="attendance-meta">
-          结果：
-          <van-tag size="small" :type="resultTagType(item.checkInResult)">{{ resultLabel(item.checkInResult) }}</van-tag>
-        </div>
-        <div class="attendance-meta">状态值：{{ item.checkInResult || '-' }}</div>
-        <div class="attendance-meta">距离：{{ item.checkInDistanceMeters == null ? '-' : `${item.checkInDistanceMeters}米` }}</div>
-        <div class="attendance-meta">失败原因：{{ item.checkInFailReason || '-' }}</div>
-        <div class="attendance-meta">经度：{{ formatCoordinate(item.checkInLongitude) }}</div>
-        <div class="attendance-meta">纬度：{{ formatCoordinate(item.checkInLatitude) }}</div>
-        <div class="attendance-meta">上班时间：{{ formatDateTime(item.checkInTime) }}</div>
-        <div class="attendance-meta">下班时间：{{ formatDateTime(item.checkOutTime) }}</div>
-            <div class="attendance-meta">上班地点：{{ item.checkInAddress || '-' }}</div>
-            <div class="attendance-meta">下班地点：{{ item.checkOutAddress || '-' }}</div>
-          </template>
+  <div class="attendance-meta">用户ID：{{ item.userId }}</div>
+  <div class="attendance-meta">账号：{{ item.username || '-' }}</div>
+  <div class="attendance-meta">组织：{{ item.unitName || '-' }}</div>
+  <div class="attendance-meta">
+    结果：
+    <van-tag size="small" :type="resultTagType(item.checkInResult)">{{ resultLabel(item.checkInResult) }}</van-tag>
+  </div>
+  <div class="attendance-meta">状态值：{{ item.checkInResult || '-' }}</div>
+  <div class="attendance-meta">失败原因：{{ item.checkInFailReason || '-' }}</div>
+
+  <div class="attendance-meta">上午上班时间：{{ formatDateTime(item.checkInTime) }}</div>
+  <div class="attendance-meta">上午下班时间：{{ formatDateTime(item.amOffTime) }}</div>
+  <div class="attendance-meta">下午上班时间：{{ formatDateTime(item.pmOnTime) }}</div>
+  <div class="attendance-meta">下午下班时间：{{ formatDateTime(item.checkOutTime) }}</div>
+
+  <div class="attendance-meta">上午上班地点：{{ item.checkInAddress || '-' }}</div>
+  <div class="attendance-meta">上午下班地点：{{ item.amOffAddress || '-' }}</div>
+  <div class="attendance-meta">下午上班地点：{{ item.pmOnAddress || '-' }}</div>
+  <div class="attendance-meta">下午下班地点：{{ item.checkOutAddress || '-' }}</div>
+
+  <div class="attendance-meta">上午上班距离：{{ item.checkInDistanceMeters == null ? '-' : `${item.checkInDistanceMeters}米` }}</div>
+  <div class="attendance-meta">上午下班距离：{{ item.amOffDistanceMeters == null ? '-' : `${item.amOffDistanceMeters}米` }}</div>
+  <div class="attendance-meta">下午上班距离：{{ item.pmOnDistanceMeters == null ? '-' : `${item.pmOnDistanceMeters}米` }}</div>
+  <div class="attendance-meta">下午下班距离：{{ item.checkOutDistanceMeters == null ? '-' : `${item.checkOutDistanceMeters}米` }}</div>
+
+  <div class="attendance-meta">上午上班经度：{{ formatCoordinate(item.checkInLongitude) }}</div>
+  <div class="attendance-meta">上午上班纬度：{{ formatCoordinate(item.checkInLatitude) }}</div>
+  <div class="attendance-meta">上午下班经度：{{ formatCoordinate(item.amOffLongitude) }}</div>
+  <div class="attendance-meta">上午下班纬度：{{ formatCoordinate(item.amOffLatitude) }}</div>
+  <div class="attendance-meta">下午上班经度：{{ formatCoordinate(item.pmOnLongitude) }}</div>
+  <div class="attendance-meta">下午上班纬度：{{ formatCoordinate(item.pmOnLatitude) }}</div>
+  <div class="attendance-meta">下午下班经度：{{ formatCoordinate(item.checkOutLongitude) }}</div>
+  <div class="attendance-meta">下午下班纬度：{{ formatCoordinate(item.checkOutLatitude) }}</div>
+</template>
+
           <template #footer>
             <div class="action-row">
               <van-button size="small" plain type="warning" :disabled="pageBusy" @click="openEditForm(item)">编辑/补录</van-button>
@@ -608,9 +636,13 @@ const GEOLOCATION_TIMEOUT_MS = 8000
 const WECHAT_JSAPI_DEFAULT_PRIORITY = 'WECHAT_FIRST'
 const WECHAT_JSAPI_DEFAULT_FALLBACK = 'BROWSER'
 const WECHAT_JSAPI_DEFAULT_LOCATION_TYPE = 'gcj02'
+
 const CHECK_IN_FAILURE_MESSAGE = '打卡失败，请稍后重试'
-const CHECK_IN_SUCCESS_MESSAGE = '上班打卡成功'
-const CHECK_OUT_SUCCESS_MESSAGE = '下班打卡成功'
+const CHECK_IN_SUCCESS_MESSAGE = '上午上班打卡成功'
+const AM_OFF_SUCCESS_MESSAGE = '上午下班打卡成功'
+const PM_ON_SUCCESS_MESSAGE = '下午上班打卡成功'
+const CHECK_OUT_SUCCESS_MESSAGE = '下午下班打卡成功'
+
 const CHECK_IN_MAP_DEFAULT_ZOOM = 14
 const CHECK_IN_MAP_COLORS = {
   target: '#dc2626',
@@ -1073,22 +1105,31 @@ const personalWorkspaceNotice = computed(() => {
 const personalWorkspaceTodayCard = computed(() => {
   const todayRecord = personalTodayRecord.value
   const locationText = todayRecord?.checkInAddress
+    || todayRecord?.amOffAddress
+    || todayRecord?.pmOnAddress
     || todayRecord?.checkOutAddress
     || state.locationInfo.locationName
     || state.locationInfo.address
     || '未获取到定位信息'
+
   const locationDetail = todayRecord
-    ? `${leadershipTodayIsNonWorkday.value ? '今日已记录加班 / 值班打卡' : '今日记录'}：${resultLabel(todayRecord.checkInResult)}`
+    ? [
+        `上午上班：${formatTimeOnly(todayRecord?.checkInTime)}`,
+        `上午下班：${formatTimeOnly(todayRecord?.amOffTime)}`,
+        `下午上班：${formatTimeOnly(todayRecord?.pmOnTime)}`,
+        `下午下班：${formatTimeOnly(todayRecord?.checkOutTime)}`
+      ].join(' / ')
     : (leadershipTodayIsNonWorkday.value
         ? '今日为非工作日，暂未产生加班 / 值班打卡记录。'
         : (state.locationInfo.address || state.locationInfo.reason || '今日尚未产生打卡记录。'))
+
   const locationStatus = state.checkInResult.reason
     || state.locationInfo.reason
     || ''
 
   return {
-    checkInTime: formatTimeOnly(todayRecord?.checkInTime),
-    checkOutTime: formatTimeOnly(todayRecord?.checkOutTime),
+    checkInTime: `上午上班 ${formatTimeOnly(todayRecord?.checkInTime)} / 上午下班 ${formatTimeOnly(todayRecord?.amOffTime)}`,
+    checkOutTime: `下午上班 ${formatTimeOnly(todayRecord?.pmOnTime)} / 下午下班 ${formatTimeOnly(todayRecord?.checkOutTime)}`,
     locationText,
     locationDetail,
     locationStatus
@@ -1105,42 +1146,35 @@ const personalRecentRecords = computed(() => {
     recordKey: `${item.userId || 'self'}-${item.attendanceDate || index}`,
     dateText: item.attendanceDate || '-',
     statusLabel: resultLabel(item.checkInResult),
-    timeText: `${formatTimeOnly(item.checkInTime)} / ${formatTimeOnly(item.checkOutTime)}`,
-    addressText: item.checkInAddress || item.checkOutAddress || item.checkInFailReason || '暂无地点信息'
+    timeText: [
+      `上1 ${formatTimeOnly(item.checkInTime)}`,
+      `下1 ${formatTimeOnly(item.amOffTime)}`,
+      `上2 ${formatTimeOnly(item.pmOnTime)}`,
+      `下2 ${formatTimeOnly(item.checkOutTime)}`
+    ].join(' / '),
+    addressText: item.checkInAddress || item.amOffAddress || item.pmOnAddress || item.checkOutAddress || item.checkInFailReason || '暂无地点信息'
   }))
 })
 
-function hasCompletedCheckOut(record) {
-  return Boolean(record?.checkOutTime)
-    || record?.checkInResult === ATTENDANCE_CHECK_IN_STATUS.CHECK_OUT_SUCCESS
-    || record?.checkInResult === ATTENDANCE_CHECK_IN_STATUS.ALREADY_FINISHED
-}
-
-function hasCompletedCheckIn(record) {
-  return hasCompletedCheckOut(record)
-    || Boolean(record?.checkInTime)
-    || record?.checkInResult === ATTENDANCE_CHECK_IN_STATUS.CHECK_IN_SUCCESS
-}
-
 const personalCheckInButtonText = computed(() => {
-  if (hasCompletedCheckOut(personalTodayRecord.value)) {
+  const nextAction = resolveTodayNextAction(personalTodayRecord.value)
+  if (!nextAction) {
     return '今日已完成'
   }
-  if (hasCompletedCheckIn(personalTodayRecord.value)) {
-    return '下班打卡'
-  }
-  return '上班打卡'
+  return resolveCheckInActionLabel(nextAction)
 })
 
 const personalCanCheckIn = computed(() => {
-  return !hasCompletedCheckOut(personalTodayRecord.value)
+  return Boolean(resolveTodayNextAction(personalTodayRecord.value))
     && !state.locationLoading
     && Boolean(state.locationInfo.allowCheckIn)
 })
 
 const personalWorkspaceCheckInHint = computed(() => {
-  if (hasCompletedCheckOut(personalTodayRecord.value)) {
-    return '今日上下班打卡已完成，无需重复提交。'
+  const nextAction = resolveTodayNextAction(personalTodayRecord.value)
+
+  if (!nextAction) {
+    return '今日四次打卡已全部完成，无需重复提交。'
   }
   if (!personalCanCheckIn.value) {
     return state.locationInfo.reason || '当前打卡点不可用，请联系管理员检查配置。'
@@ -1148,8 +1182,14 @@ const personalWorkspaceCheckInHint = computed(() => {
   if (state.checkingIn) {
     return '正在获取定位并提交本次打卡...'
   }
-  if (hasCompletedCheckIn(personalTodayRecord.value)) {
-    return '已完成上班打卡，本次提交将记录下班时间。'
+  if (nextAction === 'AM_OFF') {
+    return '已完成上午上班打卡，本次提交将记录上午下班时间。'
+  }
+  if (nextAction === 'PM_ON') {
+    return '已完成上午下班打卡，本次提交将记录下午上班时间。'
+  }
+  if (nextAction === 'PM_OFF') {
+    return '已完成下午上班打卡，本次提交将记录下午下班时间。'
   }
   if (leadershipTodayIsNonWorkday.value) {
     return '今日按加班 / 值班记录处理，打卡成功后会在当前页面单独展示，不并入工作日未打卡统计。'
@@ -1164,8 +1204,12 @@ function createEmptyForm() {
     selectedUser: null,
     attendanceDate: toInputDate(new Date()),
     checkInTime: '',
+    amOffTime: '',
+    pmOnTime: '',
     checkOutTime: '',
     checkInAddress: '',
+    amOffAddress: '',
+    pmOnAddress: '',
     checkOutAddress: '',
     validFlag: 1
   }
@@ -1267,6 +1311,54 @@ function formatTimeOnly(value) {
     return '-'
   }
   return String(value).slice(11, 16) || '-'
+}
+
+function resolveCheckInActionLabel(action) {
+  if (action === 'AM_ON') {
+    return '上午上班打卡'
+  }
+  if (action === 'AM_OFF') {
+    return '上午下班打卡'
+  }
+  if (action === 'PM_ON') {
+    return '下午上班打卡'
+  }
+  if (action === 'PM_OFF') {
+    return '下午下班打卡'
+  }
+  return ''
+}
+
+function resolveCheckInSuccessMessage(action) {
+  if (action === 'AM_ON') {
+    return CHECK_IN_SUCCESS_MESSAGE
+  }
+  if (action === 'AM_OFF') {
+    return AM_OFF_SUCCESS_MESSAGE
+  }
+  if (action === 'PM_ON') {
+    return PM_ON_SUCCESS_MESSAGE
+  }
+  if (action === 'PM_OFF') {
+    return CHECK_OUT_SUCCESS_MESSAGE
+  }
+  return '打卡成功'
+}
+
+function resolveTodayNextAction(record) {
+  if (!record || !record.checkInTime) {
+    return 'AM_ON'
+  }
+  if (!record.amOffTime) {
+    return 'AM_OFF'
+  }
+  if (!record.pmOnTime) {
+    return 'PM_ON'
+  }
+  if (!record.checkOutTime) {
+    return 'PM_OFF'
+  }
+  return ''
 }
 
 function getTodayDateText() {
@@ -3163,7 +3255,7 @@ async function legacyHandleCheckInBrowserOnly() {
       }
       await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
       if (result.success) {
-        showToast(result.action === 'CHECK_OUT' ? CHECK_OUT_SUCCESS_MESSAGE : CHECK_IN_SUCCESS_MESSAGE)
+        showToast(resolveCheckInSuccessMessage(result.action))
       } else {
         showToast(state.checkInResult.reason || result.reason || CHECK_IN_FAILURE_MESSAGE)
       }
@@ -3347,7 +3439,7 @@ async function handleCheckIn() {
 
     await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
     if (result.success) {
-      showToast(result.action === 'CHECK_OUT' ? CHECK_OUT_SUCCESS_MESSAGE : CHECK_IN_SUCCESS_MESSAGE)
+      showToast(resolveCheckInSuccessMessage(result.action))
     } else {
       await reportLog(
         result.status === ATTENDANCE_CHECK_IN_STATUS.OUT_OF_RANGE
@@ -3474,8 +3566,12 @@ function openEditForm(item) {
     }),
     attendanceDate: item.attendanceDate || toInputDate(new Date()),
     checkInTime: item.checkInTime ? toInputDateTime(item.checkInTime) : '',
+    amOffTime: item.amOffTime ? toInputDateTime(item.amOffTime) : '',
+    pmOnTime: item.pmOnTime ? toInputDateTime(item.pmOnTime) : '',
     checkOutTime: item.checkOutTime ? toInputDateTime(item.checkOutTime) : '',
     checkInAddress: item.checkInAddress || '',
+    amOffAddress: item.amOffAddress || '',
+    pmOnAddress: item.pmOnAddress || '',
     checkOutAddress: item.checkOutAddress || '',
     validFlag: Number(item.validFlag) || 0
   }
@@ -3497,10 +3593,17 @@ async function handleSave() {
       id: state.form.id || undefined,
       userId: state.form.userId ? Number(state.form.userId) : Number(userStore.userInfo?.userId || 0),
       attendanceDate: state.form.attendanceDate,
+
       checkInTime: state.form.checkInTime ? toBackendDateTime(state.form.checkInTime) : undefined,
+      amOffTime: state.form.amOffTime ? toBackendDateTime(state.form.amOffTime) : undefined,
+      pmOnTime: state.form.pmOnTime ? toBackendDateTime(state.form.pmOnTime) : undefined,
       checkOutTime: state.form.checkOutTime ? toBackendDateTime(state.form.checkOutTime) : undefined,
+
       checkInAddress: state.form.checkInAddress || undefined,
+      amOffAddress: state.form.amOffAddress || undefined,
+      pmOnAddress: state.form.pmOnAddress || undefined,
       checkOutAddress: state.form.checkOutAddress || undefined,
+
       validFlag: Number(state.form.validFlag)
     })
     showToast(state.form.id ? '考勤修改成功' : '考勤补录成功')
@@ -3574,24 +3677,42 @@ async function handleExport() {
   }
   state.exporting = true
   try {
-    const headers = [
-      '记录ID',
-      '用户ID',
-      '账号',
-      '姓名',
-      '组织',
-      '考勤日期',
-      '上班时间',
-      '下班时间',
-      '打卡状态值',
-      '打卡状态文案',
-      '距离(米)',
-      '失败原因',
-      '纬度',
-      '经度',
-      '上班地点',
-      '下班地点'
-    ]
+   const headers = [
+  '记录ID',
+  '用户ID',
+  '账号',
+  '姓名',
+  '组织',
+  '考勤日期',
+
+  '上午上班时间',
+  '上午下班时间',
+  '下午上班时间',
+  '下午下班时间',
+
+  '打卡状态值',
+  '打卡状态文案',
+  '失败原因',
+
+  '上午上班距离(米)',
+  '上午下班距离(米)',
+  '下午上班距离(米)',
+  '下午下班距离(米)',
+
+  '上午上班纬度',
+  '上午上班经度',
+  '上午下班纬度',
+  '上午下班经度',
+  '下午上班纬度',
+  '下午上班经度',
+  '下午下班纬度',
+  '下午下班经度',
+
+  '上午上班地点',
+  '上午下班地点',
+  '下午上班地点',
+  '下午下班地点'
+]
     const metaRows = [
       ['查询范围', listRangeText.value],
       ['状态筛选', state.queryForm.checkInStatus ? getAttendanceStatusLabel(state.queryForm.checkInStatus) : '全部状态'],
@@ -3599,23 +3720,41 @@ async function handleExport() {
       ['联动摘要', listLinkageSummary.value || '无']
     ]
     const rows = state.list.map((item) => [
-      item.id,
-      item.userId,
-      item.username || '',
-      item.realName || '',
-      item.unitName || '',
-      item.attendanceDate || '',
-      formatDateTime(item.checkInTime),
-      formatDateTime(item.checkOutTime),
-      item.checkInResult || '',
-      resultLabel(item.checkInResult),
-      item.checkInDistanceMeters ?? '',
-      item.checkInFailReason || '',
-      item.checkInLatitude ?? '',
-      item.checkInLongitude ?? '',
-      item.checkInAddress || '',
-      item.checkOutAddress || ''
-    ])
+  item.id,
+  item.userId,
+  item.username || '',
+  item.realName || '',
+  item.unitName || '',
+  item.attendanceDate || '',
+
+  formatDateTime(item.checkInTime),
+  formatDateTime(item.amOffTime),
+  formatDateTime(item.pmOnTime),
+  formatDateTime(item.checkOutTime),
+
+  item.checkInResult || '',
+  resultLabel(item.checkInResult),
+  item.checkInFailReason || '',
+
+  item.checkInDistanceMeters ?? '',
+  item.amOffDistanceMeters ?? '',
+  item.pmOnDistanceMeters ?? '',
+  item.checkOutDistanceMeters ?? '',
+
+  item.checkInLatitude ?? '',
+  item.checkInLongitude ?? '',
+  item.amOffLatitude ?? '',
+  item.amOffLongitude ?? '',
+  item.pmOnLatitude ?? '',
+  item.pmOnLongitude ?? '',
+  item.checkOutLatitude ?? '',
+  item.checkOutLongitude ?? '',
+
+  item.checkInAddress || '',
+  item.amOffAddress || '',
+  item.pmOnAddress || '',
+  item.checkOutAddress || ''
+])
     const csvContent = [...metaRows, [], headers, ...rows].map((row) => row.map(escapeCsvValue).join(',')).join('\n')
     const blob = new Blob([`\ufeff${csvContent}`], { type: 'text/csv;charset=utf-8;' })
     const url = window.URL.createObjectURL(blob)

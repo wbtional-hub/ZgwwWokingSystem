@@ -2,8 +2,11 @@ package com.example.lecturesystem.modules.weeklywork.service.impl;
 
 import com.example.lecturesystem.modules.auth.security.LoginUser;
 import com.example.lecturesystem.modules.operationlog.service.OperationLogService;
+import com.example.lecturesystem.modules.permission.service.PermissionService;
 import com.example.lecturesystem.modules.permission.support.CurrentUserFacade;
 import com.example.lecturesystem.modules.permission.support.DataScopeService;
+import com.example.lecturesystem.modules.user.entity.UserEntity;
+import com.example.lecturesystem.modules.user.mapper.UserMapper;
 import com.example.lecturesystem.modules.weeklywork.dto.ReviewWeeklyWorkRequest;
 import com.example.lecturesystem.modules.weeklywork.dto.SaveWeeklyWorkRequest;
 import com.example.lecturesystem.modules.weeklywork.dto.SubmitWeeklyWorkRequest;
@@ -12,12 +15,10 @@ import com.example.lecturesystem.modules.weeklywork.entity.WeeklyWorkApprovalLog
 import com.example.lecturesystem.modules.weeklywork.entity.WeeklyWorkEntity;
 import com.example.lecturesystem.modules.weeklywork.mapper.WeeklyWorkMapper;
 import com.example.lecturesystem.modules.weeklywork.service.WeeklyWorkService;
-import com.example.lecturesystem.modules.weeklywork.vo.WeeklyWorkFlowNodeVO;
+import com.example.lecturesystem.modules.weeklywork.vo.WeeklyWorkApprovalLogVO;
 import com.example.lecturesystem.modules.weeklywork.vo.WeeklyWorkDetailVO;
+import com.example.lecturesystem.modules.weeklywork.vo.WeeklyWorkFlowNodeVO;
 import com.example.lecturesystem.modules.weeklywork.vo.WeeklyWorkListItemVO;
-import com.example.lecturesystem.modules.permission.service.PermissionService;
-import com.example.lecturesystem.modules.user.entity.UserEntity;
-import com.example.lecturesystem.modules.user.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +41,7 @@ import java.util.Set;
 @Service
 public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     private static final Logger log = LoggerFactory.getLogger(WeeklyWorkServiceImpl.class);
+
     private static final String STATUS_DRAFT = "DRAFT";
     private static final String STATUS_SUBMITTED = "SUBMITTED";
     private static final String STATUS_PENDING_SECTION_CHIEF = "PENDING_SECTION_CHIEF";
@@ -47,12 +49,21 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     private static final String STATUS_PENDING_LEGION_LEADER = "PENDING_LEGION_LEADER";
     private static final String STATUS_RETURNED = "RETURNED";
     private static final String STATUS_APPROVED = "APPROVED";
+
     private static final String ACTION_APPROVE = "APPROVE";
     private static final String ACTION_RETURN = "RETURN";
+
     private static final String NODE_STAFF = "STAFF";
     private static final String NODE_SECTION_CHIEF = "SECTION_CHIEF";
     private static final String NODE_DEPUTY_LEADER = "DEPUTY_LEADER";
     private static final String NODE_LEGION_LEADER = "LEGION_LEADER";
+
+    /**
+     * 周报审批链按你当前口径收口为两级：
+     * 1. 直属上级：看业务内容
+     * 2. 分管领导：看方向
+     */
+    private static final int MAX_WEEKLY_APPROVER_COUNT = 2;
 
     private final WeeklyWorkMapper weeklyWorkMapper;
     private final PermissionService permissionService;
@@ -65,16 +76,24 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     public WeeklyWorkServiceImpl(WeeklyWorkMapper weeklyWorkMapper,
                                  PermissionService permissionService,
                                  UserMapper userMapper) {
-        this(weeklyWorkMapper, permissionService, userMapper, new OperationLogService() {
-            @Override
-            public void log(String moduleName, String actionName, Long bizId, String content) {
-            }
+        this(
+                weeklyWorkMapper,
+                permissionService,
+                userMapper,
+                new OperationLogService() {
+                    @Override
+                    public void log(String moduleName, String actionName, Long bizId, String content) {
+                    }
 
-            @Override
-            public Object query(com.example.lecturesystem.modules.operationlog.dto.OperationLogQueryRequest request) {
-                return java.util.List.of();
-            }
-        }, null, new DataScopeService(), null);
+                    @Override
+                    public Object query(com.example.lecturesystem.modules.operationlog.dto.OperationLogQueryRequest request) {
+                        return java.util.List.of();
+                    }
+                },
+                null,
+                new DataScopeService(),
+                null
+        );
     }
 
     @Autowired
@@ -99,8 +118,10 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     public Long saveDraft(SaveWeeklyWorkRequest request) {
         LoginUser loginUser = currentLoginUser();
         UserEntity currentUser = requireCurrentUser(loginUser.getUserId());
-        WeeklyWorkEntity existed = weeklyWorkMapper.findByUserIdAndWeekNo(loginUser.getUserId(), request.getWeekNo());
 
+        assertCurrentUserCanFillWeeklyWork(currentUser);
+
+        WeeklyWorkEntity existed = weeklyWorkMapper.findByUserIdAndWeekNo(loginUser.getUserId(), request.getWeekNo());
         if (existed == null) {
             WeeklyWorkEntity entity = new WeeklyWorkEntity();
             entity.setUnitId(currentUser.getUnitId());
@@ -116,7 +137,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         }
 
         if (!STATUS_DRAFT.equals(existed.getStatus()) && !STATUS_RETURNED.equals(existed.getStatus())) {
-            throw new IllegalArgumentException("当前周工作已提交，不能直接覆盖草稿");
+            throw new IllegalArgumentException("当前周报已提交，不能直接覆盖草稿");
         }
 
         existed.setWorkPlan(request.getWorkPlan());
@@ -135,21 +156,25 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         WeeklyWorkEntity entity = requireWeeklyWork(request.getId());
         UserEntity currentUser = requireCurrentUser(loginUser.getUserId());
 
+        assertCurrentUserCanFillWeeklyWork(currentUser);
+
         if (!loginUser.getUserId().equals(entity.getUserId())) {
-            throw new IllegalArgumentException("只能提交本人的周工作");
+            throw new IllegalArgumentException("只能提交本人的周报");
         }
         if (!STATUS_DRAFT.equals(entity.getStatus()) && !STATUS_RETURNED.equals(entity.getStatus())) {
             throw new IllegalArgumentException("当前状态不允许提交");
         }
         if (STATUS_RETURNED.equals(entity.getStatus()) && !NODE_STAFF.equals(resolveCurrentApprovalNode(entity))) {
-            throw new IllegalArgumentException("当前退回目标不是科员，暂不支持由本人重新提交");
+            throw new IllegalArgumentException("当前退回目标不是填报人，暂不支持由本人重新提交");
         }
 
         List<UserEntity> approvalChain = resolveApprovalChain(currentUser);
         String nextStatus = approvalChain.isEmpty() ? STATUS_APPROVED : resolvePendingStatus(0, approvalChain.size());
         String nextApprovalNode = approvalChain.isEmpty() ? null : toApprovalNodeCode(approvalChain.get(0));
+
         ApprovalSnapshot submitSnapshot = buildSubmitSnapshot(currentUser, approvalChain);
         logSubmitPayload(entity, nextStatus, nextApprovalNode);
+
         int updated = weeklyWorkMapper.markSubmitted(
                 entity.getId(),
                 nextStatus,
@@ -169,13 +194,18 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     public Object query(WeeklyWorkQueryRequest request) {
         WeeklyWorkQueryRequest normalizedRequest = request == null ? new WeeklyWorkQueryRequest() : request;
         LoginUser loginUser = currentLoginUser();
+
         if (!permissionService.isSuperAdmin(loginUser.getUserId())) {
             dataScopeService.injectTreePathScope(normalizedRequest, requireCurrentUser(loginUser.getUserId()));
         }
 
         if (!permissionService.isSuperAdmin(loginUser.getUserId()) && normalizedRequest.getUserId() != null) {
             UserEntity targetUser = requireCurrentUser(normalizedRequest.getUserId());
-            dataScopeService.validateReadableUser(requireCurrentUser(loginUser.getUserId()), targetUser, "无权查看指定用户的周工作");
+            dataScopeService.validateReadableUser(
+                    requireCurrentUser(loginUser.getUserId()),
+                    targetUser,
+                    "无权查看指定用户的周报"
+            );
         }
 
         List<WeeklyWorkListItemVO> records = weeklyWorkMapper.queryList(normalizedRequest);
@@ -190,10 +220,13 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         LoginUser loginUser = currentLoginUser();
         WeeklyWorkEntity entity = requireWeeklyWork(id);
         validateReadable(loginUser, entity);
-        List<UserEntity> approvalChain = resolveApprovalChain(requireCurrentUser(entity.getUserId()));
+
+        UserEntity reporter = requireCurrentUser(entity.getUserId());
+        List<UserEntity> approvalChain = resolveApprovalChain(reporter);
+
         WeeklyWorkDetailVO detail = toDetailVO(entity);
         detail.setCurrentApprovalNode(resolveCurrentApprovalNode(entity, approvalChain));
-        detail.setFlowNodes(buildFlowNodes(requireCurrentUser(entity.getUserId()), approvalChain));
+        detail.setFlowNodes(buildFlowNodes(reporter, approvalChain));
         detail.setAvailableReturnTargets(resolveReturnTargets(entity, approvalChain));
         detail.setApprovalLogs(weeklyWorkMapper.queryApprovalLogs(entity.getId()));
         return detail;
@@ -214,31 +247,38 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         }
 
         String action = request.getAction() == null ? "" : request.getAction().trim().toUpperCase();
-        List<UserEntity> approvalChain = resolveApprovalChain(requireCurrentUser(entity.getUserId()));
+        UserEntity reporter = requireCurrentUser(entity.getUserId());
+        List<UserEntity> approvalChain = resolveApprovalChain(reporter);
         String currentNode = resolveCurrentApprovalNode(entity, approvalChain);
+
         if (!ACTION_APPROVE.equals(action) && !ACTION_RETURN.equals(action)) {
             throw new IllegalArgumentException("不支持的审核动作");
         }
         if (!matchesApprovalNode(loginUser.getUserId(), currentNode)) {
             throw new IllegalArgumentException("当前用户不是该周报的审批人");
         }
+
         WeeklyWorkEntity updateEntity = new WeeklyWorkEntity();
         updateEntity.setId(entity.getId());
         updateEntity.setLastReviewBy(loginUser.getUserId());
         updateEntity.setLastReviewByName(resolveDisplayName(loginUser));
         updateEntity.setLastReviewTime(LocalDateTime.now());
+
         if (ACTION_APPROVE.equals(action)) {
-            applyApprove(updateEntity, entity, approvalChain, currentNode, requireCurrentUser(entity.getUserId()));
+            applyApprove(updateEntity, entity, approvalChain, currentNode, reporter);
         } else {
-            applyReturn(updateEntity, entity, approvalChain, request, requireCurrentUser(entity.getUserId()));
+            applyReturn(updateEntity, entity, approvalChain, request, reporter);
         }
 
         int updated = weeklyWorkMapper.updateApproval(updateEntity);
         requireSingleRowUpdate(updated, "更新审批状态");
+
         WeeklyWorkApprovalLogEntity approvalLog = buildApprovalLog(entity.getId(), loginUser, currentNode, updateEntity, request);
         logApprovalLogPayload(approvalLog, updateEntity.getStatus());
+
         int inserted = weeklyWorkMapper.insertApprovalLog(approvalLog);
         requireSingleRowUpdate(inserted, "写入审批日志");
+
         operationLogService.log(
                 "WEEKLY_WORK",
                 "REVIEW",
@@ -246,6 +286,25 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
                 "审核周报：" + entity.getWeekNo() + "，用户ID=" + entity.getUserId() + "，结果=" + updateEntity.getStatus()
         );
         return "ok";
+    }
+
+    private void assertCurrentUserCanFillWeeklyWork(UserEntity currentUser) {
+        if (currentUser == null || currentUser.getId() == null) {
+            throw new IllegalArgumentException("当前用户不存在");
+        }
+        if (permissionService.isSuperAdmin(currentUser.getId())) {
+            throw new IllegalArgumentException("超级管理员不参与周报填报");
+        }
+
+        Long parentUserId = currentUser.getParentUserId();
+        if (parentUserId == null) {
+            throw new IllegalArgumentException("当前岗位无需填报周报");
+        }
+
+        UserEntity parentUser = requireCurrentUser(parentUserId);
+        if (permissionService.isSuperAdmin(parentUser.getId())) {
+            throw new IllegalArgumentException("当前岗位是周报最高审批节点，无需填报周报");
+        }
     }
 
     private void requireSingleRowUpdate(int affectedRows, String actionName) {
@@ -263,7 +322,9 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         if (currentIndex < 0) {
             throw new IllegalArgumentException("当前审批节点不支持通过");
         }
+
         updateEntity.setFinalApproverUserId(resolveFinalApproverUserId(approvalChain));
+
         if (currentIndex >= approvalChain.size() - 1) {
             updateEntity.setStatus(STATUS_APPROVED);
             updateEntity.setCurrentApprovalNode(null);
@@ -281,6 +342,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
             updateEntity.setCurrentFlowOrder(resolveFlowOrderForNodeCode(toApprovalNodeCode(nextApprover), reporter, approvalChain));
             updateEntity.setApprovedTime(null);
         }
+
         updateEntity.setLastReturnTarget(currentEntity.getLastReturnTarget());
         updateEntity.setLastReturnComment(currentEntity.getLastReturnComment());
     }
@@ -294,10 +356,12 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         if (comment == null) {
             throw new IllegalArgumentException("退回时必须填写退回意见");
         }
+
         String returnTarget = normalizeCode(request.getReturnTarget());
         if (returnTarget == null || !resolveReturnTargets(currentEntity, approvalChain).contains(returnTarget)) {
             throw new IllegalArgumentException("当前审批节点不支持退回到该目标");
         }
+
         updateEntity.setStatus(STATUS_RETURNED);
         updateEntity.setCurrentApprovalNode(returnTarget);
         updateEntity.setCurrentHandlerUserId(resolveHandlerUserId(returnTarget, reporter, approvalChain));
@@ -355,16 +419,24 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     private void enrichListItem(WeeklyWorkListItemVO item, Long currentUserId) {
         UserEntity reporter = requireCurrentUser(item.getUserId());
         List<UserEntity> approvalChain = resolveApprovalChain(reporter);
-        item.setCurrentApprovalNode(resolveCurrentApprovalNode(item.getStatus(), item.getCurrentApprovalNode(), item.getLastReturnTarget(), approvalChain));
+
+        item.setCurrentApprovalNode(resolveCurrentApprovalNode(
+                item.getStatus(),
+                item.getCurrentApprovalNode(),
+                item.getLastReturnTarget(),
+                approvalChain
+        ));
         item.setFlowNodes(buildFlowNodes(reporter, approvalChain));
-        item.setReviewedByCurrentUser(weeklyWorkMapper.queryApprovalLogs(item.getId()).stream()
-                .anyMatch(log -> currentUserId != null && currentUserId.equals(log.getReviewerUserId())));
+
+        List<WeeklyWorkApprovalLogVO> logs = weeklyWorkMapper.queryApprovalLogs(item.getId());
+        item.setReviewedByCurrentUser(logs.stream().anyMatch(log -> currentUserId != null && currentUserId.equals(log.getReviewerUserId())));
     }
 
     private ApprovalSnapshot buildSubmitSnapshot(UserEntity reporter, List<UserEntity> approvalChain) {
         if (approvalChain.isEmpty()) {
             return new ApprovalSnapshot(null, null, null, null, LocalDateTime.now());
         }
+
         UserEntity currentHandler = approvalChain.get(0);
         return new ApprovalSnapshot(
                 currentHandler.getId(),
@@ -470,29 +542,6 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         return value == null ? 0 : value.length();
     }
 
-    private static final class SubmitDbContext {
-        private final String url;
-        private final String databaseName;
-        private final String schema;
-
-        private SubmitDbContext(String url, String databaseName, String schema) {
-            this.url = url;
-            this.databaseName = databaseName;
-            this.schema = schema;
-        }
-
-        private static SubmitDbContext empty() {
-            return new SubmitDbContext("unavailable", "unavailable", "unavailable");
-        }
-    }
-
-    private record ApprovalSnapshot(Long currentHandlerUserId,
-                                    String currentHandlerUserName,
-                                    Integer currentFlowOrder,
-                                    Long finalApproverUserId,
-                                    LocalDateTime approvedTime) {
-    }
-
     private boolean isReviewableStatus(WeeklyWorkEntity entity) {
         if (List.of(
                 STATUS_SUBMITTED,
@@ -510,7 +559,12 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     }
 
     private String resolveCurrentApprovalNode(WeeklyWorkEntity entity, List<UserEntity> approvalChain) {
-        return resolveCurrentApprovalNode(entity.getStatus(), entity.getCurrentApprovalNode(), entity.getLastReturnTarget(), approvalChain);
+        return resolveCurrentApprovalNode(
+                entity.getStatus(),
+                entity.getCurrentApprovalNode(),
+                entity.getLastReturnTarget(),
+                approvalChain
+        );
     }
 
     private String resolveCurrentApprovalNode(String status,
@@ -521,6 +575,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         if (currentNode != null) {
             return currentNode;
         }
+
         if (approvalChain.isEmpty()) {
             return switch (status) {
                 case STATUS_DRAFT -> NODE_STAFF;
@@ -529,6 +584,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
                 default -> null;
             };
         }
+
         return switch (status) {
             case STATUS_SUBMITTED, STATUS_PENDING_SECTION_CHIEF -> toApprovalNodeCode(approvalChain.get(0));
             case STATUS_PENDING_DEPUTY_LEADER -> toApprovalNodeCode(approvalChain.get(Math.min(1, approvalChain.size() - 1)));
@@ -546,6 +602,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         if (currentIndex < 0) {
             return List.of();
         }
+
         List<String> returnTargets = new ArrayList<>();
         for (int index = currentIndex - 1; index >= 0; index -= 1) {
             returnTargets.add(toApprovalNodeCode(approvalChain.get(index)));
@@ -556,7 +613,13 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
 
     private List<WeeklyWorkFlowNodeVO> buildFlowNodes(UserEntity reporter, List<UserEntity> approvalChain) {
         List<WeeklyWorkFlowNodeVO> flowNodes = new ArrayList<>();
-        flowNodes.add(buildFlowNode(reporter, 1, reporter.getId() == null ? NODE_STAFF : "USER_" + reporter.getId(), NODE_STAFF));
+        flowNodes.add(buildFlowNode(
+                reporter,
+                1,
+                reporter.getId() == null ? NODE_STAFF : "USER_" + reporter.getId(),
+                NODE_STAFF
+        ));
+
         for (int index = 0; index < approvalChain.size(); index += 1) {
             UserEntity approver = approvalChain.get(index);
             flowNodes.add(buildFlowNode(
@@ -579,6 +642,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         flowNode.setJobTitle(user.getJobTitle());
         flowNode.setOrder(order);
         flowNode.setRoleCode(legacyAlias);
+
         List<String> aliases = new ArrayList<>();
         aliases.add(key);
         if (legacyAlias != null && !legacyAlias.isBlank() && !legacyAlias.equals(key)) {
@@ -589,7 +653,9 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     }
 
     private String buildFlowNodeLabel(UserEntity user) {
-        String displayName = user.getRealName() == null || user.getRealName().isBlank() ? user.getUsername() : user.getRealName();
+        String displayName = user.getRealName() == null || user.getRealName().isBlank()
+                ? user.getUsername()
+                : user.getRealName();
         if (user.getJobTitle() != null && !user.getJobTitle().isBlank()) {
             return displayName + "（" + user.getJobTitle() + "）";
         }
@@ -600,8 +666,11 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         if (approverIndex == 0) {
             return NODE_SECTION_CHIEF;
         }
+        if (approverIndex == 1 && approverCount == 2) {
+            return NODE_DEPUTY_LEADER;
+        }
         if (approverIndex >= approverCount - 1) {
-            return approverCount == 1 ? NODE_SECTION_CHIEF : NODE_LEGION_LEADER;
+            return approverCount <= 2 ? NODE_DEPUTY_LEADER : NODE_LEGION_LEADER;
         }
         return NODE_DEPUTY_LEADER;
     }
@@ -631,11 +700,17 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     private List<UserEntity> resolveApprovalChain(UserEntity reporter) {
         List<UserEntity> chain = new ArrayList<>();
         Set<Long> visitedUserIds = new HashSet<>();
+
         Long currentParentUserId = reporter == null ? null : reporter.getParentUserId();
-        while (currentParentUserId != null && visitedUserIds.add(currentParentUserId)) {
+        while (currentParentUserId != null
+                && visitedUserIds.add(currentParentUserId)
+                && chain.size() < MAX_WEEKLY_APPROVER_COUNT) {
             UserEntity parentUser = requireCurrentUser(currentParentUserId);
             if (!permissionService.isSuperAdmin(parentUser.getId())) {
                 chain.add(parentUser);
+                if (chain.size() >= MAX_WEEKLY_APPROVER_COUNT) {
+                    break;
+                }
             }
             currentParentUserId = parentUser.getParentUserId();
         }
@@ -659,7 +734,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
             return 0;
         }
         if (NODE_DEPUTY_LEADER.equals(currentNode) && approvalChain.size() >= 2) {
-            return Math.min(1, approvalChain.size() - 1);
+            return 1;
         }
         if (NODE_LEGION_LEADER.equals(currentNode) && !approvalChain.isEmpty()) {
             return approvalChain.size() - 1;
@@ -674,10 +749,10 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         if (approverIndex <= 0) {
             return STATUS_PENDING_SECTION_CHIEF;
         }
-        if (approverIndex >= approverCount - 1) {
-            return approverCount == 1 ? STATUS_PENDING_SECTION_CHIEF : STATUS_PENDING_LEGION_LEADER;
+        if (approverIndex == 1) {
+            return STATUS_PENDING_DEPUTY_LEADER;
         }
-        return STATUS_PENDING_DEPUTY_LEADER;
+        return STATUS_PENDING_LEGION_LEADER;
     }
 
     private boolean matchesApprovalNode(Long userId, String nodeCode) {
@@ -687,7 +762,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     private WeeklyWorkEntity requireWeeklyWork(Long id) {
         WeeklyWorkEntity entity = weeklyWorkMapper.findById(id);
         if (entity == null) {
-            throw new IllegalArgumentException("周工作不存在");
+            throw new IllegalArgumentException("周报不存在");
         }
         return entity;
     }
@@ -720,4 +795,26 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         return loginUser;
     }
 
+    private static final class SubmitDbContext {
+        private final String url;
+        private final String databaseName;
+        private final String schema;
+
+        private SubmitDbContext(String url, String databaseName, String schema) {
+            this.url = url;
+            this.databaseName = databaseName;
+            this.schema = schema;
+        }
+
+        private static SubmitDbContext empty() {
+            return new SubmitDbContext("unavailable", "unavailable", "unavailable");
+        }
+    }
+
+    private record ApprovalSnapshot(Long currentHandlerUserId,
+                                    String currentHandlerUserName,
+                                    Integer currentFlowOrder,
+                                    Long finalApproverUserId,
+                                    LocalDateTime approvedTime) {
+    }
 }

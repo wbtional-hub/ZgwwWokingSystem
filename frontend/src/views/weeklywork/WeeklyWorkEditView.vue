@@ -75,7 +75,7 @@
       </div>
     </section>
 
-    <section v-if="!isEditorPage && isMineTab" class="calendar-board">
+    <section v-if="showCalendarBoard" class="calendar-board">
       <div class="calendar-board__header">
         <div>
           <div class="panel-title">周历</div>
@@ -371,7 +371,7 @@
         </div>
       </div>
 
-      <div class="record-tabs">
+      <div class="record-tabs" :class="`record-tabs--${recordTabs.length}`">
         <button
           v-for="tab in recordTabs"
           :key="tab.key"
@@ -398,7 +398,7 @@
         <div class="record-focus-banner__desc">{{ currentViewBannerDesc }}</div>
       </div>
 
-      <div v-if="isAuditTab" class="audit-query-bar">
+      <div v-if="isAuditTab && !isMobileView" class="audit-query-bar">
         <van-field
           v-model.trim="auditQueryKeyword"
           placeholder="按周次、填报人、任务内容搜索当前列表"
@@ -419,7 +419,7 @@
         </div>
       </div>
 
-      <div v-if="isAuditTab && currentTabRecords.length" class="audit-record-toggle">
+      <div v-if="isAuditTab && currentTabRecords.length && !isMobileView" class="audit-record-toggle">
         <van-button plain size="small" :disabled="pageBusy" @click="auditRecordsExpanded = !auditRecordsExpanded">
           {{ auditRecordToggleLabel }}
         </van-button>
@@ -427,17 +427,29 @@
 
       <van-loading v-if="listLoading" size="24px" vertical class="state-block">加载中...</van-loading>
 
-      <van-empty v-else-if="!currentTabRecords.length" :description="currentRecordTab.emptyDesc" />
+      <van-empty v-else-if="!currentTabRecords.length" :description="currentRecordTab?.emptyDesc || '暂无数据'">
+  <template #bottom>
+    <van-button
+      v-if="activeRecordTab === 'mine' && canCurrentUserFill"
+      type="primary"
+      size="small"
+      :disabled="pageBusy"
+      @click="openCreateForm()"
+    >
+      新建周报
+    </van-button>
+  </template>
+</van-empty>
 
       <div v-else-if="isAuditTab && !showAuditRecordList" class="audit-record-collapsed">
-        <div class="audit-record-collapsed__title">{{ currentRecordTab.count }} 条记录</div>
+        <div class="audit-record-collapsed__title">{{ currentRecordTab?.count || 0 }} 条记录</div>
         <div class="audit-record-collapsed__desc">按需展开查看并处理。</div>
       </div>
 
       <div v-else class="record-board__content">
         <div class="record-group">
-          <div v-if="showRecordGroupTitle" class="record-group__title">{{ currentRecordTab.title }}</div>
-          <div v-if="showRecordGroupHint" class="panel-hint">{{ currentRecordTab.desc }}</div>
+          <div v-if="showRecordGroupTitle" class="record-group__title">{{ currentRecordTab?.title || '周报' }}</div>
+<div v-if="showRecordGroupHint" class="panel-hint">{{ currentRecordTab?.desc || '' }}</div>
           <div v-if="showFlowLegend" class="flow-state-legend">
             <span
               v-for="legend in FLOW_STATE_LEGEND"
@@ -467,33 +479,38 @@
                 </div>
               </template>
               <template #desc>
-                <div v-if="activeRecordTab === 'mine'" class="report-compact-meta">
-                  <span class="report-compact-chip">{{ statusLabel(item.status, item) }}</span>
-                  <span class="report-compact-chip">{{ recordTaskCount(item) }} 项任务</span>
-                  <span class="report-compact-chip">{{ compactRecordUpdateLabel(item) }}</span>
-                  <span v-if="item.status !== 'DRAFT'" class="report-compact-chip">{{ currentStageText(item) }}</span>
-                </div>
-                <template v-else>
-                  <div class="report-meta">任务数：{{ recordTaskCount(item) }}</div>
-                  <div class="workflow-brief">{{ workflowBriefText(item) }}</div>
-                  <div class="workflow-chain">{{ flowChainSummary(item) }}</div>
-                  <div class="report-flow-stepper">
-                    <div
-                      v-for="step in buildFlowNodes(item)"
-                      :key="`card-${item.id}-${step.key}`"
-                      class="approval-step approval-step--compact"
-                      :class="[`approval-step--${step.state}`]"
-                    >
-                      <div class="approval-step__dot">{{ step.order }}</div>
-                      <div class="approval-step__label">{{ step.label }}</div>
-                      <div class="approval-step__state">{{ flowNodeStateLabel(step, item) }}</div>
-                    </div>
-                  </div>
-                </template>
-                <div v-if="activeRecordTab !== 'mine'" class="report-meta">最近更新时间：{{ formatDateTime(resolveRecordUpdatedAt(item)) }}</div>
-                <div v-if="shouldShowReturnSummary(item) && recordReturnSummary(item)" class="report-meta report-meta--return">最近退回：{{ recordReturnSummary(item) }}</div>
-                <div class="report-preview task-text-block" :class="{ 'report-preview--mine': activeRecordTab === 'mine' }">任务概览：{{ summarizeTask(item) }}</div>
-              </template>
+  <div class="report-compact-meta">
+    <span class="report-compact-chip">
+      {{ activeRecordTab === 'mine' ? '当前节点：' : '当前处理：' }}{{ currentStageText(item) }}
+    </span>
+    <span class="report-compact-chip">{{ recordTaskCount(item) }} 项任务</span>
+    <span class="report-compact-chip">更新于 {{ compactRecordUpdateLabel(item) }}</span>
+  </div>
+
+  <div class="report-summary-grid">
+    <div class="report-summary-block">
+      <div class="report-summary-label">本周重点</div>
+      <div class="report-summary-value task-text-block">{{ cardTaskHeadline(item) }}</div>
+    </div>
+
+    <div class="report-summary-block">
+      <div class="report-summary-label">完成时限</div>
+      <div class="report-summary-value">{{ cardTaskDeadline(item) }}</div>
+    </div>
+
+    <div class="report-summary-block">
+      <div class="report-summary-label">需要协助</div>
+      <div class="report-summary-value task-text-block">{{ cardTaskAssistance(item) }}</div>
+    </div>
+  </div>
+
+  <div
+    v-if="shouldShowReturnSummary(item) && recordReturnSummary(item)"
+    class="report-return-banner"
+  >
+    最近退回：{{ recordReturnSummary(item) }}
+  </div>
+</template>
               <template #footer>
                 <div class="card-actions">
                   <van-button
@@ -798,7 +815,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
 import { useRoute, useRouter } from 'vue-router'
 import AppPageShell from '@/components/layout/AppPageShell.vue'
@@ -919,22 +936,200 @@ const taskNatureOptions = [
   { value: 'SELF', label: '自行' }
 ]
 
+const DEFAULT_RECORD_TAB = {
+  key: 'mine',
+  label: '我的填报',
+  title: '我的填报',
+  desc: '我的周报记录',
+  emptyTitle: '暂无周报',
+  emptyDesc: '还没有周报记录',
+  count: 0
+}
+
+function isRawUserNodeCode(value) {
+  return /^USER_\d+$/i.test(String(value || '').trim())
+}
+
+function parseUserIdFromNodeCode(value) {
+  const text = String(value || '').trim()
+  if (!isRawUserNodeCode(text)) {
+    return 0
+  }
+  return Number(text.replace(/^USER_/i, '')) || 0
+}
+
+function resolveFriendlyNodeFallback(code, record = null) {
+  if (code === 'STAFF') {
+    return '填报人'
+  }
+
+  if (isRawUserNodeCode(code)) {
+    const userId = parseUserIdFromNodeCode(code)
+
+    const orgFlowNode = buildFlowNodesFromOrgTree(record || {}).find(
+      (item) => Number(item.userId || 0) === userId
+    )
+    if (orgFlowNode?.label && !isRawUserNodeCode(orgFlowNode.label)) {
+      return orgFlowNode.label
+    }
+
+    const cachedNode = getCachedOrgChain(userId).find(
+      (item) => Number(item.userId || item.id || 0) === userId
+    )
+    if (cachedNode) {
+      const cachedLabel = buildFlowNodeLabel(cachedNode, code, record)
+      if (cachedLabel && !isRawUserNodeCode(cachedLabel)) {
+        return cachedLabel
+      }
+    }
+
+    const currentHandlerUserId = Number(
+      record?.currentHandlerUserId
+      ?? record?.current_handler_user_id
+      ?? 0
+    ) || 0
+
+    if (currentHandlerUserId === userId) {
+      const currentHandlerLabel = normalizeLabelValue(
+        record?.currentApprovalNodePostName
+        || record?.currentNodePostName
+        || record?.currentApprovalNodePositionName
+        || record?.currentNodePositionName
+        || record?.currentApprovalNodeLabel
+        || record?.currentNodeLabel
+        || record?.currentHandlerUserName
+        || record?.current_handler_user_name
+      )
+      if (currentHandlerLabel && !isRawUserNodeCode(currentHandlerLabel)) {
+        return currentHandlerLabel
+      }
+      return '当前审批人'
+    }
+
+    return '审批人'
+  }
+
+  return LEGACY_FLOW_NODE_META[code]?.label || '审批节点'
+}
+
+function normalizeAdminIdentity(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function isSuperAdminOrgNode(node = {}) {
+  const candidates = [
+    node?.roleCode,
+    node?.code,
+    node?.key,
+    node?.username,
+    node?.userName,
+    node?.realName,
+    node?.name,
+    node?.label,
+    node?.displayLabel,
+    node?.jobTitle
+  ]
+    .map((item) => normalizeAdminIdentity(item))
+    .filter(Boolean)
+
+  return candidates.some((item) => {
+    return item === 'super_admin'
+      || item === 'superadmin'
+      || item.includes('super_admin')
+      || item.includes('superadmin')
+      || item.includes('超级管理员')
+  })
+}
+
+function updateMobileFlag(targetRef) {
+  if (typeof window === 'undefined') {
+    targetRef.value = false
+    return
+  }
+  targetRef.value = window.innerWidth <= 768
+}
+const isMobileView = ref(false)
+
 const isEditorPage = computed(() => route.path === '/weekly-work/editor')
 const routeRecordId = computed(() => Number(route.query.id || 0) || null)
 const routeDraftDate = computed(() => normalizeDateInput(route.query.date))
 const auditQueryKeyword = ref('')
+
+const currentUserId = computed(() => Number(userStore.userInfo?.userId || 0))
+
+const currentUserParentId = computed(() => {
+  return Number(
+    userStore.userInfo?.parentUserId
+    ?? userStore.userInfo?.parent_id
+    ?? userStore.userInfo?.parentId
+    ?? userStore.userInfo?.pid
+    ?? 0
+  ) || null
+})
+
+const currentUserOrgChain = computed(() => getCachedOrgChain(currentUserId.value))
+
+const directParentOrgNode = computed(() => {
+  if (!currentUserParentId.value) {
+    return null
+  }
+  if (!currentUserOrgChain.value.length) {
+    return null
+  }
+  return currentUserOrgChain.value.find(
+    (item) => Number(item.userId || item.id || 0) === currentUserParentId.value
+  ) || null
+})
+
+const isCurrentUserSuperAdmin = computed(() => {
+  const info = userStore.userInfo || {}
+  return Boolean(info.superAdmin || info.isSuperAdmin) || isSuperAdminOrgNode(info)
+})
+
+const isTopBusinessApprover = computed(() => {
+  if (isCurrentUserSuperAdmin.value) {
+    return false
+  }
+  if (!directParentOrgNode.value) {
+    return false
+  }
+  return isSuperAdminOrgNode(directParentOrgNode.value)
+})
+
+const canCurrentUserFill = computed(() => {
+  return !isCurrentUserSuperAdmin.value && !isTopBusinessApprover.value
+})
+
+const hasOrgChildren = computed(() => Number(orgChildCount.value || 0) > 0)
+
+const canSeeAuditTabs = computed(() => {
+  return hasOrgChildren.value
+    || pendingReviewRecords.value.length > 0
+    || processedReviewRecords.value.length > 0
+})
+
 const pageShellTitle = computed(() => isEditorPage.value ? '周报编辑' : '周报总览')
-const showCreateEntry = computed(() => false)
+const showCreateEntry = computed(() => canCurrentUserFill.value && isMineTab.value && !isEditorPage.value)
 const showHeroSection = computed(() => false)
 const showAuditSummarySection = computed(() => false)
-const isLowestLevelUser = computed(() => Number(orgChildCount.value || 0) === 0)
-const showAuditRecordTabs = computed(() => !isLowestLevelUser.value)
-const currentUserId = computed(() => Number(userStore.userInfo?.userId || 0))
+const showAuditRecordTabs = computed(() => canSeeAuditTabs.value)
+
+const defaultRecordTabKey = computed(() => {
+  if (canSeeAuditTabs.value && pendingReviewRecords.value.length > 0) {
+    return 'pending'
+  }
+  return 'mine'
+})
+
 const isMineTab = computed(() => activeRecordTab.value === 'mine')
 const isAuditTab = computed(() => !isMineTab.value)
+const showCalendarBoard = computed(() => !isEditorPage.value && isMineTab.value)
+
 const pageBusy = computed(() => {
   return listLoading.value || submitting.value || detailLoading.value || reviewTargetId.value !== null || submitTargetId.value !== null
 })
+
+
 const currentWeeklyStatus = computed(() => editorMeta.status || 'DRAFT')
 const currentApprovalNode = computed(() => editorMeta.currentApprovalNode || 'STAFF')
 const currentStatusLabel = computed(() => statusLabel(
@@ -1063,45 +1258,60 @@ const pendingReviewRecords = computed(() => {
 const processedReviewRecords = computed(() => {
   return list.value.filter((item) => Number(item.userId) !== currentUserId.value && Boolean(item.reviewedByCurrentUser) && !canReview(item))
 })
-const recordTabs = computed(() => ([
-  {
-    key: 'mine',
-    label: '我的填报',
-    title: '我的填报',
-    desc: '我的周报记录',
-    emptyTitle: '暂无周报',
-    emptyDesc: '还没有周报记录',
-    count: myWeeklyRecords.value.length
-  },
-  ...(showAuditRecordTabs.value ? [
+
+const recordTabs = computed(() => {
+  const tabs = [
     {
-      key: 'pending',
-      label: '待我审核',
-      title: '待我审核',
-      desc: '待处理记录',
-      emptyTitle: '暂无待审核',
-      emptyDesc: '当前没有需要处理的周报',
-      count: pendingReviewRecords.value.length
-    },
-    {
-      key: 'processed',
-      label: '我已审核',
-      title: '我已审核',
-      desc: '已处理记录',
-      emptyTitle: '暂无已审核',
-      emptyDesc: '还没有已处理记录',
-      count: processedReviewRecords.value.length
+      ...DEFAULT_RECORD_TAB,
+      count: myWeeklyRecords.value.length
     }
-  ] : [])
-]))
-const currentRecordTab = computed(() => {
-  return recordTabs.value.find((tab) => tab.key === activeRecordTab.value) || recordTabs.value[0]
+  ]
+
+  if (showAuditRecordTabs.value) {
+    tabs.push(
+      {
+        key: 'pending',
+        label: '待我审核',
+        title: '待我审核',
+        desc: '待处理记录',
+        emptyTitle: '暂无待审核',
+        emptyDesc: '当前没有需要处理的周报',
+        count: pendingReviewRecords.value.length
+      },
+      {
+        key: 'processed',
+        label: '我已审核',
+        title: '我已审核',
+        desc: '已处理记录',
+        emptyTitle: '暂无已审核',
+        emptyDesc: '还没有已处理记录',
+        count: processedReviewRecords.value.length
+      }
+    )
+  }
+
+  return tabs
 })
+
+const currentRecordTab = computed(() => {
+  return recordTabs.value.find((tab) => tab.key === activeRecordTab.value)
+    || recordTabs.value[0]
+    || DEFAULT_RECORD_TAB
+})
+
 const showRecordFocusBanner = computed(() => false)
 const showRecordGroupTitle = computed(() => showAuditRecordTabs.value)
 const showRecordGroupHint = computed(() => showAuditRecordTabs.value)
 const showFlowLegend = computed(() => showAuditRecordTabs.value || activeRecordTab.value !== 'mine')
-const showAuditRecordList = computed(() => isMineTab.value || auditRecordsExpanded.value)
+const showAuditRecordList = computed(() => {
+  if (isMineTab.value) {
+    return true
+  }
+  if (isMobileView.value) {
+    return true
+  }
+  return auditRecordsExpanded.value
+})
 const auditRecordToggleLabel = computed(() => auditRecordsExpanded.value ? '收起记录' : '展开记录')
 
 function shouldExpandAuditRecords(tabKey) {
@@ -1350,7 +1560,13 @@ const detailLoadingDesc = computed(() => {
   }
   return '正在加载最新周报详情，请稍候。'
 })
-
+function resolveAvailableTab(tabKey) {
+  const availableKeys = recordTabs.value.map((tab) => tab.key)
+  if (availableKeys.includes(tabKey)) {
+    return tabKey
+  }
+  return recordTabs.value[0]?.key || 'mine'
+}
 function recordsForTab(tabKey) {
   if (tabKey === 'pending') {
     return pendingReviewRecords.value
@@ -1796,28 +2012,48 @@ function buildFlowNodeLabel(node, code, record = null) {
     }
   }
 
-  return LEGACY_FLOW_NODE_META[code]?.label || normalizeLabelValue(code) || '-'
+  if (isRawUserNodeCode(code)) {
+  return resolveFriendlyNodeFallback(code, record)
+}
+
+return LEGACY_FLOW_NODE_META[code]?.label || normalizeLabelValue(code) || '-'
 }
 
 function approvalNodeLabel(node, record = null) {
   if (!node) {
     return '-'
   }
+
   if (typeof node === 'object') {
     if (shouldHideFlowDisplayNode(node)) {
       return '-'
     }
-    return buildFlowNodeLabel(node, node.key || node.code || node.roleCode, record)
+    const label = buildFlowNodeLabel(node, node.key || node.code || node.roleCode, record)
+    if (label && !isRawUserNodeCode(label)) {
+      return label
+    }
+    return resolveFriendlyNodeFallback(node.key || node.code || node.roleCode, record)
   }
+
   if (node === 'APPROVED') {
     return '已完成'
   }
+
   const matchedDisplayNode = findDisplayFlowNode(record, node)
-  if (matchedDisplayNode?.label) {
+  if (matchedDisplayNode?.label && !isRawUserNodeCode(matchedDisplayNode.label)) {
     return matchedDisplayNode.label
   }
+
   const meta = resolveFlowNodeMeta(node, record)
-  return shouldHideFlowDisplayNode(meta) ? '-' : (meta.label || node)
+  if (shouldHideFlowDisplayNode(meta)) {
+    return '-'
+  }
+
+  if (meta?.label && !isRawUserNodeCode(meta.label)) {
+    return meta.label
+  }
+
+  return resolveFriendlyNodeFallback(node, record)
 }
 
 function approvalActionLabel(action, record = null) {
@@ -2258,6 +2494,42 @@ function summarizeTask(record) {
   return `${nature} · ${progress}${suffix}`
 }
 
+function ellipsisText(value, max = 36) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim()
+  if (!text) {
+    return ''
+  }
+  return text.length > max ? `${text.slice(0, max)}...` : text
+}
+
+function getPrimaryTask(record = null) {
+  return parseTasksFromRecord(record)[0] || null
+}
+
+function cardTaskHeadline(record = null) {
+  const firstTask = getPrimaryTask(record)
+  return ellipsisText(firstTask?.progress || summarizeTask(record) || '暂未填写本周重点', 42) || '暂未填写本周重点'
+}
+
+function cardTaskDeadline(record = null) {
+  const firstTask = getPrimaryTask(record)
+  if (!firstTask) {
+    return '未填写'
+  }
+  if (firstTask.deadline) {
+    return firstTask.deadline
+  }
+  if (firstTask.receiveTime) {
+    return `${firstTask.receiveTime} 开始`
+  }
+  return '未填写'
+}
+
+function cardTaskAssistance(record = null) {
+  const firstTask = getPrimaryTask(record)
+  return ellipsisText(firstTask?.assistance || '暂无协助需求', 32) || '暂无协助需求'
+}
+
 function recordTaskCount(record) {
   return parseTasksFromRecord(record).length || 1
 }
@@ -2607,10 +2879,16 @@ async function openCreateForm(options = {}) {
   if (pageBusy.value) {
     return
   }
+  if (!canCurrentUserFill.value) {
+    showToast('当前岗位是周报最高审批节点，无需填报周报')
+    return
+  }
+
   const confirmed = await confirmDiscardIfDirty('切换到新建周报后，当前未保存内容将丢失，确认继续吗？')
   if (!confirmed) {
     return
   }
+
   const date = options.date || selectedCalendarDate.value || formatDateKey(new Date())
   navigateToEditorPage({ date })
 }
@@ -2743,6 +3021,9 @@ function upsertRecord(record) {
 }
 
 function canEdit(item) {
+  if (!canCurrentUserFill.value) {
+    return false
+  }
   return Number(item.userId) === currentUserId.value && (
     item.status === 'DRAFT' ||
     (item.status === 'RETURNED' && isOriginApprovalNode(item))
@@ -2750,6 +3031,9 @@ function canEdit(item) {
 }
 
 function canSubmit(item) {
+  if (!canCurrentUserFill.value) {
+    return false
+  }
   return Number(item.userId) === currentUserId.value && (
     item.status === 'DRAFT' ||
     (item.status === 'RETURNED' && isOriginApprovalNode(item))
@@ -2932,7 +3216,12 @@ function currentStageText(record = null) {
   }
   const currentNode = resolveCurrentApprovalNode(record)
   const matchedDisplayNode = findDisplayFlowNode(record, currentNode)
-  return matchedDisplayNode?.label || approvalNodeLabel(currentNode, record)
+
+  if (matchedDisplayNode?.label && !isRawUserNodeCode(matchedDisplayNode.label)) {
+    return matchedDisplayNode.label
+  }
+
+  return approvalNodeLabel(currentNode, record)
 }
 
 function nextFlowStepText(record = null) {
@@ -3441,14 +3730,15 @@ async function handleExitCurrentMode() {
 async function syncPageStateFromRoute() {
   const requestedTab = ['mine', 'pending', 'processed'].includes(String(route.query.tab || ''))
     ? String(route.query.tab)
-    : 'mine'
-  const routeTab = !showAuditRecordTabs.value && requestedTab !== 'mine' ? 'mine' : requestedTab
+    : defaultRecordTabKey.value
+
+  const routeTab = resolveAvailableTab(requestedTab)
   const routeFocusId = Number(route.query.focusId || 0) || null
   const targetDate = routeDraftDate.value || formatDateKey(new Date())
 
   activeRecordTab.value = routeTab
   auditQueryKeyword.value = ''
-  auditRecordsExpanded.value = shouldExpandAuditRecords(routeTab)
+  auditRecordsExpanded.value = !isMobileView.value && shouldExpandAuditRecords(routeTab)
   selectedCalendarDate.value = targetDate
   calendarCursor.value = getMonthStart(targetDate)
 
@@ -3462,6 +3752,12 @@ async function syncPageStateFromRoute() {
         activeRecordId.value = routeFocusId
       }
     }
+    return
+  }
+
+  if (!canCurrentUserFill.value) {
+    showToast('当前岗位是周报最高审批节点，无需填报周报')
+    navigateToListPage({ tab: resolveAvailableTab('pending') })
     return
   }
 
@@ -3488,14 +3784,30 @@ async function syncPageStateFromRoute() {
   commitEditorSnapshot()
 }
 
-onMounted(() => {
+onMounted(async () => {
+  updateMobileFlag(isMobileView)
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleWindowResize)
+  }
+
   syncTaskListFromEditor()
   commitEditorSnapshot()
-  ensureOrgChainLoaded(currentUserId.value)
-  fetchCurrentUserOrgChildren()
-  syncPageStateFromRoute()
-  fetchList()
+
+  await ensureOrgChainLoaded(currentUserId.value)
+  await fetchCurrentUserOrgChildren()
+  await fetchList()
+  await syncPageStateFromRoute()
 })
+
+onUnmounted(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleWindowResize)
+  }
+})
+
+function handleWindowResize() {
+  updateMobileFlag(isMobileView)
+}
 
 watch(
   () => route.fullPath,
@@ -3520,6 +3832,18 @@ watch(showAuditRecordTabs, (visible) => {
   if (!visible && activeRecordTab.value !== 'mine') {
     activeRecordTab.value = 'mine'
     clearDetailContext()
+  }
+})
+
+watch(canCurrentUserFill, (canFill) => {
+  if (!canFill && isEditorPage.value) {
+    navigateToListPage({ tab: resolveAvailableTab('pending') })
+  }
+})
+
+watch(recordTabs, (tabs) => {
+  if (!tabs.some((tab) => tab.key === activeRecordTab.value)) {
+    activeRecordTab.value = tabs[0]?.key || 'mine'
   }
 })
 </script>
@@ -3910,7 +4234,13 @@ watch(showAuditRecordTabs, (visible) => {
   gap: 8px;
   margin-bottom: 12px;
 }
+.record-tabs--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 
+.record-tabs--1 {
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
 .record-focus-banner {
   margin-bottom: 14px;
   padding: 12px 14px;
@@ -4462,6 +4792,43 @@ watch(showAuditRecordTabs, (visible) => {
   flex-wrap: wrap;
   gap: 8px;
   margin: 8px 0 10px;
+}
+
+.report-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.report-summary-block {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+.report-summary-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.report-summary-value {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #334155;
+  font-weight: 600;
+}
+
+.report-return-banner {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .report-compact-meta--calendar {
@@ -5270,7 +5637,41 @@ watch(showAuditRecordTabs, (visible) => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+@media (max-width: 768px) {
+  .record-board,
+  .task-board,
+  .audit-mode-board {
+    padding: 12px;
+    border-radius: 16px;
+  }
 
+  .report-card {
+    border-radius: 14px;
+  }
+
+  .report-title {
+    align-items: flex-start;
+  }
+
+  .report-compact-meta {
+    gap: 6px;
+  }
+
+  .report-summary-grid {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+
+  .detail-summary-grid,
+  .audit-mode-card__grid,
+  .task-card__grid {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+
+  .editor-action-panel__buttons,
+  .approval-action-grid {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+}
 @media (max-width: 480px) {
   .record-tabs {
     grid-template-columns: 1fr;

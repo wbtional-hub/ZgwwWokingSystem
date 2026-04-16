@@ -12,13 +12,48 @@ public class AttendanceRecordListItemVO {
     private String realName;
     private String unitName;
     private LocalDate attendanceDate;
+
+    /**
+     * 上午上班
+     */
     private LocalDateTime checkInTime;
+
+    /**
+     * 上午下班
+     */
+    private LocalDateTime amOffTime;
+
+    /**
+     * 下午上班
+     */
+    private LocalDateTime pmOnTime;
+
+    /**
+     * 下午下班
+     */
     private LocalDateTime checkOutTime;
+
     private String checkInAddress;
+    private String amOffAddress;
+    private String pmOnAddress;
     private String checkOutAddress;
+
     private BigDecimal checkInLatitude;
     private BigDecimal checkInLongitude;
     private Integer checkInDistanceMeters;
+
+    private BigDecimal amOffLatitude;
+    private BigDecimal amOffLongitude;
+    private Integer amOffDistanceMeters;
+
+    private BigDecimal pmOnLatitude;
+    private BigDecimal pmOnLongitude;
+    private Integer pmOnDistanceMeters;
+
+    private BigDecimal checkOutLatitude;
+    private BigDecimal checkOutLongitude;
+    private Integer checkOutDistanceMeters;
+
     private String checkInResult;
     private String checkInFailReason;
     private String locationSource;
@@ -90,6 +125,22 @@ public class AttendanceRecordListItemVO {
         this.checkInTime = checkInTime;
     }
 
+    public LocalDateTime getAmOffTime() {
+        return amOffTime;
+    }
+
+    public void setAmOffTime(LocalDateTime amOffTime) {
+        this.amOffTime = amOffTime;
+    }
+
+    public LocalDateTime getPmOnTime() {
+        return pmOnTime;
+    }
+
+    public void setPmOnTime(LocalDateTime pmOnTime) {
+        this.pmOnTime = pmOnTime;
+    }
+
     public LocalDateTime getCheckOutTime() {
         return checkOutTime;
     }
@@ -104,6 +155,22 @@ public class AttendanceRecordListItemVO {
 
     public void setCheckInAddress(String checkInAddress) {
         this.checkInAddress = checkInAddress;
+    }
+
+    public String getAmOffAddress() {
+        return amOffAddress;
+    }
+
+    public void setAmOffAddress(String amOffAddress) {
+        this.amOffAddress = amOffAddress;
+    }
+
+    public String getPmOnAddress() {
+        return pmOnAddress;
+    }
+
+    public void setPmOnAddress(String pmOnAddress) {
+        this.pmOnAddress = pmOnAddress;
     }
 
     public String getCheckOutAddress() {
@@ -136,6 +203,78 @@ public class AttendanceRecordListItemVO {
 
     public void setCheckInDistanceMeters(Integer checkInDistanceMeters) {
         this.checkInDistanceMeters = checkInDistanceMeters;
+    }
+
+    public BigDecimal getAmOffLatitude() {
+        return amOffLatitude;
+    }
+
+    public void setAmOffLatitude(BigDecimal amOffLatitude) {
+        this.amOffLatitude = amOffLatitude;
+    }
+
+    public BigDecimal getAmOffLongitude() {
+        return amOffLongitude;
+    }
+
+    public void setAmOffLongitude(BigDecimal amOffLongitude) {
+        this.amOffLongitude = amOffLongitude;
+    }
+
+    public Integer getAmOffDistanceMeters() {
+        return amOffDistanceMeters;
+    }
+
+    public void setAmOffDistanceMeters(Integer amOffDistanceMeters) {
+        this.amOffDistanceMeters = amOffDistanceMeters;
+    }
+
+    public BigDecimal getPmOnLatitude() {
+        return pmOnLatitude;
+    }
+
+    public void setPmOnLatitude(BigDecimal pmOnLatitude) {
+        this.pmOnLatitude = pmOnLatitude;
+    }
+
+    public BigDecimal getPmOnLongitude() {
+        return pmOnLongitude;
+    }
+
+    public void setPmOnLongitude(BigDecimal pmOnLongitude) {
+        this.pmOnLongitude = pmOnLongitude;
+    }
+
+    public Integer getPmOnDistanceMeters() {
+        return pmOnDistanceMeters;
+    }
+
+    public void setPmOnDistanceMeters(Integer pmOnDistanceMeters) {
+        this.pmOnDistanceMeters = pmOnDistanceMeters;
+    }
+
+    public BigDecimal getCheckOutLatitude() {
+        return checkOutLatitude;
+    }
+
+    public void setCheckOutLatitude(BigDecimal checkOutLatitude) {
+        this.checkOutLatitude = checkOutLatitude;
+    }
+
+    public BigDecimal getCheckOutLongitude() {
+        return checkOutLongitude;
+    }
+
+    public void setCheckOutLongitude(BigDecimal checkOutLongitude) {
+        this.checkOutLongitude = checkOutLongitude;
+    }
+
+    public Integer getCheckOutDistanceMeters() {
+        return checkOutDistanceMeters;
+    }
+
+    public void setCheckOutDistanceMeters(Integer checkOutDistanceMeters) {
+        this.checkOutDistanceMeters = checkOutDistanceMeters;
     }
 
     public String getCheckInResult() {

@@ -2,7 +2,7 @@
   <div class="app-layout" :class="{ 'app-layout--mobile': isMobile }">
     <aside v-if="!isMobile" class="layout-sidebar">
       <div class="layout-brand">
-        <div class="layout-brand-chip">组工万维></div>
+      
         <div class="layout-brand-title">智慧OA系统</div>
         <div class="layout-brand-subtitle">AI Workbench & Skills Center</div>
       </div>

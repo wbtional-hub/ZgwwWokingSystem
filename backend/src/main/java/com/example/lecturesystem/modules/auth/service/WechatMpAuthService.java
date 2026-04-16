@@ -24,6 +24,8 @@ public interface WechatMpAuthService {
 
     String buildFailureCallbackRedirect(WechatMpCallbackState callbackState, String message);
 
+    String buildPendingBindCallbackRedirect(WechatMpCallbackState callbackState, String openId, String unionId, String bindCode);
+
     default String buildFailureCallbackRedirect(WechatMpCallbackState callbackState, String code, String message) {
         return buildFailureCallbackRedirect(callbackState, message);
     }

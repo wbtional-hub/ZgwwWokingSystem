@@ -105,20 +105,38 @@ function isWechatLoginRecovering() {
   }
 }
 
-request.interceptors.request.use(config => {
-  config.headers = config.headers || {}
-  const traceId = config.headers?.[TRACE_ID_HEADER] || createTraceId()
-  const isLoginRequest = typeof config.url === 'string' && (
+function isLoginRequest(config) {
+  return typeof config?.url === 'string' && (
     config.url.includes('/auth/login')
       || config.url.includes('/auth/mobile-login-options')
       || config.url.includes('/auth/wechat-mini-login')
       || config.url.includes('/auth/wechat-mp-login')
       || config.url.includes('/auth/wechat-mp-authorize-url')
   )
-  const token = localStorage.getItem('token')
-  if (token && !isLoginRequest) {
-    config.headers.Authorization = `Bearer ${token}`
+}
+
+function isBusinessAuthExpired(data) {
+  const code = Number(data?.code)
+  const message = normalizeText(data?.message)
+
+  if (code === 401 || code === 403) {
+    return true
   }
+
+  return message.includes('登录状态已失效')
+    || message.includes('请重新登录')
+    || message.includes('token已失效')
+    || message.includes('token失效')
+    || message.includes('未登录')
+}
+
+request.interceptors.request.use(config => {
+  config.headers = config.headers || {}
+  const traceId = config.headers?.[TRACE_ID_HEADER] || createTraceId()
+const token = localStorage.getItem('token')
+if (token && !isLoginRequest(config)) {
+  config.headers.Authorization = `Bearer ${token}`
+}
   config.headers[TRACE_ID_HEADER] = traceId
   config.headers['X-Page-Url'] = typeof window === 'undefined' ? '' : window.location.href
   config.metadata = {
@@ -135,6 +153,32 @@ request.interceptors.response.use(
       response.data.traceId = traceId
     }
     const businessCode = response.data?.code
+
+    if (
+  !isLoginRequest(response.config)
+  && !authRedirecting
+  && isBusinessAuthExpired(response.data)
+) {
+  if (isWechatLoginRecovering()) {
+    return response.data
+  }
+
+  authRedirecting = true
+  localStorage.removeItem('token')
+  localStorage.removeItem('userInfo')
+  showToast('登录状态已失效，请重新登录')
+
+  const redirect = router.currentRoute.value.fullPath || '/'
+  router.replace({
+    path: '/login',
+    query: redirect && redirect !== '/login' ? { redirect } : undefined
+  }).finally(() => {
+    authRedirecting = false
+  })
+
+  return Promise.reject(new Error(response.data?.message || '登录状态已失效'))
+}
+
     if (
       Number(businessCode) !== 0
       && !response.config?.skipBusinessErrorReport
@@ -168,17 +212,11 @@ request.interceptors.response.use(
   },
   error => {
     const status = error.response?.status
-    const backendCode = error.response?.data?.code
-    const backendMessage = error.response?.data?.message
-    const responseTraceId = error.response?.headers?.[TRACE_ID_HEADER.toLowerCase()] || error.config?.metadata?.traceId || ''
-    const isLoginRequest = typeof error.config?.url === 'string' && (
-      error.config.url.includes('/auth/login')
-        || error.config.url.includes('/auth/mobile-login-options')
-        || error.config.url.includes('/auth/wechat-mini-login')
-        || error.config.url.includes('/auth/wechat-mp-login')
-        || error.config.url.includes('/auth/wechat-mp-authorize-url')
-    )
-    if ((status === 401 || status === 403) && !isLoginRequest && !authRedirecting) {
+const backendCode = error.response?.data?.code
+const backendMessage = error.response?.data?.message
+const responseTraceId = error.response?.headers?.[TRACE_ID_HEADER.toLowerCase()] || error.config?.metadata?.traceId || ''
+
+if ((status === 401 || status === 403) && !isLoginRequest(error.config) && !authRedirecting) {
       // FIX: wechat login recovery protection
       if (isWechatLoginRecovering()) {
         return Promise.reject(error)

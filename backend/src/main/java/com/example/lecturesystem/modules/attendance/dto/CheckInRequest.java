@@ -4,6 +4,10 @@ import java.math.BigDecimal;
 
 public class CheckInRequest {
     private String address;
+    /**
+     * 可传：AM_ON / AM_OFF / PM_ON / PM_OFF
+     * 也可以不传，后端自动判断下一步
+     */
     private String action;
     private BigDecimal latitude;
     private BigDecimal longitude;

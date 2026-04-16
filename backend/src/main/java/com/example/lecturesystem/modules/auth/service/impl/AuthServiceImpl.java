@@ -12,6 +12,7 @@ import com.example.lecturesystem.modules.auth.support.PasswordPolicyValidator;
 import com.example.lecturesystem.modules.auth.support.Sm3PasswordCodec;
 import com.example.lecturesystem.modules.auth.service.WechatMiniAuthService;
 import com.example.lecturesystem.modules.auth.service.WechatMpAuthService;
+import com.example.lecturesystem.modules.auth.service.WechatMpPendingBindService;
 import com.example.lecturesystem.modules.auth.vo.LoginVO;
 import com.example.lecturesystem.modules.auth.vo.MobileLoginOptionsVO;
 import com.example.lecturesystem.modules.auth.vo.WechatMpAuthorizeUrlVO;
@@ -31,6 +32,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+import com.example.lecturesystem.modules.auth.entity.WechatMpPendingBindEntity;
+import com.example.lecturesystem.modules.auth.exception.WechatMpPendingBindException;
 
 import java.time.LocalDateTime;
 import java.util.regex.Pattern;
@@ -58,17 +61,19 @@ public class AuthServiceImpl implements AuthService {
     private final OperationLogService operationLogService;
     private final WechatMiniAuthService wechatMiniAuthService;
     private final WechatMpAuthService wechatMpAuthService;
+    private final WechatMpPendingBindService wechatMpPendingBindService;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private final Sm3PasswordCodec sm3PasswordCodec = new Sm3PasswordCodec();
 
     @Autowired
     public AuthServiceImpl(AuthProperties authProperties,
-                           UserMapper userMapper,
-                           JwtTokenService jwtTokenService,
-                           LoginLogService loginLogService,
-                           OperationLogService operationLogService,
-                           WechatMiniAuthService wechatMiniAuthService,
-                           WechatMpAuthService wechatMpAuthService) {
+                       UserMapper userMapper,
+                       JwtTokenService jwtTokenService,
+                       LoginLogService loginLogService,
+                       OperationLogService operationLogService,
+                       WechatMiniAuthService wechatMiniAuthService,
+                       WechatMpAuthService wechatMpAuthService,
+                       WechatMpPendingBindService wechatMpPendingBindService) {
         this.authProperties = authProperties;
         this.userMapper = userMapper;
         this.jwtTokenService = jwtTokenService;
@@ -76,6 +81,7 @@ public class AuthServiceImpl implements AuthService {
         this.operationLogService = operationLogService;
         this.wechatMiniAuthService = wechatMiniAuthService;
         this.wechatMpAuthService = wechatMpAuthService;
+        this.wechatMpPendingBindService = wechatMpPendingBindService;
     }
 
     public AuthServiceImpl(UserMapper userMapper,
@@ -136,7 +142,18 @@ public class AuthServiceImpl implements AuthService {
                     public String buildFailureCallbackRedirect(WechatMpCallbackState callbackState, String message) {
                         throw new UnsupportedOperationException("Not implemented in tests");
                     }
-                }
+
+                    @Override
+                    public String buildPendingBindCallbackRedirect(WechatMpCallbackState callbackState, String openId, String unionId, String bindCode) {
+                        throw new UnsupportedOperationException("Not implemented in tests");
+                    }
+                },
+new WechatMpPendingBindService() {
+    @Override
+    public WechatMpPendingBindEntity saveIfAbsent(String openId, String unionId, String requestIp, String userAgent, String remark) {
+        return null;
+    }
+}
         );
     }
 
@@ -190,31 +207,110 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public LoginVO wechatMpLogin(String code) {
-        UserEntity user = null;
-        try {
-            WechatMpAuthService.WechatMpIdentity identity = wechatMpAuthService.exchangeCode(code);
-            String openId = normalizeText(identity.openId());
-            String unionId = normalizeText(identity.unionId());
-            user = resolveWechatMpLoginUser(openId, unionId);
-            if (user == null) {
-                throw new BadCredentialsException("当前微信未绑定系统账号，请联系管理员先完成绑定");
-            }
+public LoginVO wechatMpLogin(String code) {
+    UserEntity user = null;
+    String openId = null;
+    String unionId = null;
+    try {
+        WechatMpAuthService.WechatMpIdentity identity = wechatMpAuthService.exchangeCode(code);
+        openId = normalizeText(identity.openId());
+        unionId = normalizeText(identity.unionId());
 
-            syncWechatIdentityIfNecessary(user, openId, unionId);
-            validateUserStatus(user);
+        logWechatMpTrace(
+                "WECHAT_MP_EXCHANGE_CODE_RESULT",
+                null,
+                "微信公众号H5授权换取身份完成"
+                        + "，openId=" + maskWechatId(openId)
+                        + "，unionId=" + maskWechatId(unionId)
+        );
 
-            LoginUser loginUser = toLoginUser(user);
-            operationLogService.log("AUTH", "WECHAT_MP_LOGIN", user.getId(), "微信公众号 H5 登录成功：" + user.getUsername());
-            LoginVO loginVO = buildLoginVO(loginUser);
-            applyForcePasswordChangeFlag(loginVO, user);
-            recordLoginAttempt(user, user.getUsername(), LOGIN_RESULT_SUCCESS, null);
-            return loginVO;
-        } catch (RuntimeException ex) {
-            recordLoginAttempt(user, user == null ? null : user.getUsername(), LOGIN_RESULT_FAIL, resolveFriendlyMessage(ex, "微信公众号登录失败"));
-            throw ex;
+        UserEntity unionUser = null;
+        UserEntity openUser = null;
+
+        if (unionId != null) {
+            unionUser = userMapper.findByWechatUnionId(unionId);
         }
+        if (openId != null) {
+            openUser = userMapper.findByWechatOpenId(openId);
+        }
+
+        user = unionUser != null ? unionUser : openUser;
+
+        logWechatMpTrace(
+                "WECHAT_MP_RESOLVE_USER",
+                user == null ? null : user.getId(),
+                "微信公众号H5绑定用户匹配结果"
+                        + "，unionId=" + maskWechatId(unionId)
+                        + "，openId=" + maskWechatId(openId)
+                        + "，unionHit=" + (unionUser != null)
+                        + "，openHit=" + (openUser != null)
+                        + "，resolvedUserId=" + (user == null ? "<empty>" : user.getId())
+                        + "，resolvedUsername=" + (user == null ? "<empty>" : user.getUsername())
+        );
+
+        if (user == null) {
+    HttpServletRequest request = currentRequest();
+
+    WechatMpPendingBindEntity pendingBind = wechatMpPendingBindService.saveIfAbsent(
+            openId,
+            unionId,
+            resolveClientIp(request),
+            truncate(normalizeText(resolveUserAgent(request)), 500),
+            "微信公众号H5登录未命中系统账号，待管理员绑定"
+    );
+
+    String bindCode = buildPendingBindCode(pendingBind);
+
+    logWechatMpTrace(
+            "WECHAT_MP_UNBOUND",
+            null,
+            "微信公众号H5登录未命中系统账号，已写入待绑定表"
+                    + "，bindCode=" + defaultIfNull(bindCode, "<empty>")
+                    + "，unionId=" + maskWechatId(unionId)
+                    + "，openId=" + maskWechatId(openId)
+                    + "，message=当前微信未绑定系统账号"
+    );
+
+    throw new WechatMpPendingBindException(
+            "当前微信未绑定系统账号，系统已记录本次微信信息，请联系管理员完成绑定",
+            openId,
+            unionId,
+            bindCode
+    );
+}
+
+        syncWechatIdentityIfNecessary(user, openId, unionId);
+        validateUserStatus(user);
+
+        LoginUser loginUser = toLoginUser(user);
+        operationLogService.log("AUTH", "WECHAT_MP_LOGIN", user.getId(), "微信公众号 H5 登录成功：" + user.getUsername());
+        logWechatMpTrace(
+                "WECHAT_MP_LOGIN_SUCCESS",
+                user.getId(),
+                "微信公众号H5登录成功"
+                        + "，username=" + user.getUsername()
+                        + "，openId=" + maskWechatId(openId)
+                        + "，unionId=" + maskWechatId(unionId)
+        );
+
+        LoginVO loginVO = buildLoginVO(loginUser);
+        applyForcePasswordChangeFlag(loginVO, user);
+        recordLoginAttempt(user, user.getUsername(), LOGIN_RESULT_SUCCESS, null);
+        return loginVO;
+    } catch (RuntimeException ex) {
+        logWechatMpTrace(
+                "WECHAT_MP_LOGIN_FAIL",
+                user == null ? null : user.getId(),
+                "微信公众号H5登录失败"
+                        + "，username=" + (user == null ? "<empty>" : user.getUsername())
+                        + "，openId=" + maskWechatId(openId)
+                        + "，unionId=" + maskWechatId(unionId)
+                        + "，message=" + resolveFriendlyMessage(ex, "微信公众号登录失败")
+        );
+        recordLoginAttempt(user, user == null ? null : user.getUsername(), LOGIN_RESULT_FAIL, resolveFriendlyMessage(ex, "微信公众号登录失败"));
+        throw ex;
     }
+}
 
     @Override
     public WechatMpAuthorizeUrlVO buildWechatMpAuthorizeUrl(String returnUrl, String state) {
@@ -260,7 +356,20 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public String handleWechatMpCallback(String code, String state, String error, String errorDescription) {
-        WechatMpAuthService.WechatMpCallbackState callbackState = wechatMpAuthService.parseCallbackState(state);
+        HttpServletRequest request = currentRequest();
+    logWechatMpTrace(
+            "WECHAT_MP_CALLBACK_ENTER",
+            null,
+            "微信公众号H5回调进入"
+                    + "，codeEmpty=" + (normalizeText(code) == null)
+                    + "，state=" + defaultIfNull(normalizeText(state), "<empty>")
+                    + "，error=" + defaultIfNull(normalizeText(error), "<empty>")
+                    + "，errorDescription=" + defaultIfNull(normalizeText(errorDescription), "<empty>")
+                    + "，ip=" + defaultIfNull(resolveClientIp(request), "<empty>")
+                    + "，userAgent=" + defaultIfNull(truncate(normalizeText(resolveUserAgent(request)), 200), "<empty>")
+    );
+
+    WechatMpAuthService.WechatMpCallbackState callbackState = wechatMpAuthService.parseCallbackState(state);
         String normalizedError = normalizeText(error);
         if (normalizedError != null) {
             String message = normalizeText(errorDescription);
@@ -277,15 +386,46 @@ public class AuthServiceImpl implements AuthService {
                     "公众号授权回调缺少 code"
             );
         }
-        try {
-            LoginVO loginVO = wechatMpLogin(code);
-            return wechatMpAuthService.buildSuccessCallbackRedirect(loginVO, callbackState);
-        } catch (Exception ex) {
-            String message = resolveFriendlyMessage(ex, "公众号登录失败，请稍后重试");
-            String errorCode = resolveWechatCallbackErrorCode(ex);
-            log.warn("公众号 H5 callback 登录失败，errorCode={}, message={}", errorCode, message, ex);
-            return wechatMpAuthService.buildFailureCallbackRedirect(callbackState, errorCode, message);
-        }
+       try {
+    LoginVO loginVO = wechatMpLogin(code);
+    logWechatMpTrace(
+            "WECHAT_MP_CALLBACK_SUCCESS_REDIRECT",
+            loginVO.getUserId(),
+            "微信公众号H5回调处理成功，准备跳转"
+                    + "，userId=" + loginVO.getUserId()
+                    + "，username=" + defaultIfNull(loginVO.getUsername(), "<empty>")
+    );
+    return wechatMpAuthService.buildSuccessCallbackRedirect(loginVO, callbackState);
+
+} catch (WechatMpPendingBindException ex) {
+    logWechatMpTrace(
+            "WECHAT_MP_CALLBACK_PENDING_BIND_REDIRECT",
+            null,
+            "微信公众号H5回调命中未绑定分支，准备回跳登录页展示绑定信息"
+                    + "，bindCode=" + defaultIfNull(ex.getBindCode(), "<empty>")
+                    + "，openId=" + maskWechatId(ex.getOpenId())
+                    + "，unionId=" + maskWechatId(ex.getUnionId())
+    );
+    return wechatMpAuthService.buildPendingBindCallbackRedirect(
+            callbackState,
+            ex.getOpenId(),
+            ex.getUnionId(),
+            ex.getBindCode()
+    );
+
+} catch (Exception ex) {
+    String message = resolveFriendlyMessage(ex, "公众号登录失败，请稍后重试");
+    String errorCode = resolveWechatCallbackErrorCode(ex);
+    log.warn("公众号 H5 callback 登录失败，errorCode={}, message={}", errorCode, message, ex);
+    logWechatMpTrace(
+            "WECHAT_MP_CALLBACK_FAILURE_REDIRECT",
+            null,
+            "微信公众号H5回调处理失败，准备跳转失败页"
+                    + "，errorCode=" + errorCode
+                    + "，message=" + message
+    );
+    return wechatMpAuthService.buildFailureCallbackRedirect(callbackState, errorCode, message);
+}
     }
 
     @Override
@@ -515,46 +655,76 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private void syncWechatIdentityIfNecessary(UserEntity user, String openId, String unionId) {
-        String currentOpenId = normalizeText(user.getWechatOpenId());
-        String currentUnionId = normalizeText(user.getWechatUnionId());
+    String currentOpenId = normalizeText(user.getWechatOpenId());
+    String currentUnionId = normalizeText(user.getWechatUnionId());
 
-        if (currentUnionId != null && unionId != null && !currentUnionId.equals(unionId)) {
-            throw new IllegalStateException("当前系统账号绑定的微信 unionid 与本次授权不一致，请联系管理员核实绑定关系");
-        }
+    logWechatMpTrace(
+            "WECHAT_MP_SYNC_BINDING_START",
+            user.getId(),
+            "微信公众号绑定同步开始"
+                    + "，username=" + user.getUsername()
+                    + "，currentOpenId=" + maskWechatId(currentOpenId)
+                    + "，currentUnionId=" + maskWechatId(currentUnionId)
+                    + "，incomingOpenId=" + maskWechatId(openId)
+                    + "，incomingUnionId=" + maskWechatId(unionId)
+    );
 
-        String nextOpenId = currentOpenId;
-        String nextUnionId = currentUnionId;
-        boolean changed = false;
-
-        if (nextUnionId == null && unionId != null) {
-            assertWechatIdentityAvailableForUser(user.getId(), null, unionId);
-            nextUnionId = unionId;
-            changed = true;
-        }
-
-        if (nextOpenId == null && openId != null) {
-            assertWechatIdentityAvailableForUser(user.getId(), openId, null);
-            nextOpenId = openId;
-            changed = true;
-        }
-
-        if (!changed) {
-            return;
-        }
-
-        int updated = userMapper.updateWechatBinding(
-                user.getId(),
-                nextOpenId,
-                nextUnionId,
-                WECHAT_MP_BINDING_OPERATOR,
-                LocalDateTime.now()
-        );
-        if (updated <= 0) {
-            throw new IllegalStateException("同步微信公众号绑定信息失败，请稍后重试");
-        }
-        user.setWechatOpenId(nextOpenId);
-        user.setWechatUnionId(nextUnionId);
+    if (currentUnionId != null && unionId != null && !currentUnionId.equals(unionId)) {
+        throw new IllegalStateException("当前系统账号绑定的微信 unionid 与本次授权不一致，请联系管理员核实绑定关系");
     }
+
+    String nextOpenId = currentOpenId;
+    String nextUnionId = currentUnionId;
+    boolean changed = false;
+
+    if (nextUnionId == null && unionId != null) {
+        assertWechatIdentityAvailableForUser(user.getId(), null, unionId);
+        nextUnionId = unionId;
+        changed = true;
+    }
+
+    if (nextOpenId == null && openId != null) {
+        assertWechatIdentityAvailableForUser(user.getId(), openId, null);
+        nextOpenId = openId;
+        changed = true;
+    }
+
+    if (!changed) {
+        logWechatMpTrace(
+                "WECHAT_MP_SYNC_BINDING_SKIP",
+                user.getId(),
+                "微信公众号绑定同步跳过，无需更新"
+                        + "，username=" + user.getUsername()
+                        + "，currentOpenId=" + maskWechatId(currentOpenId)
+                        + "，currentUnionId=" + maskWechatId(currentUnionId)
+        );
+        return;
+    }
+
+    int updated = userMapper.updateWechatBinding(
+            user.getId(),
+            nextOpenId,
+            nextUnionId,
+            WECHAT_MP_BINDING_OPERATOR,
+            LocalDateTime.now()
+    );
+
+    logWechatMpTrace(
+            "WECHAT_MP_SYNC_BINDING_UPDATED",
+            user.getId(),
+            "微信公众号绑定同步已执行更新"
+                    + "，username=" + user.getUsername()
+                    + "，updated=" + updated
+                    + "，nextOpenId=" + maskWechatId(nextOpenId)
+                    + "，nextUnionId=" + maskWechatId(nextUnionId)
+    );
+
+    if (updated <= 0) {
+        throw new IllegalStateException("同步微信公众号绑定信息失败，请稍后重试");
+    }
+    user.setWechatOpenId(nextOpenId);
+    user.setWechatUnionId(nextUnionId);
+}
 
     private void assertWechatIdentityAvailableForUser(Long userId, String openId, String unionId) {
         if (openId != null) {
@@ -668,6 +838,35 @@ public class AuthServiceImpl implements AuthService {
         return loginFailCount == null ? 0 : Math.max(loginFailCount, 0);
     }
 
+    private String buildPendingBindCode(WechatMpPendingBindEntity pendingBind) {
+    if (pendingBind == null || pendingBind.getId() == null) {
+        return "";
+    }
+    return "MPBIND-" + pendingBind.getId();
+}
+
+    private String maskWechatId(String value) {
+    String normalized = normalizeText(value);
+    if (normalized == null) {
+        return "<empty>";
+    }
+    if (normalized.length() <= 6) {
+        return "****";
+    }
+    return normalized.substring(0, 3) + "****" + normalized.substring(normalized.length() - 3);
+}
+
+private void logWechatMpTrace(String action, Long bizId, String content) {
+    try {
+        operationLogService.log("AUTH", action, bizId, content);
+    } catch (Exception ex) {
+        log.warn("写入微信公众号登录链路日志失败，action={}", action, ex);
+    }
+}
+
+private String defaultIfNull(String value, String fallback) {
+    return value == null ? fallback : value;
+}
     private String normalizeText(String value) {
         if (value == null) {
             return null;

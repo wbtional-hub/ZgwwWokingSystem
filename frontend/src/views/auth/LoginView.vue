@@ -2,7 +2,7 @@
   <section class="login-page">
     <div class="login-shell">
       <div class="brand-panel">
-        <div class="brand-chip">组工万维</div>
+        
         <p class="brand-eyebrow">Smart Office Automation</p>
         <h1>智慧OA系统</h1>
         <p class="brand-description">
@@ -35,6 +35,13 @@
           </div>
 
           <div v-if="state.wechatError" class="info-banner warning">{{ state.wechatError }}</div>
+          <div v-if="state.needBind" class="info-banner warning">
+  <div>当前微信尚未绑定系统账号</div>
+  <div style="margin-top: 6px;">待绑定编号：{{ state.bindCode || '-' }}</div>
+  <div style="margin-top: 6px;">openId：{{ state.openId || '-' }}</div>
+  <div style="margin-top: 6px;">unionId：{{ state.unionId || '-' }}</div>
+  <div style="margin-top: 8px; font-weight: 600;">请截图本页面发给管理员进行关联</div>
+</div>
           <div v-if="state.qrError" class="info-banner danger">{{ state.qrError }}</div>
           <div v-if="showMobilePasswordDisabledNotice" class="info-banner warning">
             当前环境手机端未开启账号密码登录，请在微信内打开后使用微信登录。
@@ -179,6 +186,12 @@ const state = reactive({
   processingLogin: false,
   wechatLoading: false,
   wechatError: '',
+
+  needBind: false,
+  bindCode: '',
+  openId: '',
+  unionId: '',
+
   qrLoading: false,
   qrToken: '',
   qrUrl: '',
@@ -292,7 +305,15 @@ async function loadMobileLoginOptions() {
 }
 
 async function startWechatOauth() {
+  clearExistingLoginState()
+
+  state.needBind = false
+  state.bindCode = ''
+  state.openId = ''
+  state.unionId = ''
+  state.wechatError = ''
   state.wechatLoading = true
+
   try {
     const response = await queryWechatMpAuthorizeUrlApi({
       returnUrl: resolvePostLoginPath()
@@ -464,13 +485,31 @@ async function tryConsumeWechatLoginCallback() {
   if (!encodedPayload) {
     return
   }
+
   state.wechatLoading = true
+  state.wechatError = ''
+  state.needBind = false
+  state.bindCode = ''
+  state.openId = ''
+  state.unionId = ''
+
   try {
     const payload = decodeWechatPayload(encodedPayload)
+    clearWechatHash()
+
+    if (payload?.needBind === true) {
+      state.needBind = true
+      state.bindCode = payload?.bindCode || ''
+      state.openId = payload?.openId || ''
+      state.unionId = payload?.unionId || ''
+      state.wechatError = '当前微信未绑定系统账号'
+      return
+    }
+
     if (!payload?.loginInfo?.token) {
       throw new Error('微信登录结果无效')
     }
-    clearWechatHash()
+
     await applyLoginResult(
       payload.loginInfo,
       payload.loginInfo.forcePasswordChange ? 'FORCE_PASSWORD_CHANGE' : 'success',

@@ -55,18 +55,24 @@ public class AttendanceRuleServiceImpl implements AttendanceRuleService {
         UserEntity currentUser = currentUserFacade.currentUserEntity();
         requireRuleManagePermission(currentUser);
         Long unitId = requireCurrentUnitId(currentUser);
-        LocalTime workStartTime = parseLocalTime(request.getWorkStartTime(), "上班时间不能为空");
-        LocalTime workEndTime = parseLocalTime(request.getWorkEndTime(), "下班时间不能为空");
-        if (!workEndTime.isAfter(workStartTime)) {
-            throw new IllegalArgumentException("下班时间必须晚于上班时间");
-        }
+
+        LocalTime workStartTime = parseLocalTime(request.getWorkStartTime(), "上午上班时间不能为空");
+        LocalTime amOffTime = parseLocalTime(request.getAmOffTime(), "上午下班时间不能为空");
+        LocalTime pmOnTime = parseLocalTime(request.getPmOnTime(), "下午上班时间不能为空");
+        LocalTime workEndTime = parseLocalTime(request.getWorkEndTime(), "下午下班时间不能为空");
+
+        validateRuleTimeOrder(workStartTime, amOffTime, pmOnTime, workEndTime);
+
         Integer lateGraceMinutes = normalizeMinutes(request.getLateGraceMinutes(), "迟到宽限分钟不能小于 0");
         Integer earlyLeaveGraceMinutes = normalizeMinutes(request.getEarlyLeaveGraceMinutes(), "早退宽限分钟不能小于 0");
+
         AttendanceRuleEntity existed = attendanceRuleMapper.findByUnitId(unitId);
         if (existed == null) {
             AttendanceRuleEntity entity = new AttendanceRuleEntity();
             entity.setUnitId(unitId);
             entity.setWorkStartTime(workStartTime);
+            entity.setAmOffTime(amOffTime);
+            entity.setPmOnTime(pmOnTime);
             entity.setWorkEndTime(workEndTime);
             entity.setLateGraceMinutes(lateGraceMinutes);
             entity.setEarlyLeaveGraceMinutes(earlyLeaveGraceMinutes);
@@ -76,7 +82,10 @@ public class AttendanceRuleServiceImpl implements AttendanceRuleService {
             attendanceRuleMapper.insert(entity);
             return entity.getId();
         }
+
         existed.setWorkStartTime(workStartTime);
+        existed.setAmOffTime(amOffTime);
+        existed.setPmOnTime(pmOnTime);
         existed.setWorkEndTime(workEndTime);
         existed.setLateGraceMinutes(lateGraceMinutes);
         existed.setEarlyLeaveGraceMinutes(earlyLeaveGraceMinutes);
@@ -84,6 +93,21 @@ public class AttendanceRuleServiceImpl implements AttendanceRuleService {
         existed.setUpdateTime(LocalDateTime.now());
         attendanceRuleMapper.update(existed);
         return existed.getId();
+    }
+
+    private void validateRuleTimeOrder(LocalTime workStartTime,
+                                       LocalTime amOffTime,
+                                       LocalTime pmOnTime,
+                                       LocalTime workEndTime) {
+        if (!amOffTime.isAfter(workStartTime)) {
+            throw new IllegalArgumentException("上午下班时间必须晚于上午上班时间");
+        }
+        if (!pmOnTime.isAfter(amOffTime)) {
+            throw new IllegalArgumentException("下午上班时间必须晚于上午下班时间");
+        }
+        if (!workEndTime.isAfter(pmOnTime)) {
+            throw new IllegalArgumentException("下午下班时间必须晚于下午上班时间");
+        }
     }
 
     private void requireRuleManagePermission(UserEntity currentUser) {

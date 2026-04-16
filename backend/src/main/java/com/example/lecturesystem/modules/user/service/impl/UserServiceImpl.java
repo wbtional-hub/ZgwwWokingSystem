@@ -24,7 +24,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import com.example.lecturesystem.modules.auth.entity.WechatMpPendingBindEntity;
+import com.example.lecturesystem.modules.auth.mapper.WechatMpPendingBindMapper;
+import com.example.lecturesystem.modules.user.dto.BindWechatMpPendingRequest;
 
+import java.util.List;
 @Service
 public class UserServiceImpl implements UserService {
     private static final String DEFAULT_PASSWORD = "Admin2026";
@@ -35,50 +39,91 @@ public class UserServiceImpl implements UserService {
     private final DataScopeService dataScopeService;
     private final AuthService authService;
     private final String defaultPassword;
+    private final WechatMpPendingBindMapper wechatMpPendingBindMapper;
     private final Sm3PasswordCodec sm3PasswordCodec = new Sm3PasswordCodec();
 
-    public UserServiceImpl(UserMapper userMapper) {
-        this(userMapper, new OperationLogService() {
-            @Override
-            public void log(String moduleName, String actionName, Long bizId, String content) {
-            }
+        public UserServiceImpl(UserMapper userMapper) {
+        this(
+                userMapper,
+                new WechatMpPendingBindMapper() {
+                    @Override
+                    public WechatMpPendingBindEntity findById(Long id) {
+                        return null;
+                    }
 
-            @Override
-            public Object query(com.example.lecturesystem.modules.operationlog.dto.OperationLogQueryRequest request) {
-                return java.util.List.of();
-            }
-        }, new DataScopeService(), new AuthService() {
-            @Override
-            public com.example.lecturesystem.modules.auth.vo.LoginVO login(com.example.lecturesystem.modules.auth.dto.LoginRequest request) {
-                throw new UnsupportedOperationException("Not implemented in tests");
-            }
+                    @Override
+                    public List<WechatMpPendingBindEntity> queryPendingList() {
+                        return java.util.List.of();
+                    }
 
-            @Override
-            public com.example.lecturesystem.modules.auth.vo.LoginVO wechatMiniLogin(com.example.lecturesystem.modules.auth.dto.WechatMiniLoginRequest request) {
-                throw new UnsupportedOperationException("Not implemented in tests");
-            }
+                    @Override
+                    public WechatMpPendingBindEntity findPendingByIdentity(String openId, String unionId) {
+                        return null;
+                    }
 
-            @Override
-            public WechatMiniIdentity exchangeWechatMiniCode(String code) {
-                throw new UnsupportedOperationException("Not implemented in tests");
-            }
-        }, DEFAULT_PASSWORD);
+                    @Override
+                    public int insertPendingBind(WechatMpPendingBindEntity entity) {
+                        return 0;
+                    }
+
+                    @Override
+                    public int touchPendingBind(Long id, String requestIp, String userAgent, String remark) {
+                        return 0;
+                    }
+
+                    @Override
+                    public int updateBindSuccess(Long id, Long bindUserId, String bindUsername, String remark) {
+                        return 0;
+                    }
+                },
+                new OperationLogService() {
+                    @Override
+                    public void log(String moduleName, String actionName, Long bizId, String content) {
+                    }
+
+                    @Override
+                    public Object query(com.example.lecturesystem.modules.operationlog.dto.OperationLogQueryRequest request) {
+                        return java.util.List.of();
+                    }
+                },
+                new DataScopeService(),
+                new AuthService() {
+                    @Override
+                    public com.example.lecturesystem.modules.auth.vo.LoginVO login(com.example.lecturesystem.modules.auth.dto.LoginRequest request) {
+                        throw new UnsupportedOperationException("Not implemented in tests");
+                    }
+
+                    @Override
+                    public com.example.lecturesystem.modules.auth.vo.LoginVO wechatMiniLogin(com.example.lecturesystem.modules.auth.dto.WechatMiniLoginRequest request) {
+                        throw new UnsupportedOperationException("Not implemented in tests");
+                    }
+
+                    @Override
+                    public WechatMiniIdentity exchangeWechatMiniCode(String code) {
+                        throw new UnsupportedOperationException("Not implemented in tests");
+                    }
+                },
+                DEFAULT_PASSWORD
+        );
     }
 
     @Autowired
     public UserServiceImpl(UserMapper userMapper,
+                           WechatMpPendingBindMapper wechatMpPendingBindMapper,
                            OperationLogService operationLogService,
                            DataScopeService dataScopeService,
                            AuthService authService) {
-        this(userMapper, operationLogService, dataScopeService, authService, DEFAULT_PASSWORD);
+        this(userMapper, wechatMpPendingBindMapper, operationLogService, dataScopeService, authService, DEFAULT_PASSWORD);
     }
 
     UserServiceImpl(UserMapper userMapper,
+                    WechatMpPendingBindMapper wechatMpPendingBindMapper,
                     OperationLogService operationLogService,
                     DataScopeService dataScopeService,
                     AuthService authService,
                     String defaultPassword) {
         this.userMapper = userMapper;
+        this.wechatMpPendingBindMapper = wechatMpPendingBindMapper;
         this.operationLogService = operationLogService;
         this.dataScopeService = dataScopeService;
         this.authService = authService;
@@ -252,7 +297,91 @@ public class UserServiceImpl implements UserService {
         result.put("unionIdPresent", unionId != null);
         return result;
     }
+        @Override
+    public Object queryWechatMpPendingBindList() {
+        requireAdmin();
+        return wechatMpPendingBindMapper.queryPendingList();
+    }
 
+    @Override
+    @Transactional
+    public Object bindWechatMpPending(BindWechatMpPendingRequest request) {
+        requireAdmin();
+
+        UserEntity targetUser = requireUser(request.getUserId());
+        WechatMpPendingBindEntity pending = wechatMpPendingBindMapper.findById(request.getPendingBindId());
+        if (pending == null || !"PENDING".equalsIgnoreCase(trimToNull(pending.getBindStatus()))) {
+            throw new IllegalArgumentException("待绑定记录不存在或已处理");
+        }
+
+        String pendingOpenId = trimToNull(pending.getOpenId());
+        String pendingUnionId = trimToNull(pending.getUnionId());
+        if (pendingOpenId == null && pendingUnionId == null) {
+            throw new IllegalArgumentException("待绑定记录缺少微信身份信息，无法完成绑定");
+        }
+
+        String currentOpenId = trimToNull(targetUser.getWechatOpenId());
+        String currentUnionId = trimToNull(targetUser.getWechatUnionId());
+
+        if (currentOpenId != null && pendingOpenId != null && !currentOpenId.equals(pendingOpenId)) {
+            throw new IllegalArgumentException("当前用户已绑定其他微信公众号 openid，请先核实后再处理");
+        }
+        if (currentUnionId != null && pendingUnionId != null && !currentUnionId.equals(pendingUnionId)) {
+            throw new IllegalArgumentException("当前用户已绑定其他微信公众号 unionid，请先核实后再处理");
+        }
+
+        if (pendingOpenId != null) {
+            UserEntity openIdOwner = userMapper.findByWechatOpenId(pendingOpenId);
+            if (openIdOwner != null && !openIdOwner.getId().equals(targetUser.getId())) {
+                throw new IllegalArgumentException("该微信公众号 openid 已被其他用户绑定，禁止覆盖");
+            }
+        }
+
+        if (pendingUnionId != null) {
+            UserEntity unionIdOwner = userMapper.findByWechatUnionId(pendingUnionId);
+            if (unionIdOwner != null && !unionIdOwner.getId().equals(targetUser.getId())) {
+                throw new IllegalArgumentException("该微信公众号 unionid 已被其他用户绑定，禁止覆盖");
+            }
+        }
+
+        String nextOpenId = pendingOpenId != null ? pendingOpenId : currentOpenId;
+        String nextUnionId = pendingUnionId != null ? pendingUnionId : currentUnionId;
+
+        int updated = userMapper.updateWechatBinding(
+                targetUser.getId(),
+                nextOpenId,
+                nextUnionId,
+                currentOperator(),
+                LocalDateTime.now()
+        );
+        if (updated <= 0) {
+            throw new IllegalStateException("微信公众号绑定失败，请稍后重试");
+        }
+
+        int markUpdated = wechatMpPendingBindMapper.updateBindSuccess(
+                pending.getId(),
+                targetUser.getId(),
+                targetUser.getUsername(),
+                "管理员在组织架构中完成公众号绑定"
+        );
+        if (markUpdated <= 0) {
+            throw new IllegalStateException("待绑定记录更新失败，请稍后重试");
+        }
+
+        operationLogService.log(
+                "USER",
+                "BIND_WECHAT_MP_PENDING",
+                targetUser.getId(),
+                "管理员为用户 " + targetUser.getUsername() + " 绑定微信公众号待绑定记录，pendingId=" + pending.getId()
+        );
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("userId", targetUser.getId());
+        result.put("pendingBindId", pending.getId());
+        result.put("openIdBound", nextOpenId != null);
+        result.put("unionIdBound", nextUnionId != null);
+        return result;
+    }
     @Override
     @Transactional
     public void deleteUser(Long userId) {

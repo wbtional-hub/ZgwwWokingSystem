@@ -122,6 +122,9 @@
             <div class="detail-actions">
               <van-button block type="success" @click="openCreateDialog(state.selectedNode)">新增下级</van-button>
               <van-button block plain type="primary" @click="openEditDialog(state.selectedNode)">编辑节点</van-button>
+              <van-button block plain type="success" @click="openWechatMpPendingBindDialog(state.selectedNode)">
+    绑定待绑定微信
+  </van-button>
               <van-button block plain type="primary" @click="openModulePermissionDialog(state.selectedNode)">可访问模块</van-button>
               <van-button block plain type="warning" @click="openMoveDialog(state.selectedNode)">调整上级</van-button>
               <van-button
@@ -246,12 +249,57 @@
     <van-popup v-model:show="state.unitPickerVisible" position="bottom" round>
       <van-picker :columns="unitColumns" @confirm="handleUnitConfirm" @cancel="state.unitPickerVisible = false" />
     </van-popup>
+    <van-popup v-model:show="state.wechatMpPendingVisible" position="bottom" round>
+      <div class="popup-body">
+        <div class="popup-title">绑定待绑定微信公众号</div>
+        <div class="popup-tip">当前用户：{{ state.wechatMpPendingUserLabel || '-' }}</div>
 
+        <van-loading v-if="state.wechatMpPendingLoading" class="section-loading" size="18px">
+          待绑定记录加载中...
+        </van-loading>
+
+        <template v-else>
+          <van-empty v-if="!state.wechatMpPendingList.length" description="当前没有待绑定微信公众号记录" />
+
+          <van-radio-group v-else v-model="state.wechatMpPendingSelectedId" class="pending-bind-list">
+            <label
+              v-for="item in state.wechatMpPendingList"
+              :key="item.id"
+              class="pending-bind-card"
+            >
+              <van-radio :name="item.id" />
+              <div class="pending-bind-card__content">
+                <div class="pending-bind-card__title">
+                  记录 #{{ item.id }} · OpenId：{{ maskWechatIdentity(item.openId) }}
+                </div>
+                <div class="pending-bind-card__meta">UnionId：{{ maskWechatIdentity(item.unionId) }}</div>
+                <div class="pending-bind-card__meta">来源IP：{{ item.requestIp || '-' }}</div>
+                <div class="pending-bind-card__meta">时间：{{ formatPendingTime(item.updatedAt || item.createdAt) }}</div>
+                <div class="pending-bind-card__meta">备注：{{ item.remark || '-' }}</div>
+              </div>
+            </label>
+          </van-radio-group>
+        </template>
+
+        <div class="popup-actions">
+          <van-button block plain @click="closeWechatMpPendingDialog">取消</van-button>
+          <van-button
+            block
+            type="primary"
+            :loading="state.wechatMpPendingBinding"
+            :disabled="state.wechatMpPendingLoading || !state.wechatMpPendingSelectedId"
+            @click="submitWechatMpPendingBind"
+          >
+            确认绑定
+          </van-button>
+        </div>
+      </div>
+    </van-popup>
     <van-popup v-model:show="state.modulePermissionVisible" position="bottom" round>
       <div class="popup-body">
         <div class="popup-title">可访问模块配置</div>
         <div class="popup-tip">当前用户：{{ state.modulePermissionUserLabel || '-' }}</div>
-        <div class="popup-tip subtle-tip">首页与个人中心保留为基础页，不参与本轮模块授权配置。</div>
+        <div class="popup-tip subtle-tip">以下按左侧菜单逐项授权，勾选什么，左侧就显示什么。</div>
         <van-loading v-if="state.modulePermissionLoading" class="section-loading" size="18px">模块权限加载中...</van-loading>
         <template v-else>
           <van-checkbox-group v-model="state.modulePermissionForm.moduleCodes" class="module-permission-list">
@@ -296,6 +344,7 @@ import {
   saveUserModulePermissionsApi
 } from '@/api/user-module-permission'
 import {
+  bindWechatMpPendingApi,
   createChildUser,
   deleteOrgNode,
   moveOrgNode,
@@ -303,6 +352,7 @@ import {
   queryOrgChildren,
   queryOrgTree,
   queryUnitOptions,
+  queryWechatMpPendingBindList,
   toggleOrgNodeStatus,
   updateOrgNode
 } from '@/api/orgtree'
@@ -322,11 +372,20 @@ const statusColumns = [
 ]
 
 const state = reactive({
+    
   loading: false,
   tree: [],
   selectedNode: null,
   children: [],
   ancestors: [],
+
+  wechatMpPendingVisible: false,
+  wechatMpPendingLoading: false,
+  wechatMpPendingBinding: false,
+  wechatMpPendingList: [],
+  wechatMpPendingSelectedId: null,
+  wechatMpPendingUserLabel: '',
+
   createVisible: false,
   editVisible: false,
   moveVisible: false,
@@ -461,7 +520,14 @@ onMounted(() => {
   loadUnitOptions()
   refreshTree()
 })
-
+function closeWechatMpPendingDialog() {
+  state.wechatMpPendingVisible = false
+  state.wechatMpPendingLoading = false
+  state.wechatMpPendingBinding = false
+  state.wechatMpPendingSelectedId = null
+  state.wechatMpPendingList = []
+  state.wechatMpPendingUserLabel = ''
+}
 function statusLabel(status) {
   return Number(status) === 1 ? '启用' : '停用'
 }
@@ -589,7 +655,83 @@ function openMoveDialog(node) {
   state.moveNodeLabel = `${normalized.realName || normalized.username} · ${normalized.username}`
   state.moveVisible = true
 }
+async function openWechatMpPendingBindDialog(node) {
+  const normalized = normalizeNode(node)
+  state.wechatMpPendingLoading = false
+  state.wechatMpPendingBinding = false
+  state.wechatMpPendingList = []
+  state.wechatMpPendingSelectedId = null
+  state.wechatMpPendingUserLabel = `${normalized.realName || normalized.username} · ${normalized.username}`
+  state.wechatMpPendingVisible = true
+  await loadWechatMpPendingBindList()
+}
 
+async function loadWechatMpPendingBindList() {
+  state.wechatMpPendingLoading = true
+  try {
+    const list = ensureSuccess(await queryWechatMpPendingBindList()) || []
+    state.wechatMpPendingList = Array.isArray(list) ? list.map(normalizePendingBind) : []
+    state.wechatMpPendingSelectedId = state.wechatMpPendingList[0]?.id ?? null
+  } catch (error) {
+    state.wechatMpPendingList = []
+    closeWechatMpPendingDialog()
+    showToast(error.message || '待绑定微信公众号列表加载失败')
+  } finally {
+    state.wechatMpPendingLoading = false
+  }
+}
+
+async function submitWechatMpPendingBind() {
+  if (!state.selectedNode?.id) {
+    showToast('请先选择当前节点')
+    return
+  }
+  if (!state.wechatMpPendingSelectedId) {
+    showToast('请选择一条待绑定记录')
+    return
+  }
+
+  state.wechatMpPendingBinding = true
+  try {
+    ensureSuccess(await bindWechatMpPendingApi({
+      userId: state.selectedNode.id,
+      pendingBindId: state.wechatMpPendingSelectedId
+    }))
+    closeWechatMpPendingDialog()
+    showToast('公众号绑定成功')
+    await refreshTree(state.selectedNode.id)
+  } catch (error) {
+    showToast(error.message || '公众号绑定失败')
+  } finally {
+    state.wechatMpPendingBinding = false
+  }
+}
+
+function normalizePendingBind(item) {
+  return {
+    ...item,
+    id: Number(item.id),
+    bindUserId: item.bindUserId == null ? null : Number(item.bindUserId)
+  }
+}
+
+function maskWechatIdentity(value) {
+  const text = trimToNull(value)
+  if (!text) {
+    return '-'
+  }
+  if (text.length <= 8) {
+    return '****'
+  }
+  return `${text.slice(0, 4)}****${text.slice(-4)}`
+}
+
+function formatPendingTime(value) {
+  if (!value) {
+    return '-'
+  }
+  return String(value).replace('T', ' ').slice(0, 19)
+}
 function openCreateStatusPicker() {
   state.statusPickerMode = 'create'
   state.statusPickerVisible = true
@@ -1035,5 +1177,38 @@ function trimToNull(value) {
   .page-grid {
     grid-template-columns: 1fr;
   }
+}
+.pending-bind-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.pending-bind-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.pending-bind-card__content {
+  min-width: 0;
+}
+
+.pending-bind-card__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.pending-bind-card__meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6b7280;
+  word-break: break-all;
 }
 </style>

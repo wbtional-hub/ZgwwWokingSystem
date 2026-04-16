@@ -24,8 +24,11 @@ import java.time.format.DateTimeFormatter;
 
 @Service
 public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyService {
-    private static final String PATCH_TYPE_CHECK_IN = "CHECK_IN";
-    private static final String PATCH_TYPE_CHECK_OUT = "CHECK_OUT";
+    private static final String PATCH_TYPE_AM_ON = "AM_ON";
+    private static final String PATCH_TYPE_AM_OFF = "AM_OFF";
+    private static final String PATCH_TYPE_PM_ON = "PM_ON";
+    private static final String PATCH_TYPE_PM_OFF = "PM_OFF";
+
     private static final String PATCH_STATUS_PENDING = "PENDING";
     private static final String PATCH_STATUS_APPROVED = "APPROVED";
     private static final String PATCH_STATUS_REJECTED = "REJECTED";
@@ -57,6 +60,7 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
         if (currentUser.getUnitId() == null) {
             throw new IllegalArgumentException("当前用户未绑定单位，无法提交补卡申请");
         }
+
         LocalDate attendanceDate = parseDate(request.getAttendanceDate());
         LocalDateTime patchTime = parseDateTime(request.getPatchTime());
         String patchType = normalizePatchType(request.getPatchType());
@@ -67,16 +71,13 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
         if (!attendanceDate.equals(patchTime.toLocalDate())) {
             throw new IllegalArgumentException("补卡时间必须属于考勤日期当天");
         }
+
         if (attendancePatchApplyMapper.findPendingByUserDateType(currentUser.getId(), attendanceDate, patchType) != null) {
             throw new IllegalArgumentException("当天该类型补卡申请已存在待审批记录，请勿重复提交");
         }
+
         AttendanceRecordEntity existedRecord = attendanceMapper.findByUserIdAndDate(currentUser.getId(), attendanceDate);
-        if (PATCH_TYPE_CHECK_IN.equals(patchType) && existedRecord != null && existedRecord.getCheckInTime() != null) {
-            throw new IllegalArgumentException("当天已存在上班打卡记录，无需补上班卡");
-        }
-        if (PATCH_TYPE_CHECK_OUT.equals(patchType) && existedRecord != null && existedRecord.getCheckOutTime() != null) {
-            throw new IllegalArgumentException("当天已存在下班打卡记录，无需补下班卡");
-        }
+        validatePatchSubmitAgainstRecord(existedRecord, patchType, patchTime);
 
         AttendancePatchApplyEntity entity = new AttendancePatchApplyEntity();
         entity.setUserId(currentUser.getId());
@@ -137,7 +138,9 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
         AttendancePatchApplyEntity entity = requirePatchApply(id);
         UserEntity currentUser = currentUserFacade.currentUserEntity();
         validateReviewableApply(currentUser, entity);
+
         applyApprovedAttendance(entity);
+
         entity.setStatus(PATCH_STATUS_APPROVED);
         entity.setApproveUserId(currentUser.getId());
         entity.setApproveTime(LocalDateTime.now());
@@ -166,51 +169,23 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
 
     private void applyApprovedAttendance(AttendancePatchApplyEntity applyEntity) {
         AttendanceRecordEntity record = attendanceMapper.findByUserIdAndDate(applyEntity.getUserId(), applyEntity.getAttendanceDate());
+        validatePatchSubmitAgainstRecord(record, applyEntity.getPatchType(), applyEntity.getPatchTime());
+
+        boolean isInsert = false;
         if (record == null) {
-            if (!PATCH_TYPE_CHECK_IN.equals(applyEntity.getPatchType())) {
-                throw new IllegalArgumentException("请先有上班记录，或先补上班卡");
-            }
-            AttendanceRecordEntity insertEntity = new AttendanceRecordEntity();
-            insertEntity.setUnitId(applyEntity.getUnitId());
-            insertEntity.setUserId(applyEntity.getUserId());
-            insertEntity.setAttendanceDate(applyEntity.getAttendanceDate());
-            insertEntity.setCheckInTime(applyEntity.getPatchTime());
-            insertEntity.setCheckInAddress(PATCH_ADDRESS_TEXT);
-            insertEntity.setCheckType(PATCH_TYPE_CHECK_IN);
-            insertEntity.setCheckTime(applyEntity.getPatchTime());
-            insertEntity.setCheckInResult(AttendanceCheckInStatus.CHECK_IN_SUCCESS);
-            insertEntity.setLocationSource("PATCH_APPROVAL");
-            insertEntity.setLocationProvider("BACKOFFICE");
-            insertEntity.setValidFlag(1);
-            attendanceMapper.insert(insertEntity);
-            return;
+            record = new AttendanceRecordEntity();
+            record.setUnitId(applyEntity.getUnitId());
+            record.setUserId(applyEntity.getUserId());
+            record.setAttendanceDate(applyEntity.getAttendanceDate());
+            record.setValidFlag(1);
+            isInsert = true;
         }
 
-        if (PATCH_TYPE_CHECK_IN.equals(applyEntity.getPatchType())) {
-            if (record.getCheckInTime() != null) {
-                throw new IllegalArgumentException("当天已存在上班打卡记录，不能重复补上班卡");
-            }
-            record.setCheckInTime(applyEntity.getPatchTime());
-            if (normalizeText(record.getCheckInAddress()) == null) {
-                record.setCheckInAddress(PATCH_ADDRESS_TEXT);
-            }
-        } else {
-            if (record.getCheckInTime() == null) {
-                throw new IllegalArgumentException("请先有上班记录，或先补上班卡");
-            }
-            if (record.getCheckOutTime() != null) {
-                throw new IllegalArgumentException("当天已存在下班打卡记录，不能重复补下班卡");
-            }
-            if (!applyEntity.getPatchTime().isAfter(record.getCheckInTime())) {
-                throw new IllegalArgumentException("补下班卡时间必须晚于上班时间");
-            }
-            record.setCheckOutTime(applyEntity.getPatchTime());
-            if (normalizeText(record.getCheckOutAddress()) == null) {
-                record.setCheckOutAddress(PATCH_ADDRESS_TEXT);
-            }
-        }
-        record.setCheckType(resolveCheckType(record.getCheckInTime(), record.getCheckOutTime()));
-        record.setCheckTime(resolveCheckTime(record.getCheckType(), record.getCheckInTime(), record.getCheckOutTime()));
+        applyPatchTimeToRecord(record, applyEntity.getPatchType(), applyEntity.getPatchTime());
+        applyPatchAddressToRecord(record, applyEntity.getPatchType());
+
+        record.setCheckType(resolveLastCheckType(record));
+        record.setCheckTime(resolveLastCheckTime(record));
         record.setCheckInResult(resolveRecordStatus(record));
         record.setCheckInFailReason(null);
         record.setLocationSource("PATCH_APPROVAL");
@@ -218,7 +193,180 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
         if (record.getValidFlag() == null) {
             record.setValidFlag(1);
         }
-        attendanceMapper.update(record);
+
+        if (isInsert) {
+            attendanceMapper.insert(record);
+        } else {
+            attendanceMapper.update(record);
+        }
+    }
+
+    private void validatePatchSubmitAgainstRecord(AttendanceRecordEntity record,
+                                                  String patchType,
+                                                  LocalDateTime patchTime) {
+        if (PATCH_TYPE_AM_ON.equals(patchType)) {
+            validateAmOnPatch(record, patchTime);
+            return;
+        }
+        if (PATCH_TYPE_AM_OFF.equals(patchType)) {
+            validateAmOffPatch(record, patchTime);
+            return;
+        }
+        if (PATCH_TYPE_PM_ON.equals(patchType)) {
+            validatePmOnPatch(record, patchTime);
+            return;
+        }
+        if (PATCH_TYPE_PM_OFF.equals(patchType)) {
+            validatePmOffPatch(record, patchTime);
+            return;
+        }
+        throw new IllegalArgumentException("补卡类型不合法");
+    }
+
+    private void validateAmOnPatch(AttendanceRecordEntity record, LocalDateTime patchTime) {
+        if (record == null) {
+            return;
+        }
+        if (record.getCheckInTime() != null) {
+            throw new IllegalArgumentException("当天已存在上午上班打卡记录，无需补上午上班卡");
+        }
+        if (record.getAmOffTime() != null && !patchTime.isBefore(record.getAmOffTime())) {
+            throw new IllegalArgumentException("上午上班补卡时间必须早于上午下班时间");
+        }
+        if (record.getPmOnTime() != null && !patchTime.isBefore(record.getPmOnTime())) {
+            throw new IllegalArgumentException("上午上班补卡时间必须早于下午上班时间");
+        }
+        if (record.getCheckOutTime() != null && !patchTime.isBefore(record.getCheckOutTime())) {
+            throw new IllegalArgumentException("上午上班补卡时间必须早于下午下班时间");
+        }
+    }
+
+    private void validateAmOffPatch(AttendanceRecordEntity record, LocalDateTime patchTime) {
+        if (record == null || record.getCheckInTime() == null) {
+            throw new IllegalArgumentException("请先有上午上班记录，或先补上午上班卡");
+        }
+        if (record.getAmOffTime() != null) {
+            throw new IllegalArgumentException("当天已存在上午下班打卡记录，无需补上午下班卡");
+        }
+        if (!patchTime.isAfter(record.getCheckInTime())) {
+            throw new IllegalArgumentException("上午下班补卡时间必须晚于上午上班时间");
+        }
+        if (record.getPmOnTime() != null && !patchTime.isBefore(record.getPmOnTime())) {
+            throw new IllegalArgumentException("上午下班补卡时间必须早于下午上班时间");
+        }
+        if (record.getCheckOutTime() != null && !patchTime.isBefore(record.getCheckOutTime())) {
+            throw new IllegalArgumentException("上午下班补卡时间必须早于下午下班时间");
+        }
+    }
+
+    private void validatePmOnPatch(AttendanceRecordEntity record, LocalDateTime patchTime) {
+        if (record == null || record.getAmOffTime() == null) {
+            throw new IllegalArgumentException("请先有上午下班记录，或先补上午下班卡");
+        }
+        if (record.getPmOnTime() != null) {
+            throw new IllegalArgumentException("当天已存在下午上班打卡记录，无需补下午上班卡");
+        }
+        if (!patchTime.isAfter(record.getAmOffTime())) {
+            throw new IllegalArgumentException("下午上班补卡时间必须晚于上午下班时间");
+        }
+        if (record.getCheckOutTime() != null && !patchTime.isBefore(record.getCheckOutTime())) {
+            throw new IllegalArgumentException("下午上班补卡时间必须早于下午下班时间");
+        }
+    }
+
+    private void validatePmOffPatch(AttendanceRecordEntity record, LocalDateTime patchTime) {
+        if (record == null || record.getPmOnTime() == null) {
+            throw new IllegalArgumentException("请先有下午上班记录，或先补下午上班卡");
+        }
+        if (record.getCheckOutTime() != null) {
+            throw new IllegalArgumentException("当天已存在下午下班打卡记录，无需补下午下班卡");
+        }
+        if (!patchTime.isAfter(record.getPmOnTime())) {
+            throw new IllegalArgumentException("下午下班补卡时间必须晚于下午上班时间");
+        }
+    }
+
+    private void applyPatchTimeToRecord(AttendanceRecordEntity record,
+                                        String patchType,
+                                        LocalDateTime patchTime) {
+        if (PATCH_TYPE_AM_ON.equals(patchType)) {
+            record.setCheckInTime(patchTime);
+            return;
+        }
+        if (PATCH_TYPE_AM_OFF.equals(patchType)) {
+            record.setAmOffTime(patchTime);
+            return;
+        }
+        if (PATCH_TYPE_PM_ON.equals(patchType)) {
+            record.setPmOnTime(patchTime);
+            return;
+        }
+        if (PATCH_TYPE_PM_OFF.equals(patchType)) {
+            record.setCheckOutTime(patchTime);
+            return;
+        }
+        throw new IllegalArgumentException("补卡类型不合法");
+    }
+
+    private void applyPatchAddressToRecord(AttendanceRecordEntity record, String patchType) {
+        if (PATCH_TYPE_AM_ON.equals(patchType)) {
+            if (normalizeText(record.getCheckInAddress()) == null) {
+                record.setCheckInAddress(PATCH_ADDRESS_TEXT);
+            }
+            return;
+        }
+        if (PATCH_TYPE_AM_OFF.equals(patchType)) {
+            if (normalizeText(record.getAmOffAddress()) == null) {
+                record.setAmOffAddress(PATCH_ADDRESS_TEXT);
+            }
+            return;
+        }
+        if (PATCH_TYPE_PM_ON.equals(patchType)) {
+            if (normalizeText(record.getPmOnAddress()) == null) {
+                record.setPmOnAddress(PATCH_ADDRESS_TEXT);
+            }
+            return;
+        }
+        if (PATCH_TYPE_PM_OFF.equals(patchType)) {
+            if (normalizeText(record.getCheckOutAddress()) == null) {
+                record.setCheckOutAddress(PATCH_ADDRESS_TEXT);
+            }
+        }
+    }
+
+    private String resolveLastCheckType(AttendanceRecordEntity record) {
+        if (record.getCheckOutTime() != null) {
+            return PATCH_TYPE_PM_OFF;
+        }
+        if (record.getPmOnTime() != null) {
+            return PATCH_TYPE_PM_ON;
+        }
+        if (record.getAmOffTime() != null) {
+            return PATCH_TYPE_AM_OFF;
+        }
+        if (record.getCheckInTime() != null) {
+            return PATCH_TYPE_AM_ON;
+        }
+        return PATCH_TYPE_AM_ON;
+    }
+
+    private LocalDateTime resolveLastCheckTime(AttendanceRecordEntity record) {
+        if (record.getCheckOutTime() != null) {
+            return record.getCheckOutTime();
+        }
+        if (record.getPmOnTime() != null) {
+            return record.getPmOnTime();
+        }
+        if (record.getAmOffTime() != null) {
+            return record.getAmOffTime();
+        }
+        return record.getCheckInTime();
+    }
+
+    private String resolveRecordStatus(AttendanceRecordEntity record) {
+        return record.getCheckOutTime() == null
+                ? AttendanceCheckInStatus.CHECK_IN_SUCCESS
+                : AttendanceCheckInStatus.CHECK_OUT_SUCCESS;
     }
 
     private AttendancePatchApplyEntity requirePatchApply(Long id) {
@@ -279,21 +427,6 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
         }
     }
 
-    private String resolveCheckType(LocalDateTime checkInTime, LocalDateTime checkOutTime) {
-        return checkOutTime != null ? PATCH_TYPE_CHECK_OUT : PATCH_TYPE_CHECK_IN;
-    }
-
-    private LocalDateTime resolveCheckTime(String checkType, LocalDateTime checkInTime, LocalDateTime checkOutTime) {
-        if (PATCH_TYPE_CHECK_OUT.equals(checkType) && checkOutTime != null) {
-            return checkOutTime;
-        }
-        return checkInTime != null ? checkInTime : checkOutTime;
-    }
-
-    private String resolveRecordStatus(AttendanceRecordEntity record) {
-        return record.getCheckOutTime() == null ? AttendanceCheckInStatus.CHECK_IN_SUCCESS : AttendanceCheckInStatus.CHECK_OUT_SUCCESS;
-    }
-
     private LocalDate parseDate(String text) {
         return LocalDate.parse(text);
     }
@@ -316,7 +449,10 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
             throw new IllegalArgumentException("补卡类型不能为空");
         }
         String upper = normalized.toUpperCase();
-        if (!PATCH_TYPE_CHECK_IN.equals(upper) && !PATCH_TYPE_CHECK_OUT.equals(upper)) {
+        if (!PATCH_TYPE_AM_ON.equals(upper)
+                && !PATCH_TYPE_AM_OFF.equals(upper)
+                && !PATCH_TYPE_PM_ON.equals(upper)
+                && !PATCH_TYPE_PM_OFF.equals(upper)) {
             throw new IllegalArgumentException("补卡类型不合法");
         }
         return upper;

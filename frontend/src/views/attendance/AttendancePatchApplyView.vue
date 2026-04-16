@@ -1,5 +1,5 @@
 <template>
-  <AppPageShell title="补打卡申请" description="员工可在 PC 端提交补上班卡、补下班卡申请，并查看自己的审批进度。" help-key="attendance">
+  <AppPageShell title="补打卡申请" description="员工可在 PC 端提交上午上班、上午下班、下午上班、下午下班补卡申请，并查看自己的审批进度。" help-key="attendance">
     <template #actions>
       <van-button plain type="primary" :disabled="pageBusy" @click="fetchList">刷新列表</van-button>
     </template>
@@ -16,8 +16,9 @@
         <label class="field">
           <span class="field-label">补卡类型</span>
           <select v-model="form.patchType" class="field-input" :disabled="pageBusy">
-            <option value="CHECK_IN">补上班卡</option>
-            <option value="CHECK_OUT">补下班卡</option>
+            <option v-for="option in PATCH_TYPE_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
           </select>
         </label>
         <label class="field">
@@ -27,7 +28,14 @@
       </div>
       <label class="field">
         <span class="field-label">补卡原因</span>
-        <textarea v-model.trim="form.reason" class="field-textarea" rows="4" maxlength="500" :disabled="pageBusy" placeholder="请填写忘打卡、设备异常、外出等具体原因"></textarea>
+        <textarea
+          v-model.trim="form.reason"
+          class="field-textarea"
+          rows="4"
+          maxlength="500"
+          :disabled="pageBusy"
+          placeholder="请填写忘打卡、设备异常、外出等具体原因"
+        ></textarea>
       </label>
       <div class="panel-actions">
         <van-button type="primary" :loading="submitting" :disabled="pageBusy" @click="handleSubmit">提交补卡申请</van-button>
@@ -44,6 +52,15 @@
             <option value="PENDING">待审批</option>
             <option value="APPROVED">已通过</option>
             <option value="REJECTED">已拒绝</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">补卡类型</span>
+          <select v-model="filters.patchType" class="field-input" :disabled="pageBusy" @change="handleSearch">
+            <option value="">全部类型</option>
+            <option v-for="option in PATCH_TYPE_OPTIONS" :key="`filter-${option.value}`" :value="option.value">
+              {{ option.label }}
+            </option>
           </select>
         </label>
         <label class="field">
@@ -95,19 +112,27 @@ import AppPageShell from '@/components/layout/AppPageShell.vue'
 import AttendanceWorkspaceTabs from '@/components/attendance/AttendanceWorkspaceTabs.vue'
 import { queryMyAttendancePatchApplyPageApi, submitAttendancePatchApplyApi } from '@/api/attendance'
 
+const PATCH_TYPE_OPTIONS = [
+  { value: 'AM_ON', label: '补上午上班卡' },
+  { value: 'AM_OFF', label: '补上午下班卡' },
+  { value: 'PM_ON', label: '补下午上班卡' },
+  { value: 'PM_OFF', label: '补下午下班卡' }
+]
+
 const list = ref([])
 const loading = ref(false)
 const submitting = ref(false)
 
 const form = reactive({
   attendanceDate: todayDate(),
-  patchType: 'CHECK_IN',
+  patchType: 'AM_ON',
   patchTime: nowDateTimeLocal(),
   reason: ''
 })
 
 const filters = reactive({
   status: '',
+  patchType: '',
   dateFrom: '',
   dateTo: ''
 })
@@ -132,6 +157,7 @@ async function fetchList() {
       pageNo: pagination.pageNo,
       pageSize: pagination.pageSize,
       status: filters.status || undefined,
+      patchType: filters.patchType || undefined,
       dateFrom: filters.dateFrom || undefined,
       dateTo: filters.dateTo || undefined
     })
@@ -182,6 +208,7 @@ function handleSearch() {
 
 function handleReset() {
   filters.status = ''
+  filters.patchType = ''
   filters.dateFrom = ''
   filters.dateTo = ''
   pagination.pageNo = 1
@@ -198,7 +225,11 @@ function changePage(offset) {
 }
 
 function patchTypeLabel(value) {
-  return value === 'CHECK_OUT' ? '补下班卡' : '补上班卡'
+  if (value === 'AM_ON') return '补上午上班卡'
+  if (value === 'AM_OFF') return '补上午下班卡'
+  if (value === 'PM_ON') return '补下午上班卡'
+  if (value === 'PM_OFF') return '补下午下班卡'
+  return value || '-'
 }
 
 function statusLabel(value) {

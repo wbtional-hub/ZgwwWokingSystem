@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.lecturesystem.modules.auth.mapper.WechatMpPendingBindMapper">
+
+    <resultMap id="WechatMpPendingBindMap" type="com.example.lecturesystem.modules.auth.entity.WechatMpPendingBindEntity">
+        <id property="id" column="id"/>
+        <result property="openId" column="open_id"/>
+        <result property="unionId" column="union_id"/>
+        <result property="sourceType" column="source_type"/>
+        <result property="bindStatus" column="bind_status"/>
+        <result property="bindUserId" column="bind_user_id"/>
+        <result property="bindUsername" column="bind_username"/>
+        <result property="requestIp" column="request_ip"/>
+        <result property="userAgent" column="user_agent"/>
+        <result property="remark" column="remark"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id,
+        open_id,
+        union_id,
+        source_type,
+        bind_status,
+        bind_user_id,
+        bind_username,
+        request_ip,
+        user_agent,
+        remark,
+        created_at,
+        updated_at
+    </sql>
+
+    <select id="findById" resultMap="WechatMpPendingBindMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM sys_wechat_mp_pending_bind
+        WHERE id = #{id}
+        FETCH FIRST 1 ROWS ONLY
+    </select>
+
+    <select id="queryPendingList" resultMap="WechatMpPendingBindMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM sys_wechat_mp_pending_bind
+        WHERE bind_status = 'PENDING'
+        ORDER BY updated_at DESC, created_at DESC, id DESC
+    </select>
+
+    <select id="findPendingByIdentity" resultMap="WechatMpPendingBindMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM sys_wechat_mp_pending_bind
+        WHERE bind_status = 'PENDING'
+        <choose>
+            <when test="(openId != null and openId != '') or (unionId != null and unionId != '')">
+                <trim prefix="AND (" suffix=")" prefixOverrides="OR">
+                    <if test="openId != null and openId != ''">
+                        OR open_id = #{openId}
+                    </if>
+                    <if test="unionId != null and unionId != ''">
+                        OR union_id = #{unionId}
+                    </if>
+                </trim>
+            </when>
+            <otherwise>
+                AND 1 = 0
+            </otherwise>
+        </choose>
+        ORDER BY updated_at DESC, created_at DESC, id DESC
+        FETCH FIRST 1 ROWS ONLY
+    </select>
+
+    <insert id="insertPendingBind" parameterType="com.example.lecturesystem.modules.auth.entity.WechatMpPendingBindEntity">
+        INSERT INTO sys_wechat_mp_pending_bind (
+            id,
+            open_id,
+            union_id,
+            source_type,
+            bind_status,
+            bind_user_id,
+            bind_username,
+            request_ip,
+            user_agent,
+            remark,
+            created_at,
+            updated_at
+        ) VALUES (
+            nextval('seq_sys_wechat_mp_pending_bind'),
+            #{openId},
+            #{unionId},
+            #{sourceType},
+            #{bindStatus},
+            #{bindUserId},
+            #{bindUsername},
+            #{requestIp},
+            #{userAgent},
+            #{remark},
+            #{createdAt},
+            #{updatedAt}
+        )
+    </insert>
+
+    <update id="touchPendingBind">
+        UPDATE sys_wechat_mp_pending_bind
+        <set>
+            <if test="requestIp != null and requestIp != ''">
+                request_ip = #{requestIp},
+            </if>
+            <if test="userAgent != null and userAgent != ''">
+                user_agent = #{userAgent},
+            </if>
+            <if test="remark != null and remark != ''">
+                remark = #{remark},
+            </if>
+            updated_at = CURRENT_TIMESTAMP
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateBindSuccess">
+        UPDATE sys_wechat_mp_pending_bind
+        SET bind_status = 'BOUND',
+            bind_user_id = #{bindUserId},
+            bind_username = #{bindUsername},
+            remark = #{remark},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+          AND bind_status = 'PENDING'
+    </update>
+
+</mapper>

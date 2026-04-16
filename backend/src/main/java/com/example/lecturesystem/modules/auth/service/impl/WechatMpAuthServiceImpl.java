@@ -189,6 +189,18 @@ public class WechatMpAuthServiceImpl implements WechatMpAuthService {
         );
     }
 
+    @Override
+    public String buildPendingBindCallbackRedirect(WechatMpCallbackState callbackState, String openId, String unionId, String bindCode) {
+        WechatPendingBindCallbackPayload payload = new WechatPendingBindCallbackPayload(
+                true,
+                trimToNull(bindCode),
+                trimToNull(openId),
+                trimToNull(unionId),
+                normalizeReturnUrl(callbackState == null ? null : callbackState.returnUrl())
+        );
+        return buildLoginRedirect(payload.getReturnUrl(), null, null, encodeJson(payload));
+    }
+
     private String buildLoginRedirect(String returnUrl, String errorCode, String errorMessage, String successPayload) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(resolveFrontendBaseUrl() + LOGIN_PATH)
                 .queryParam("redirect", normalizeReturnUrl(returnUrl));
@@ -577,6 +589,46 @@ public class WechatMpAuthServiceImpl implements WechatMpAuthService {
             return returnUrl;
         }
     }
+
+    private static class WechatPendingBindCallbackPayload {
+    private final boolean needBind;
+    private final String bindCode;
+    private final String openId;
+    private final String unionId;
+    private final String returnUrl;
+
+    private WechatPendingBindCallbackPayload(boolean needBind,
+                                             String bindCode,
+                                             String openId,
+                                             String unionId,
+                                             String returnUrl) {
+        this.needBind = needBind;
+        this.bindCode = bindCode;
+        this.openId = openId;
+        this.unionId = unionId;
+        this.returnUrl = returnUrl;
+    }
+
+    public boolean isNeedBind() {
+        return needBind;
+    }
+
+    public String getBindCode() {
+        return bindCode;
+    }
+
+    public String getOpenId() {
+        return openId;
+    }
+
+    public String getUnionId() {
+        return unionId;
+    }
+
+    public String getReturnUrl() {
+        return returnUrl;
+    }
+}
 
     private static class WechatMpConfigSnapshot {
         private Boolean enabled;

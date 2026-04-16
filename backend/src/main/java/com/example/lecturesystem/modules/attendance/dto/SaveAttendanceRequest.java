@@ -10,9 +10,29 @@ public class SaveAttendanceRequest {
     @NotBlank(message = "考勤日期不能为空")
     private String attendanceDate;
 
+    /**
+     * 上午上班
+     */
     private String checkInTime;
+
+    /**
+     * 上午下班
+     */
+    private String amOffTime;
+
+    /**
+     * 下午上班
+     */
+    private String pmOnTime;
+
+    /**
+     * 下午下班
+     */
     private String checkOutTime;
+
     private String checkInAddress;
+    private String amOffAddress;
+    private String pmOnAddress;
     private String checkOutAddress;
 
     @NotNull(message = "有效状态不能为空")
@@ -50,6 +70,22 @@ public class SaveAttendanceRequest {
         this.checkInTime = checkInTime;
     }
 
+    public String getAmOffTime() {
+        return amOffTime;
+    }
+
+    public void setAmOffTime(String amOffTime) {
+        this.amOffTime = amOffTime;
+    }
+
+    public String getPmOnTime() {
+        return pmOnTime;
+    }
+
+    public void setPmOnTime(String pmOnTime) {
+        this.pmOnTime = pmOnTime;
+    }
+
     public String getCheckOutTime() {
         return checkOutTime;
     }
@@ -64,6 +100,22 @@ public class SaveAttendanceRequest {
 
     public void setCheckInAddress(String checkInAddress) {
         this.checkInAddress = checkInAddress;
+    }
+
+    public String getAmOffAddress() {
+        return amOffAddress;
+    }
+
+    public void setAmOffAddress(String amOffAddress) {
+        this.amOffAddress = amOffAddress;
+    }
+
+    public String getPmOnAddress() {
+        return pmOnAddress;
+    }
+
+    public void setPmOnAddress(String pmOnAddress) {
+        this.pmOnAddress = pmOnAddress;
     }
 
     public String getCheckOutAddress() {

@@ -26,8 +26,9 @@
           <span class="field-label">补卡类型</span>
           <select v-model="filters.patchType" class="field-input" :disabled="pageBusy">
             <option value="">全部类型</option>
-            <option value="CHECK_IN">补上班卡</option>
-            <option value="CHECK_OUT">补下班卡</option>
+            <option v-for="option in PATCH_TYPE_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
           </select>
         </label>
         <label class="field">
@@ -107,6 +108,13 @@ import { showToast } from 'vant'
 import AppPageShell from '@/components/layout/AppPageShell.vue'
 import AttendanceWorkspaceTabs from '@/components/attendance/AttendanceWorkspaceTabs.vue'
 import { approveAttendancePatchApplyApi, queryPendingAttendancePatchApplyPageApi, rejectAttendancePatchApplyApi } from '@/api/attendance'
+
+const PATCH_TYPE_OPTIONS = [
+  { value: 'AM_ON', label: '补上午上班卡' },
+  { value: 'AM_OFF', label: '补上午下班卡' },
+  { value: 'PM_ON', label: '补下午上班卡' },
+  { value: 'PM_OFF', label: '补下午下班卡' }
+]
 
 const list = ref([])
 const loading = ref(false)
@@ -222,7 +230,11 @@ async function submitReview() {
 }
 
 function patchTypeLabel(value) {
-  return value === 'CHECK_OUT' ? '补下班卡' : '补上班卡'
+  if (value === 'AM_ON') return '补上午上班卡'
+  if (value === 'AM_OFF') return '补上午下班卡'
+  if (value === 'PM_ON') return '补下午上班卡'
+  if (value === 'PM_OFF') return '补下午下班卡'
+  return value || '-'
 }
 
 function statusLabel(value) {

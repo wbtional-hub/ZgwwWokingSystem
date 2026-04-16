@@ -61,12 +61,19 @@ public class AttendanceServiceImpl implements AttendanceService {
     private static final String RISK_LEVEL_HIGH = "HIGH";
     private static final String RISK_LEVEL_MEDIUM = "MEDIUM";
     private static final String RISK_LEVEL_LOW = "LOW";
-    private static final String CHECK_ACTION_IN = "CHECK_IN";
-    private static final String CHECK_ACTION_OUT = "CHECK_OUT";
-    private static final String REASON_CHECK_IN_COMPLETED = "今日已完成上班打卡";
-    private static final String REASON_CHECK_OUT_COMPLETED = "今日已完成下班打卡";
-    private static final String REASON_CHECK_IN_REQUIRED = "请先完成上班打卡";
+    
+    private static final String CHECK_ACTION_AM_ON = "AM_ON";
+    private static final String CHECK_ACTION_AM_OFF = "AM_OFF";
+    private static final String CHECK_ACTION_PM_ON = "PM_ON";
+    private static final String CHECK_ACTION_PM_OFF = "PM_OFF";
+
+    private static final String REASON_AM_ON_COMPLETED = "今日已完成上午上班打卡";
+    private static final String REASON_AM_OFF_COMPLETED = "今日已完成上午下班打卡";
+    private static final String REASON_PM_ON_COMPLETED = "今日已完成下午上班打卡";
+    private static final String REASON_PM_OFF_COMPLETED = "今日已完成下午下班打卡";
+    private static final String REASON_CHECK_IN_REQUIRED = "请先完成上一节点打卡";
     private static final String REASON_TODAY_FINISHED = "今日打卡已全部完成";
+
     private static final String TREND_RISING = "RISING";
     private static final String TREND_FALLING = "FALLING";
     private static final String TREND_STABLE = "STABLE";
@@ -695,77 +702,102 @@ public class AttendanceServiceImpl implements AttendanceService {
     }
 
     @Override
-    @Transactional
-    public Long saveAttendance(SaveAttendanceRequest request) {
-        LoginUser loginUser = currentLoginUser();
-        Long targetUserId = request.getUserId() == null ? loginUser.getUserId() : request.getUserId();
-        validateManageableUser(loginUser.getUserId(), targetUserId);
-        UserEntity targetUser = requireCurrentUser(targetUserId);
-        LocalDate attendanceDate = LocalDate.parse(request.getAttendanceDate());
-        LocalDateTime checkInTime = parseDateTime(request.getCheckInTime());
-        LocalDateTime checkOutTime = parseDateTime(request.getCheckOutTime());
-        validateAttendanceTimes(attendanceDate, checkInTime, checkOutTime);
-        String checkType = resolveCheckType(checkInTime, checkOutTime);
-        LocalDateTime checkTime = resolveCheckTime(checkType, checkInTime, checkOutTime);
-        if (checkTime == null) {
-            throw new IllegalArgumentException("补录/编辑考勤时必须至少填写一个打卡时间");
-        }
+@Transactional
+public Long saveAttendance(SaveAttendanceRequest request) {
+    LoginUser loginUser = currentLoginUser();
+    Long targetUserId = request.getUserId() == null ? loginUser.getUserId() : request.getUserId();
+    validateManageableUser(loginUser.getUserId(), targetUserId);
+    UserEntity targetUser = requireCurrentUser(targetUserId);
 
-        if (request.getId() == null) {
-            AttendanceRecordEntity duplicated = attendanceMapper.findByUserIdAndDate(targetUserId, attendanceDate);
-            if (duplicated != null) {
-                throw new IllegalArgumentException("该用户当天考勤已存在");
-            }
-            AttendanceRecordEntity entity = new AttendanceRecordEntity();
-            entity.setUnitId(targetUser.getUnitId());
-            entity.setUserId(targetUserId);
-            entity.setAttendanceDate(attendanceDate);
-            entity.setCheckType(checkType);
-            entity.setCheckTime(checkTime);
-            entity.setCheckInTime(checkInTime);
-            entity.setCheckOutTime(checkOutTime);
-            entity.setCheckInAddress(normalizeText(request.getCheckInAddress()));
-            entity.setCheckOutAddress(normalizeText(request.getCheckOutAddress()));
-            entity.setLocationSource("MANUAL");
-            entity.setLocationProvider("BACKOFFICE");
-            entity.setValidFlag(request.getValidFlag());
-            attendanceMapper.insert(entity);
-            operationLogService.log(
-                    "ATTENDANCE",
-                    "SAVE",
-                    entity.getId(),
-                    "补录考勤：用户ID=" + targetUserId + "，日期=" + attendanceDate + "，状态=" + request.getValidFlag()
-            );
-            return entity.getId();
-        }
+    LocalDate attendanceDate = LocalDate.parse(request.getAttendanceDate());
+    LocalDateTime checkInTime = parseDateTime(request.getCheckInTime());
+    LocalDateTime amOffTime = parseDateTime(request.getAmOffTime());
+    LocalDateTime pmOnTime = parseDateTime(request.getPmOnTime());
+    LocalDateTime checkOutTime = parseDateTime(request.getCheckOutTime());
 
-        AttendanceRecordEntity existed = requireAttendance(request.getId());
-        validateManageableUser(loginUser.getUserId(), existed.getUserId());
+    validateAttendanceTimesForFourSteps(attendanceDate, checkInTime, amOffTime, pmOnTime, checkOutTime);
+
+    String checkType = resolveCheckTypeForFourSteps(checkInTime, amOffTime, pmOnTime, checkOutTime);
+    LocalDateTime checkTime = resolveCheckTimeForFourSteps(checkType, checkInTime, amOffTime, pmOnTime, checkOutTime);
+
+    if (checkTime == null) {
+        throw new IllegalArgumentException("补录/编辑考勤时必须至少填写一个打卡时间");
+    }
+
+    if (request.getId() == null) {
         AttendanceRecordEntity duplicated = attendanceMapper.findByUserIdAndDate(targetUserId, attendanceDate);
-        if (duplicated != null && !duplicated.getId().equals(existed.getId())) {
+        if (duplicated != null) {
             throw new IllegalArgumentException("该用户当天考勤已存在");
         }
-        existed.setUnitId(targetUser.getUnitId());
-        existed.setUserId(targetUserId);
-        existed.setAttendanceDate(attendanceDate);
-        existed.setCheckType(checkType);
-        existed.setCheckTime(checkTime);
-        existed.setCheckInTime(checkInTime);
-        existed.setCheckOutTime(checkOutTime);
-        existed.setCheckInAddress(normalizeText(request.getCheckInAddress()));
-        existed.setCheckOutAddress(normalizeText(request.getCheckOutAddress()));
-        existed.setLocationSource("MANUAL");
-        existed.setLocationProvider("BACKOFFICE");
-        existed.setValidFlag(request.getValidFlag());
-        attendanceMapper.update(existed);
+
+        AttendanceRecordEntity entity = new AttendanceRecordEntity();
+        entity.setUnitId(targetUser.getUnitId());
+        entity.setUserId(targetUserId);
+        entity.setAttendanceDate(attendanceDate);
+        entity.setCheckType(checkType);
+        entity.setCheckTime(checkTime);
+
+        entity.setCheckInTime(checkInTime);
+        entity.setAmOffTime(amOffTime);
+        entity.setPmOnTime(pmOnTime);
+        entity.setCheckOutTime(checkOutTime);
+
+        entity.setCheckInAddress(normalizeText(request.getCheckInAddress()));
+        entity.setAmOffAddress(normalizeText(request.getAmOffAddress()));
+        entity.setPmOnAddress(normalizeText(request.getPmOnAddress()));
+        entity.setCheckOutAddress(normalizeText(request.getCheckOutAddress()));
+
+        entity.setLocationSource("MANUAL");
+        entity.setLocationProvider("BACKOFFICE");
+        entity.setValidFlag(request.getValidFlag());
+        attendanceMapper.insert(entity);
+
         operationLogService.log(
                 "ATTENDANCE",
                 "SAVE",
-                existed.getId(),
-                "编辑考勤：用户ID=" + targetUserId + "，日期=" + attendanceDate + "，状态=" + request.getValidFlag()
+                entity.getId(),
+                "补录考勤：用户ID=" + targetUserId + "，日期=" + attendanceDate + "，状态=" + request.getValidFlag()
         );
-        return existed.getId();
+        return entity.getId();
     }
+
+    AttendanceRecordEntity existed = requireAttendance(request.getId());
+    validateManageableUser(loginUser.getUserId(), existed.getUserId());
+
+    AttendanceRecordEntity duplicated = attendanceMapper.findByUserIdAndDate(targetUserId, attendanceDate);
+    if (duplicated != null && !duplicated.getId().equals(existed.getId())) {
+        throw new IllegalArgumentException("该用户当天考勤已存在");
+    }
+
+    existed.setUnitId(targetUser.getUnitId());
+    existed.setUserId(targetUserId);
+    existed.setAttendanceDate(attendanceDate);
+    existed.setCheckType(checkType);
+    existed.setCheckTime(checkTime);
+
+    existed.setCheckInTime(checkInTime);
+    existed.setAmOffTime(amOffTime);
+    existed.setPmOnTime(pmOnTime);
+    existed.setCheckOutTime(checkOutTime);
+
+    existed.setCheckInAddress(normalizeText(request.getCheckInAddress()));
+    existed.setAmOffAddress(normalizeText(request.getAmOffAddress()));
+    existed.setPmOnAddress(normalizeText(request.getPmOnAddress()));
+    existed.setCheckOutAddress(normalizeText(request.getCheckOutAddress()));
+
+    existed.setLocationSource("MANUAL");
+    existed.setLocationProvider("BACKOFFICE");
+    existed.setValidFlag(request.getValidFlag());
+    attendanceMapper.update(existed);
+
+    operationLogService.log(
+            "ATTENDANCE",
+            "SAVE",
+            existed.getId(),
+            "编辑考勤：用户ID=" + targetUserId + "，日期=" + attendanceDate + "，状态=" + request.getValidFlag()
+    );
+    return existed.getId();
+}
 
     @Override
     @Transactional
@@ -929,187 +961,302 @@ public class AttendanceServiceImpl implements AttendanceService {
     }
 
     private Map<String, Object> buildCheckInResult(boolean success,
-                                                   String action,
-                                                   CheckInScope scope,
-                                                   Integer distanceMeters,
-                                                   String reason,
-                                                   String status,
-                                                   AttendanceRecordEntity entity,
-                                                   Integer accuracyMeters,
-                                                   String decisionBranch,
-                                                   boolean weakToleranceApplied,
-                                                   Integer toleranceMeters) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("success", success);
-        result.put("allowCheckIn", success);
-        result.put("action", action);
-        result.put("status", status);
-        result.put("reason", reason);
-        result.put("failReason", reason);
-        result.put("distanceMeters", distanceMeters);
-        result.put("configured", scope.location != null);
-        result.put("unitName", scope.unitName);
-        result.put("radiusMeters", scope.location == null ? null : scope.location.getRadiusMeters());
-        result.put("accuracyMeters", accuracyMeters);
-        result.put("decisionBranch", decisionBranch);
-        result.put("weakToleranceApplied", weakToleranceApplied);
-        result.put("toleranceMeters", toleranceMeters);
-        result.put("locationName", scope.location == null ? null : scope.location.getLocationName());
-        result.put("locationAddress", scope.location == null ? null : scope.location.getAddress());
-        if (entity != null) {
-            result.put("id", entity.getId());
-            result.put("attendanceDate", entity.getAttendanceDate());
-            result.put("checkInTime", entity.getCheckInTime());
-            result.put("checkOutTime", entity.getCheckOutTime());
-            result.put("validFlag", entity.getValidFlag());
-        }
-        return result;
+                                               String action,
+                                               CheckInScope scope,
+                                               Integer distanceMeters,
+                                               String reason,
+                                               String status,
+                                               AttendanceRecordEntity entity,
+                                               Integer accuracyMeters,
+                                               String decisionBranch,
+                                               boolean weakToleranceApplied,
+                                               Integer toleranceMeters) {
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("success", success);
+    result.put("allowCheckIn", success);
+    result.put("action", action);
+    result.put("actionLabel", resolveActionLabel(action));
+    result.put("status", status);
+    result.put("reason", reason);
+    result.put("failReason", reason);
+    result.put("distanceMeters", distanceMeters);
+    result.put("configured", scope.location != null);
+    result.put("unitName", scope.unitName);
+    result.put("radiusMeters", scope.location == null ? null : scope.location.getRadiusMeters());
+    result.put("accuracyMeters", accuracyMeters);
+    result.put("decisionBranch", decisionBranch);
+    result.put("weakToleranceApplied", weakToleranceApplied);
+    result.put("toleranceMeters", toleranceMeters);
+    result.put("locationName", scope.location == null ? null : scope.location.getLocationName());
+    result.put("locationAddress", scope.location == null ? null : scope.location.getAddress());
+
+    if (entity != null) {
+        String nextAction = resolveNextCheckAction(entity);
+        result.put("id", entity.getId());
+        result.put("attendanceDate", entity.getAttendanceDate());
+        result.put("checkType", entity.getCheckType());
+
+        result.put("checkInTime", entity.getCheckInTime());
+        result.put("amOffTime", entity.getAmOffTime());
+        result.put("pmOnTime", entity.getPmOnTime());
+        result.put("checkOutTime", entity.getCheckOutTime());
+
+        result.put("validFlag", entity.getValidFlag());
+        result.put("nextAction", nextAction);
+        result.put("nextActionLabel", resolveActionLabel(nextAction));
+        result.put("finished", nextAction == null);
+    } else {
+        result.put("nextAction", CHECK_ACTION_AM_ON);
+        result.put("nextActionLabel", resolveActionLabel(CHECK_ACTION_AM_ON));
+        result.put("finished", false);
     }
+    return result;
+}
 
     private Map<String, Object> persistCheckInSuccess(UserEntity currentUser,
-                                                      LoginUser loginUser,
-                                                      LocalDate today,
-                                                      LocalDateTime now,
-                                                      CheckInRequest request,
-                                                      CheckInScope scope,
-                                                      Integer distanceMeters,
-                                                      Integer accuracyMeters,
-                                                      boolean weakToleranceApplied,
-                                                      String decisionBranch) {
-        AttendanceRecordEntity entity = attendanceMapper.findByUserIdAndDate(loginUser.getUserId(), today);
-        String requestedAction = resolveRequestedCheckAction(request);
-        String action = resolveEffectiveCheckAction(requestedAction, entity);
-        if (CHECK_ACTION_IN.equals(action)) {
-            if (entity != null) {
-                return buildDuplicateCheckInResult(scope, distanceMeters, accuracyMeters, entity, requestedAction == null ? "AUTO_DUPLICATE_IN" : "CHECK_IN_DUPLICATE");
-            }
-            AttendanceRecordEntity insertEntity = buildCheckInEntity(currentUser, loginUser, today, now, request, distanceMeters);
-            try {
-                attendanceMapper.insert(insertEntity);
-                entity = insertEntity;
-            } catch (DuplicateKeyException ex) {
-                log.warn("attendance check-in duplicate insert intercepted userId={} attendanceDate={}", loginUser.getUserId(), today, ex);
-                AttendanceRecordEntity latest = attendanceMapper.findByUserIdAndDate(loginUser.getUserId(), today);
-                if (latest == null) {
-                    throw ex;
-                }
-                return buildDuplicateCheckInResult(scope, distanceMeters, accuracyMeters, latest, "DUPLICATE_INSERT");
-            }
-        } else if (CHECK_ACTION_OUT.equals(action)) {
-            if (entity == null) {
-                return buildCheckInResult(false, null, scope, distanceMeters, REASON_CHECK_IN_REQUIRED, AttendanceCheckInStatus.LOCATION_REQUIRED, null, accuracyMeters, "CHECK_OUT_BEFORE_IN", false, 0);
-            }
-            if (entity.getCheckInTime() == null) {
-                return buildCheckInResult(false, null, scope, distanceMeters, REASON_CHECK_IN_REQUIRED, AttendanceCheckInStatus.LOCATION_REQUIRED, entity, accuracyMeters, "CHECK_OUT_BEFORE_IN", false, 0);
-            }
-            if (entity.getCheckOutTime() != null) {
-                String reason = requestedAction == null ? REASON_TODAY_FINISHED : REASON_CHECK_OUT_COMPLETED;
-                return buildCheckInResult(false, null, scope, distanceMeters, reason, AttendanceCheckInStatus.ALREADY_FINISHED, entity, accuracyMeters, "CHECK_OUT_DUPLICATE", false, 0);
-            }
-            entity.setCheckType(CHECK_ACTION_OUT);
-            entity.setCheckOutTime(now);
-            entity.setCheckTime(resolveCheckTime(entity.getCheckType(), entity.getCheckInTime(), entity.getCheckOutTime()));
-            entity.setCheckOutAddress(normalizeText(request.getAddress()));
-            entity.setCheckInResult(AttendanceCheckInStatus.CHECK_OUT_SUCCESS);
-            entity.setCheckInFailReason(null);
-            entity.setLocationSource(resolveLocationSource(request));
-            entity.setLocationProvider(resolveLocationProvider(request));
-            attendanceMapper.update(entity);
-        } else {
-            return buildCheckInResult(false, null, scope, distanceMeters, "今日考勤已完成", AttendanceCheckInStatus.ALREADY_FINISHED, null, accuracyMeters, "FINISHED", false, 0);
-        }
+                                                  LoginUser loginUser,
+                                                  LocalDate today,
+                                                  LocalDateTime now,
+                                                  CheckInRequest request,
+                                                  CheckInScope scope,
+                                                  Integer distanceMeters,
+                                                  Integer accuracyMeters,
+                                                  boolean weakToleranceApplied,
+                                                  String decisionBranch) {
+    AttendanceRecordEntity entity = attendanceMapper.findByUserIdAndDate(loginUser.getUserId(), today);
+    String requestedAction = resolveRequestedCheckAction(request);
+    String nextAction = resolveNextCheckAction(entity);
 
-        log.info(
-                "attendance check-in accepted userId={} branch={} action={} distanceMeters={} radiusMeters={} accuracyMeters={} weakToleranceApplied={}",
-                loginUser.getUserId(),
-                decisionBranch,
-                action,
-                distanceMeters,
-                scope.location.getRadiusMeters(),
-                accuracyMeters,
-                weakToleranceApplied
-        );
-        return buildCheckInResult(
-                true,
-                action,
-                scope,
-                distanceMeters,
-                null,
-                CHECK_ACTION_IN.equals(action) ? AttendanceCheckInStatus.CHECK_IN_SUCCESS : AttendanceCheckInStatus.CHECK_OUT_SUCCESS,
-                entity,
-                accuracyMeters,
-                decisionBranch,
-                weakToleranceApplied,
-                resolveWeakToleranceMeters(accuracyMeters)
-        );
-    }
-
-    private AttendanceRecordEntity buildCheckInEntity(UserEntity currentUser,
-                                                      LoginUser loginUser,
-                                                      LocalDate today,
-                                                      LocalDateTime now,
-                                                      CheckInRequest request,
-                                                      Integer distanceMeters) {
-        AttendanceRecordEntity entity = new AttendanceRecordEntity();
-        entity.setUnitId(currentUser.getUnitId());
-        entity.setUserId(loginUser.getUserId());
-        entity.setAttendanceDate(today);
-        entity.setCheckType(CHECK_ACTION_IN);
-        entity.setCheckInTime(now);
-        entity.setCheckTime(resolveCheckTime(entity.getCheckType(), entity.getCheckInTime(), entity.getCheckOutTime()));
-        entity.setCheckInAddress(normalizeText(request.getAddress()));
-        entity.setCheckInLatitude(request.getLatitude());
-        entity.setCheckInLongitude(request.getLongitude());
-        entity.setCheckInDistanceMeters(distanceMeters);
-        entity.setCheckInResult(AttendanceCheckInStatus.CHECK_IN_SUCCESS);
-        entity.setCheckInFailReason(null);
-        entity.setLocationSource(resolveLocationSource(request));
-        entity.setLocationProvider(resolveLocationProvider(request));
-        entity.setValidFlag(1);
-        return entity;
-    }
-
-    private String resolveRequestedCheckAction(CheckInRequest request) {
-        String action = normalizeText(request == null ? null : request.getAction());
-        if (action == null) {
-            return null;
-        }
-        String normalized = action.toUpperCase();
-        if (CHECK_ACTION_IN.equals(normalized) || CHECK_ACTION_OUT.equals(normalized)) {
-            return normalized;
-        }
-        return null;
-    }
-
-    private String resolveEffectiveCheckAction(String requestedAction, AttendanceRecordEntity entity) {
-        if (requestedAction != null) {
-            return requestedAction;
-        }
-        if (entity == null) {
-            return CHECK_ACTION_IN;
-        }
-        return CHECK_ACTION_OUT;
-    }
-
-    private Map<String, Object> buildDuplicateCheckInResult(CheckInScope scope,
-                                                            Integer distanceMeters,
-                                                            Integer accuracyMeters,
-                                                            AttendanceRecordEntity entity,
-                                                            String decisionBranch) {
+    if (nextAction == null) {
         return buildCheckInResult(
                 false,
                 null,
                 scope,
                 distanceMeters,
-                REASON_CHECK_IN_COMPLETED,
+                REASON_TODAY_FINISHED,
                 AttendanceCheckInStatus.ALREADY_FINISHED,
                 entity,
                 accuracyMeters,
-                decisionBranch,
+                "FINISHED",
                 false,
                 0
         );
     }
+
+    String action = resolveEffectiveCheckAction(requestedAction, entity);
+    if (!nextAction.equals(action)) {
+        return buildCheckInResult(
+                false,
+                null,
+                scope,
+                distanceMeters,
+                "当前应执行：" + resolveActionLabel(nextAction),
+                AttendanceCheckInStatus.ALREADY_FINISHED,
+                entity,
+                accuracyMeters,
+                "ACTION_MISMATCH",
+                false,
+                0
+        );
+    }
+
+    if (CHECK_ACTION_AM_ON.equals(action)) {
+        if (entity != null && entity.getCheckInTime() != null) {
+            return buildDuplicateCheckInResult(scope, distanceMeters, accuracyMeters, entity, "AM_ON_DUPLICATE");
+        }
+        AttendanceRecordEntity insertEntity = buildCheckInEntity(currentUser, loginUser, today, now, request, distanceMeters);
+        try {
+            attendanceMapper.insert(insertEntity);
+            entity = insertEntity;
+        } catch (DuplicateKeyException ex) {
+            log.warn("attendance check-in duplicate insert intercepted userId={} attendanceDate={}", loginUser.getUserId(), today, ex);
+            AttendanceRecordEntity latest = attendanceMapper.findByUserIdAndDate(loginUser.getUserId(), today);
+            if (latest == null) {
+                throw ex;
+            }
+            return buildDuplicateCheckInResult(scope, distanceMeters, accuracyMeters, latest, "DUPLICATE_INSERT");
+        }
+    } else {
+        if (entity == null) {
+            return buildCheckInResult(
+                    false,
+                    null,
+                    scope,
+                    distanceMeters,
+                    REASON_CHECK_IN_REQUIRED,
+                    AttendanceCheckInStatus.LOCATION_REQUIRED,
+                    null,
+                    accuracyMeters,
+                    "NODE_REQUIRED",
+                    false,
+                    0
+            );
+        }
+
+        if (CHECK_ACTION_AM_OFF.equals(action)) {
+            if (entity.getCheckInTime() == null) {
+                return buildCheckInResult(false, null, scope, distanceMeters, "请先完成上午上班打卡",
+                        AttendanceCheckInStatus.LOCATION_REQUIRED, entity, accuracyMeters, "AM_OFF_BEFORE_AM_ON", false, 0);
+            }
+            if (entity.getAmOffTime() != null) {
+                return buildDuplicateCheckInResult(scope, distanceMeters, accuracyMeters, entity, "AM_OFF_DUPLICATE");
+            }
+            entity.setAmOffTime(now);
+            entity.setAmOffAddress(normalizeText(request.getAddress()));
+            entity.setAmOffLatitude(request.getLatitude());
+            entity.setAmOffLongitude(request.getLongitude());
+            entity.setAmOffDistanceMeters(distanceMeters);
+        } else if (CHECK_ACTION_PM_ON.equals(action)) {
+            if (entity.getAmOffTime() == null) {
+                return buildCheckInResult(false, null, scope, distanceMeters, "请先完成上午下班打卡",
+                        AttendanceCheckInStatus.LOCATION_REQUIRED, entity, accuracyMeters, "PM_ON_BEFORE_AM_OFF", false, 0);
+            }
+            if (entity.getPmOnTime() != null) {
+                return buildDuplicateCheckInResult(scope, distanceMeters, accuracyMeters, entity, "PM_ON_DUPLICATE");
+            }
+            entity.setPmOnTime(now);
+            entity.setPmOnAddress(normalizeText(request.getAddress()));
+            entity.setPmOnLatitude(request.getLatitude());
+            entity.setPmOnLongitude(request.getLongitude());
+            entity.setPmOnDistanceMeters(distanceMeters);
+        } else if (CHECK_ACTION_PM_OFF.equals(action)) {
+            if (entity.getPmOnTime() == null) {
+                return buildCheckInResult(false, null, scope, distanceMeters, "请先完成下午上班打卡",
+                        AttendanceCheckInStatus.LOCATION_REQUIRED, entity, accuracyMeters, "PM_OFF_BEFORE_PM_ON", false, 0);
+            }
+            if (entity.getCheckOutTime() != null) {
+                return buildDuplicateCheckInResult(scope, distanceMeters, accuracyMeters, entity, "PM_OFF_DUPLICATE");
+            }
+            entity.setCheckOutTime(now);
+            entity.setCheckOutAddress(normalizeText(request.getAddress()));
+            entity.setCheckOutLatitude(request.getLatitude());
+            entity.setCheckOutLongitude(request.getLongitude());
+            entity.setCheckOutDistanceMeters(distanceMeters);
+        } else {
+            return buildCheckInResult(
+                    false,
+                    null,
+                    scope,
+                    distanceMeters,
+                    REASON_TODAY_FINISHED,
+                    AttendanceCheckInStatus.ALREADY_FINISHED,
+                    entity,
+                    accuracyMeters,
+                    "UNKNOWN_ACTION",
+                    false,
+                    0
+            );
+        }
+
+        entity.setCheckType(action);
+        entity.setCheckTime(resolveCheckTime(action, entity));
+        entity.setCheckInResult(CHECK_ACTION_PM_OFF.equals(action)
+                ? AttendanceCheckInStatus.CHECK_OUT_SUCCESS
+                : AttendanceCheckInStatus.CHECK_IN_SUCCESS);
+        entity.setCheckInFailReason(null);
+        entity.setLocationSource(resolveLocationSource(request));
+        entity.setLocationProvider(resolveLocationProvider(request));
+        attendanceMapper.update(entity);
+    }
+
+    log.info(
+            "attendance check-in accepted userId={} branch={} action={} distanceMeters={} radiusMeters={} accuracyMeters={} weakToleranceApplied={}",
+            loginUser.getUserId(),
+            decisionBranch,
+            action,
+            distanceMeters,
+            scope.location.getRadiusMeters(),
+            accuracyMeters,
+            weakToleranceApplied
+    );
+
+    return buildCheckInResult(
+            true,
+            action,
+            scope,
+            distanceMeters,
+            null,
+            CHECK_ACTION_PM_OFF.equals(action)
+                    ? AttendanceCheckInStatus.CHECK_OUT_SUCCESS
+                    : AttendanceCheckInStatus.CHECK_IN_SUCCESS,
+            entity,
+            accuracyMeters,
+            decisionBranch,
+            weakToleranceApplied,
+            resolveWeakToleranceMeters(accuracyMeters)
+    );
+}
+
+    private AttendanceRecordEntity buildCheckInEntity(UserEntity currentUser,
+                                                  LoginUser loginUser,
+                                                  LocalDate today,
+                                                  LocalDateTime now,
+                                                  CheckInRequest request,
+                                                  Integer distanceMeters) {
+    AttendanceRecordEntity entity = new AttendanceRecordEntity();
+    entity.setUnitId(currentUser.getUnitId());
+    entity.setUserId(loginUser.getUserId());
+    entity.setAttendanceDate(today);
+    entity.setCheckType(CHECK_ACTION_AM_ON);
+    entity.setCheckInTime(now);
+    entity.setCheckTime(now);
+    entity.setCheckInAddress(normalizeText(request.getAddress()));
+    entity.setCheckInLatitude(request.getLatitude());
+    entity.setCheckInLongitude(request.getLongitude());
+    entity.setCheckInDistanceMeters(distanceMeters);
+    entity.setCheckInResult(AttendanceCheckInStatus.CHECK_IN_SUCCESS);
+    entity.setCheckInFailReason(null);
+    entity.setLocationSource(resolveLocationSource(request));
+    entity.setLocationProvider(resolveLocationProvider(request));
+    entity.setValidFlag(1);
+    return entity;
+}
+
+    private String resolveRequestedCheckAction(CheckInRequest request) {
+    String action = normalizeText(request == null ? null : request.getAction());
+    if (action == null) {
+        return null;
+    }
+    String normalized = action.toUpperCase();
+    if (CHECK_ACTION_AM_ON.equals(normalized)
+            || CHECK_ACTION_AM_OFF.equals(normalized)
+            || CHECK_ACTION_PM_ON.equals(normalized)
+            || CHECK_ACTION_PM_OFF.equals(normalized)) {
+        return normalized;
+    }
+    return null;
+}
+
+    private String resolveEffectiveCheckAction(String requestedAction, AttendanceRecordEntity entity) {
+    String nextAction = resolveNextCheckAction(entity);
+    if (nextAction == null) {
+        return null;
+    }
+    if (requestedAction == null) {
+        return nextAction;
+    }
+    return requestedAction;
+}
+
+    private Map<String, Object> buildDuplicateCheckInResult(CheckInScope scope,
+                                                        Integer distanceMeters,
+                                                        Integer accuracyMeters,
+                                                        AttendanceRecordEntity entity,
+                                                        String decisionBranch) {
+    return buildCheckInResult(
+            false,
+            null,
+            scope,
+            distanceMeters,
+            resolveDuplicateReason(entity),
+            AttendanceCheckInStatus.ALREADY_FINISHED,
+            entity,
+            accuracyMeters,
+            decisionBranch,
+            false,
+            0
+    );
+}
 
     private String resolveCheckType(LocalDateTime checkInTime, LocalDateTime checkOutTime) {
         if (checkOutTime != null) {
@@ -1121,6 +1268,81 @@ public class AttendanceServiceImpl implements AttendanceService {
         return "CHECK_IN";
     }
 
+    private void validateAttendanceTimesForFourSteps(LocalDate attendanceDate,
+                                                 LocalDateTime checkInTime,
+                                                 LocalDateTime amOffTime,
+                                                 LocalDateTime pmOnTime,
+                                                 LocalDateTime checkOutTime) {
+    if (checkInTime != null && !attendanceDate.equals(checkInTime.toLocalDate())) {
+        throw new IllegalArgumentException("上午上班时间必须落在考勤日期当天");
+    }
+    if (amOffTime != null && !attendanceDate.equals(amOffTime.toLocalDate())) {
+        throw new IllegalArgumentException("上午下班时间必须落在考勤日期当天");
+    }
+    if (pmOnTime != null && !attendanceDate.equals(pmOnTime.toLocalDate())) {
+        throw new IllegalArgumentException("下午上班时间必须落在考勤日期当天");
+    }
+    if (checkOutTime != null && !attendanceDate.equals(checkOutTime.toLocalDate())) {
+        throw new IllegalArgumentException("下午下班时间必须落在考勤日期当天");
+    }
+
+    if (amOffTime != null && checkInTime == null) {
+        throw new IllegalArgumentException("填写上午下班时间前，必须先填写上午上班时间");
+    }
+    if (pmOnTime != null && amOffTime == null) {
+        throw new IllegalArgumentException("填写下午上班时间前，必须先填写上午下班时间");
+    }
+    if (checkOutTime != null && pmOnTime == null) {
+        throw new IllegalArgumentException("填写下午下班时间前，必须先填写下午上班时间");
+    }
+
+    if (checkInTime != null && amOffTime != null && !amOffTime.isAfter(checkInTime)) {
+        throw new IllegalArgumentException("上午下班时间必须晚于上午上班时间");
+    }
+    if (amOffTime != null && pmOnTime != null && !pmOnTime.isAfter(amOffTime)) {
+        throw new IllegalArgumentException("下午上班时间必须晚于上午下班时间");
+    }
+    if (pmOnTime != null && checkOutTime != null && !checkOutTime.isAfter(pmOnTime)) {
+        throw new IllegalArgumentException("下午下班时间必须晚于下午上班时间");
+    }
+}
+
+private String resolveCheckTypeForFourSteps(LocalDateTime checkInTime,
+                                            LocalDateTime amOffTime,
+                                            LocalDateTime pmOnTime,
+                                            LocalDateTime checkOutTime) {
+    if (checkOutTime != null) {
+        return CHECK_ACTION_PM_OFF;
+    }
+    if (pmOnTime != null) {
+        return CHECK_ACTION_PM_ON;
+    }
+    if (amOffTime != null) {
+        return CHECK_ACTION_AM_OFF;
+    }
+    if (checkInTime != null) {
+        return CHECK_ACTION_AM_ON;
+    }
+    return CHECK_ACTION_AM_ON;
+}
+
+private LocalDateTime resolveCheckTimeForFourSteps(String checkType,
+                                                   LocalDateTime checkInTime,
+                                                   LocalDateTime amOffTime,
+                                                   LocalDateTime pmOnTime,
+                                                   LocalDateTime checkOutTime) {
+    if (CHECK_ACTION_PM_OFF.equals(checkType)) {
+        return checkOutTime;
+    }
+    if (CHECK_ACTION_PM_ON.equals(checkType)) {
+        return pmOnTime;
+    }
+    if (CHECK_ACTION_AM_OFF.equals(checkType)) {
+        return amOffTime;
+    }
+    return checkInTime;
+}
+
     private LocalDateTime resolveCheckTime(String checkType, LocalDateTime checkInTime, LocalDateTime checkOutTime) {
         if ("CHECK_OUT".equals(checkType) && checkOutTime != null) {
             return checkOutTime;
@@ -1130,6 +1352,68 @@ public class AttendanceServiceImpl implements AttendanceService {
         }
         return checkOutTime;
     }
+
+    private String resolveNextCheckAction(AttendanceRecordEntity entity) {
+    if (entity == null || entity.getCheckInTime() == null) {
+        return CHECK_ACTION_AM_ON;
+    }
+    if (entity.getAmOffTime() == null) {
+        return CHECK_ACTION_AM_OFF;
+    }
+    if (entity.getPmOnTime() == null) {
+        return CHECK_ACTION_PM_ON;
+    }
+    if (entity.getCheckOutTime() == null) {
+        return CHECK_ACTION_PM_OFF;
+    }
+    return null;
+}
+
+private String resolveActionLabel(String action) {
+    if (CHECK_ACTION_AM_ON.equals(action)) {
+        return "上午上班打卡";
+    }
+    if (CHECK_ACTION_AM_OFF.equals(action)) {
+        return "上午下班打卡";
+    }
+    if (CHECK_ACTION_PM_ON.equals(action)) {
+        return "下午上班打卡";
+    }
+    if (CHECK_ACTION_PM_OFF.equals(action)) {
+        return "下午下班打卡";
+    }
+    return "今日已完成";
+}
+
+private String resolveDuplicateReason(AttendanceRecordEntity entity) {
+    String nextAction = resolveNextCheckAction(entity);
+    if (CHECK_ACTION_AM_OFF.equals(nextAction)) {
+        return REASON_AM_ON_COMPLETED;
+    }
+    if (CHECK_ACTION_PM_ON.equals(nextAction)) {
+        return REASON_AM_OFF_COMPLETED;
+    }
+    if (CHECK_ACTION_PM_OFF.equals(nextAction)) {
+        return REASON_PM_ON_COMPLETED;
+    }
+    if (nextAction == null) {
+        return REASON_TODAY_FINISHED;
+    }
+    return REASON_PM_OFF_COMPLETED;
+}
+
+private LocalDateTime resolveCheckTime(String checkType, AttendanceRecordEntity entity) {
+    if (CHECK_ACTION_PM_OFF.equals(checkType)) {
+        return entity.getCheckOutTime();
+    }
+    if (CHECK_ACTION_PM_ON.equals(checkType)) {
+        return entity.getPmOnTime();
+    }
+    if (CHECK_ACTION_AM_OFF.equals(checkType)) {
+        return entity.getAmOffTime();
+    }
+    return entity.getCheckInTime();
+}
 
     private int calculateDistanceMeters(double latitude1, double longitude1, double latitude2, double longitude2) {
         double latDistance = Math.toRadians(latitude2 - latitude1);

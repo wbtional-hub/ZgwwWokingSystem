@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.example.lecturesystem.modules.user.dto.BindWechatMpPendingRequest;
 
 @RestController
 @RequestMapping("/api")
@@ -57,7 +58,15 @@ public class UserController {
     public ApiResponse<?> bindWechatMini(@Validated @RequestBody BindWechatMiniRequest request) {
         return ApiResponse.success(userService.bindWechatMini(request));
     }
+        @GetMapping("/wechat-mp-pending-binds")
+    public ApiResponse<?> queryWechatMpPendingBindList() {
+        return ApiResponse.success(userService.queryWechatMpPendingBindList());
+    }
 
+    @PostMapping("/users/bind-wechat-mp-pending")
+    public ApiResponse<?> bindWechatMpPending(@Validated @RequestBody BindWechatMpPendingRequest request) {
+        return ApiResponse.success(userService.bindWechatMpPending(request));
+    }
     @PostMapping("/user/update")
     public ApiResponse<?> update(@Validated @RequestBody UpdateUserRequest request) {
         userService.updateUser(request);

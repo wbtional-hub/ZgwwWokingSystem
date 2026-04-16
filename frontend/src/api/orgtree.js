@@ -35,3 +35,10 @@ export function toggleOrgNodeStatus(data) {
 export function queryUnitOptions() {
   return request.get('/unit/list')
 }
+export function queryWechatMpPendingBindList() {
+  return request.get('/wechat-mp-pending-binds')
+}
+
+export function bindWechatMpPendingApi(data) {
+  return request.post('/users/bind-wechat-mp-pending', data)
+}

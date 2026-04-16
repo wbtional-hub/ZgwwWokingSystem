@@ -1,49 +1,72 @@
 export const MODULE_CODES = Object.freeze({
+  HOME: 'home',
+  POLICY_CONSULTANT: 'policy_consultant',
+
   UNIT: 'unit',
   PARAM: 'param',
   KNOWLEDGE: 'knowledge',
   SKILL: 'skill',
-  POLICY_CONSULTANT: 'policy_consultant',
+
   AI_WORKBENCH: 'ai_workbench',
   AI_LEDGER: 'ai_ledger',
   AI_MONTHLY_REPORT: 'ai_monthly_report',
   EXPERT: 'expert',
   AI_PROVIDER: 'ai_provider',
   AI_PERMISSION: 'ai_permission',
+
+  LOG_CENTER: 'log_center',
   OPERATION_LOG: 'operationlog',
   ORG_TREE: 'orgtree',
-  ATTENDANCE: 'attendance',
+
+  ATTENDANCE_WORKBENCH: 'attendance_workbench',
+  ATTENDANCE_STATS: 'attendance_stats',
+  ATTENDANCE_PATCH_APPLY: 'attendance_patch_apply',
+  ATTENDANCE_PATCH_APPROVALS: 'attendance_patch_approvals',
+  ATTENDANCE_RULES: 'attendance_rules',
+
+  // 兼容项目里还没改完的旧判断
+  ATTENDANCE: 'attendance_workbench',
+
   WEEKLY_WORK: 'weeklywork',
   SCORE: 'score',
   STATISTICS: 'statistics',
+
+  PROFILE: 'profile',
   USER: 'user'
 })
 
 export const APP_MENU_ITEMS = [
-  { path: '/home', title: '首页', description: '系统欢迎页', alwaysVisible: true },
+  { path: '/home', title: '首页', description: '系统欢迎页', moduleCode: MODULE_CODES.HOME },
+
   { path: '/policy-consultant', title: '手机端政策咨询', description: '面向客户的移动端智能体入口', moduleCode: MODULE_CODES.POLICY_CONSULTANT },
+
   { path: '/units', title: '单位管理', description: '维护单位基础信息', adminOnly: true, moduleCode: MODULE_CODES.UNIT },
   { path: '/params', title: '参数管理', description: '维护系统参数', adminOnly: true, moduleCode: MODULE_CODES.PARAM },
   { path: '/knowledge', title: '知识库中心', description: '按授权查看和使用知识库', moduleCode: MODULE_CODES.KNOWLEDGE },
   { path: '/skills', title: 'Skills 中心', description: '训练、验证和发布技能', moduleCode: MODULE_CODES.SKILL },
+
   { path: '/ai-workbench', title: 'AI 工作台', description: '按技能进行问答和分析', moduleCode: MODULE_CODES.AI_WORKBENCH },
   { path: '/ai-ledger', title: '咨询台账', description: '查看 AI 咨询记录与统计', moduleCode: MODULE_CODES.AI_LEDGER },
   { path: '/ai-monthly-report', title: '月度报表', description: '查看 AI 咨询月度经营看板', moduleCode: MODULE_CODES.AI_MONTHLY_REPORT },
   { path: '/experts', title: '专家台账', description: '查看专家身份与技能归属', moduleCode: MODULE_CODES.EXPERT },
   { path: '/ai-provider', title: 'AI 接入区', description: '配置模型接入与 Token', adminOnly: true, moduleCode: MODULE_CODES.AI_PROVIDER },
   { path: '/ai-permissions', title: 'AI 权限配置', description: '分配 AI、知识库和技能权限', adminOnly: true, moduleCode: MODULE_CODES.AI_PERMISSION },
-  { path: '/log-center', title: '日志中台', description: '统一查看异常、定位与接口日志', adminOnly: true },
+
+  { path: '/log-center', title: '日志中台', description: '统一查看异常、定位与接口日志', adminOnly: true, moduleCode: MODULE_CODES.LOG_CENTER },
   { path: '/operation-logs', title: '操作日志', description: '查看关键操作记录', adminOnly: true, moduleCode: MODULE_CODES.OPERATION_LOG },
   { path: '/org-tree', title: '组织架构', description: '维护组织树结构', adminOnly: true, moduleCode: MODULE_CODES.ORG_TREE },
-  { path: '/attendance', title: '考勤工作台', description: '日常签到、今日状态与团队工作台', moduleCode: MODULE_CODES.ATTENDANCE },
-  { path: '/attendance/stats', title: '考勤统计', description: '查看团队应到、异常与本周概览', moduleCode: MODULE_CODES.ATTENDANCE },
-  { path: '/attendance/patch-apply', title: '补打卡申请', description: '提交并查看我的补上班卡、补下班卡申请', moduleCode: MODULE_CODES.ATTENDANCE },
-  { path: '/attendance/patch-approvals', title: '补打卡审批', description: '审批下级或本范围内待处理的补卡申请', moduleCode: MODULE_CODES.ATTENDANCE },
-  { path: '/attendance/rules', title: '考勤规则', description: '配置本单位上下班时间与迟到早退宽限', moduleCode: MODULE_CODES.ATTENDANCE },
+
+  { path: '/attendance', title: '考勤工作台', description: '日常签到、今日状态与团队工作台', moduleCode: MODULE_CODES.ATTENDANCE_WORKBENCH },
+  { path: '/attendance/stats', title: '考勤统计', description: '查看团队应到、异常与本周概览', moduleCode: MODULE_CODES.ATTENDANCE_STATS },
+  { path: '/attendance/patch-apply', title: '补打卡申请', description: '提交并查看我的补上班卡、补下班卡申请', moduleCode: MODULE_CODES.ATTENDANCE_PATCH_APPLY },
+  { path: '/attendance/patch-approvals', title: '补打卡审批', description: '审批下级或本范围内待处理的补卡申请', moduleCode: MODULE_CODES.ATTENDANCE_PATCH_APPROVALS },
+  { path: '/attendance/rules', title: '考勤规则', description: '配置本单位上下班时间与迟到早退宽限', moduleCode: MODULE_CODES.ATTENDANCE_RULES },
+
   { path: '/weekly-work', title: '周报管理', description: '填写和查看周报', moduleCode: MODULE_CODES.WEEKLY_WORK },
   { path: '/scores', title: '工作评分', description: '查看评分结果', adminOnly: true, moduleCode: MODULE_CODES.SCORE },
   { path: '/statistics', title: '统计分析', description: '系统统计看板', moduleCode: MODULE_CODES.STATISTICS },
-  { path: '/profile', title: '个人中心', description: '查看个人资料与账号信息', alwaysVisible: true },
+
+  { path: '/profile', title: '个人中心', description: '查看个人资料与账号信息', moduleCode: MODULE_CODES.PROFILE },
   { path: '/users', title: '用户管理', description: '维护系统用户', adminOnly: true, moduleCode: MODULE_CODES.USER }
 ]
 
