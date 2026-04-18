@@ -15,10 +15,17 @@ import java.util.Map;
 
 @Component
 public class OpenAiCompatibleChatClient {
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(60);
+
     private final ObjectMapper objectMapper;
+    private final HttpClient httpClient;
 
     public OpenAiCompatibleChatClient(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(CONNECT_TIMEOUT)
+                .build();
     }
 
     public String chat(String apiBaseUrl, String apiToken, String modelCode, String systemPrompt, String userPrompt) {
@@ -33,7 +40,6 @@ public class OpenAiCompatibleChatClient {
         }
         try {
             String endpoint = buildChatEndpoint(apiBaseUrl);
-            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
             String body = objectMapper.writeValueAsString(Map.of(
                     "model", modelCode,
                     "temperature", 0.2,
@@ -44,12 +50,12 @@ public class OpenAiCompatibleChatClient {
             ));
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint))
-                    .timeout(Duration.ofSeconds(30))
+                    .timeout(REQUEST_TIMEOUT)
                     .header("Authorization", "Bearer " + apiToken)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                     .build();
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new IllegalArgumentException("AI调用失败，HTTP状态码=" + response.statusCode());
             }
@@ -57,6 +63,14 @@ public class OpenAiCompatibleChatClient {
         } catch (Exception ex) {
             throw new IllegalArgumentException("AI调用失败：" + ex.getMessage(), ex);
         }
+    }
+
+    public long getConnectTimeoutMillis() {
+        return CONNECT_TIMEOUT.toMillis();
+    }
+
+    public long getRequestTimeoutMillis() {
+        return REQUEST_TIMEOUT.toMillis();
     }
 
     private String buildChatEndpoint(String apiBaseUrl) {

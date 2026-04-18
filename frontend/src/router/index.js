@@ -20,20 +20,28 @@ import MobileQrConfirmView from '@/views/mobile/MobileQrConfirmView.vue'
 import KnowledgeBaseListView from '@/views/knowledge/KnowledgeBaseListView.vue'
 import AIProviderConfigView from '@/views/ai/AIProviderConfigView.vue'
 import AIPermissionConfigView from '@/views/ai/AIPermissionConfigView.vue'
+import AICapabilityMapView from '@/views/ai/AICapabilityMapView.vue'
 import SkillListView from '@/views/skill/SkillListView.vue'
 import AIWorkbenchView from '@/views/agent/AIWorkbenchView.vue'
 import AIConsultationLedgerView from '@/views/agent/AIConsultationLedgerView.vue'
 import AIConsultationMonthlyReportView from '@/views/agent/AIConsultationMonthlyReportView.vue'
+import AIResultFlowView from '@/views/agent/AIResultFlowView.vue'
 import MobilePolicyConsultantView from '@/views/agent/MobilePolicyConsultantView.vue'
 import ExpertListView from '@/views/expert/ExpertListView.vue'
 import { useUserStore } from '@/stores/user'
 import { queryCurrentUserApi } from '@/api/auth'
 import { queryCurrentUserModulePermissionsApi } from '@/api/user-module-permission'
-import { APP_MENU_ITEMS, MODULE_CODES, buildAccessContext, findFirstAccessiblePath } from '@/constants/modules'
+import {
+  AI_FLOW_MODULE_CODES,
+  APP_MENU_ITEMS,
+  MODULE_CODES,
+  buildAccessContext,
+  findFirstAccessiblePath,
+  hasAnyModuleAccess
+} from '@/constants/modules'
 import { findFirstMobileWorkspacePath, MOBILE_WORKSPACE_PATH } from '@/constants/mobile-workspace'
 import { isMobileClient } from '@/utils/device'
 
-// FIX: wechat login recovery protection
 const WECHAT_LOGIN_RECOVERING_KEY = 'wechat_login_recovering'
 
 const routes = [
@@ -50,7 +58,11 @@ const routes = [
     component: () => import('@/views/MobileEntryView.vue'),
     meta: { public: true, title: '移动调试入口', enforceWechatBrowser: false, entryRedirectPath: MOBILE_WORKSPACE_PATH }
   },
-  { path: '/policy-consultant', component: MobilePolicyConsultantView, meta: { moduleCode: MODULE_CODES.POLICY_CONSULTANT, title: '政策咨询' } },
+  {
+    path: '/policy-consultant',
+    component: MobilePolicyConsultantView,
+    meta: { moduleCode: MODULE_CODES.POLICY_CONSULTANT, title: '政策咨询' }
+  },
   {
     path: '/',
     component: AppLayout,
@@ -60,16 +72,18 @@ const routes = [
       { path: 'mobile-workspace', component: MobileWorkspaceView, meta: { title: 'Mobile Workspace' } },
       { path: 'units', component: UnitListView, meta: { adminOnly: true, moduleCode: MODULE_CODES.UNIT } },
       { path: 'params', component: ParamListView, meta: { adminOnly: true, moduleCode: MODULE_CODES.PARAM } },
+      { path: 'ai-map', component: AICapabilityMapView, meta: { title: 'AI能力地图', accessAnyModuleCodes: AI_FLOW_MODULE_CODES } },
+      { path: 'ai-provider', component: AIProviderConfigView, meta: { adminOnly: true, moduleCode: MODULE_CODES.AI_PROVIDER } },
+      { path: 'ai-permissions', component: AIPermissionConfigView, meta: { adminOnly: true, moduleCode: MODULE_CODES.AI_PERMISSION } },
       { path: 'knowledge', component: KnowledgeBaseListView, meta: { moduleCode: MODULE_CODES.KNOWLEDGE } },
       { path: 'skills', component: SkillListView, meta: { moduleCode: MODULE_CODES.SKILL } },
       { path: 'ai-workbench', component: AIWorkbenchView, meta: { moduleCode: MODULE_CODES.AI_WORKBENCH } },
+      { path: 'ai-result-flow', component: AIResultFlowView, meta: { title: 'AI结果回流', accessAnyModuleCodes: AI_FLOW_MODULE_CODES } },
       { path: 'ai-ledger', component: AIConsultationLedgerView, meta: { moduleCode: MODULE_CODES.AI_LEDGER } },
       { path: 'ai-monthly-report', component: AIConsultationMonthlyReportView, meta: { moduleCode: MODULE_CODES.AI_MONTHLY_REPORT } },
       { path: 'experts', component: ExpertListView, meta: { moduleCode: MODULE_CODES.EXPERT } },
-      { path: 'ai-provider', component: AIProviderConfigView, meta: { adminOnly: true, moduleCode: MODULE_CODES.AI_PROVIDER } },
-      { path: 'ai-permissions', component: AIPermissionConfigView, meta: { adminOnly: true, moduleCode: MODULE_CODES.AI_PERMISSION } },
       { path: 'operation-logs', component: OperationLogListView, meta: { adminOnly: true, moduleCode: MODULE_CODES.OPERATION_LOG } },
-      { path: 'log-center', component: LogCenterView, meta: { adminOnly: true, title: '日志中台' } },
+      { path: 'log-center', component: LogCenterView, meta: { adminOnly: true, moduleCode: MODULE_CODES.LOG_CENTER, title: '日志中台' } },
       { path: 'users', component: UserEditView, meta: { adminOnly: true, moduleCode: MODULE_CODES.USER } },
       { path: 'org-tree', component: OrgTreeView, meta: { adminOnly: true, moduleCode: MODULE_CODES.ORG_TREE } },
       { path: 'attendance', component: AttendanceCheckInView, meta: { moduleCode: MODULE_CODES.ATTENDANCE, title: '考勤工作台' } },
@@ -102,7 +116,6 @@ const router = createRouter({
 
 let accessContextLoadingPromise = null
 
-// FIX: wechat login recovery protection
 function clearWechatLoginRecoveryFlag() {
   if (typeof window === 'undefined') {
     return
@@ -140,7 +153,6 @@ async function ensureAccessContext(userStore) {
           userInfo,
           moduleCodes: Array.isArray(moduleData.moduleCodes) ? moduleData.moduleCodes : []
         })
-        // FIX: wechat login recovery protection
         clearWechatLoginRecoveryFlag()
       })
       .finally(() => {
@@ -151,7 +163,6 @@ async function ensureAccessContext(userStore) {
 }
 
 router.beforeEach(async (to) => {
-  // FIX: wechat login recovery protection
   if (to.path.startsWith('/api/auth/wechat-mp-callback')) {
     return '/login'
   }
@@ -170,7 +181,6 @@ router.beforeEach(async (to) => {
   }
 
   if (!userStore.token) {
-    // FIX: wechat login recovery protection
     return {
       path: '/login',
       query: { redirect: to.fullPath }
@@ -190,6 +200,12 @@ router.beforeEach(async (to) => {
 
   if (to.meta.adminOnly && !accessContext.isAdmin) {
     return '/403'
+  }
+
+  if (Array.isArray(to.meta.accessAnyModuleCodes) && to.meta.accessAnyModuleCodes.length) {
+    if (!hasAnyModuleAccess(accessContext, to.meta.accessAnyModuleCodes)) {
+      return '/403'
+    }
   }
 
   if (to.meta.moduleCode) {

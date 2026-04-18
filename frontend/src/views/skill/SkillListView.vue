@@ -87,6 +87,16 @@
         </div>
         <div class="panel-hint">当前技能：{{ activeSkillName }}</div>
 
+        <div class="select-field">
+          <span class="select-label">版本</span>
+          <select :value="state.versionForm.id ? String(state.versionForm.id) : ''" :disabled="!state.activeSkillId" @change="handleVersionChange">
+            <option value="">请选择</option>
+            <option v-for="item in state.versionOptions" :key="item.id" :value="String(item.id)">
+              {{ item.versionNo }} / {{ item.publishStatus || 'DRAFT' }}
+            </option>
+          </select>
+        </div>
+
         <div class="field-stack">
           <van-field v-model.trim="state.versionForm.versionNo" label="版本号" placeholder="例如：v1.0.0" :disabled="!state.activeSkillId || !canTrainCurrentSkill" />
         </div>
@@ -203,9 +213,11 @@ import AppPageShell from '@/components/layout/AppPageShell.vue'
 import { queryAiProviderList, queryCurrentAiPermission } from '@/api/ai'
 import { queryKnowledgeBaseList } from '@/api/knowledge'
 import {
+  getSkillVersionDetail,
   getPublishedSkillVersion,
   publishSkillVersion,
   querySkillList,
+  querySkillVersions,
   querySkillTestCaseList,
   runSkillValidation,
   saveSkill,
@@ -226,6 +238,7 @@ const state = reactive({
   providerOptions: [],
   baseOptions: [],
   activeSkillId: null,
+  versionOptions: [],
   bindingBaseName: '',
   validationDetail: null,
   testCaseList: [],
@@ -249,7 +262,7 @@ function createEmptySkillForm() {
 }
 
 function createEmptyVersionForm() {
-  return { id: null, versionNo: 'v1.0.0', providerConfigId: '', modelCode: '', systemPrompt: '', taskPrompt: '', outputTemplate: '', forbiddenRules: '', citationRules: '' }
+  return { id: null, versionNo: 'v1.0.0', providerConfigId: '', modelCode: '', systemPrompt: '', taskPrompt: '', outputTemplate: '', forbiddenRules: '', citationRules: '', publishStatus: '' }
 }
 
 function createEmptyTestCaseForm() {
@@ -305,6 +318,50 @@ async function fetchSkills() {
   }
 }
 
+async function fetchVersionOptions(skillId) {
+  if (!skillId) {
+    state.versionOptions = []
+    return []
+  }
+  const data = ensureSuccess(await querySkillVersions(skillId), '技能版本列表加载失败')
+  state.versionOptions = Array.isArray(data) ? data : []
+  return state.versionOptions
+}
+
+async function loadVersionDetail(versionId) {
+  if (!versionId) {
+    resetVersionForm()
+    state.testCaseList = []
+    return null
+  }
+  const version = ensureSuccess(await getSkillVersionDetail(versionId), '技能版本加载失败')
+  if (!version) {
+    resetVersionForm()
+    state.testCaseList = []
+    return null
+  }
+  state.versionForm = {
+    id: version.id,
+    versionNo: version.versionNo || 'v1.0.0',
+    providerConfigId: version.providerConfigId ? String(version.providerConfigId) : '',
+    modelCode: version.modelCode || '',
+    systemPrompt: version.systemPrompt || '',
+    taskPrompt: version.taskPrompt || '',
+    outputTemplate: version.outputTemplate || '',
+    forbiddenRules: version.forbiddenRules || '',
+    citationRules: version.citationRules || '',
+    publishStatus: version.publishStatus || ''
+  }
+  state.bindingForm.baseId = version.baseId ? String(version.baseId) : ''
+  state.bindingBaseName = version.baseName || ''
+  if (canTrainCurrentSkill.value) {
+    await fetchTestCases(version.id)
+  } else {
+    state.testCaseList = []
+  }
+  return version
+}
+
 async function selectSkill(item) {
   state.activeSkillId = item.id
   state.skillForm = {
@@ -319,32 +376,34 @@ async function selectSkill(item) {
   resetVersionForm()
   resetTestCaseForm()
   state.validationDetail = null
+  state.versionOptions = []
   try {
-    const version = ensureSuccess(await getPublishedSkillVersion(item.id), '技能版本加载失败')
-    if (version) {
-      state.versionForm = {
-        id: version.id,
-        versionNo: version.versionNo || 'v1.0.0',
-        providerConfigId: version.providerConfigId ? String(version.providerConfigId) : '',
-        modelCode: version.modelCode || '',
-        systemPrompt: version.systemPrompt || '',
-        taskPrompt: version.taskPrompt || '',
-        outputTemplate: version.outputTemplate || '',
-        forbiddenRules: version.forbiddenRules || '',
-        citationRules: version.citationRules || ''
-      }
-      state.bindingForm.baseId = version.baseId ? String(version.baseId) : ''
-      state.bindingBaseName = version.baseName || ''
-      if (canTrainCurrentSkill.value) {
-        await fetchTestCases(version.id)
-      } else {
-        state.testCaseList = []
-      }
+    const [publishedVersion, versionOptions] = await Promise.all([
+      getPublishedSkillVersion(item.id).then((response) => ensureSuccess(response, '技能版本加载失败')).catch(() => null),
+      fetchVersionOptions(item.id)
+    ])
+    const targetVersionId = publishedVersion?.id || versionOptions[0]?.id
+    if (targetVersionId) {
+      await loadVersionDetail(targetVersionId)
     } else {
       state.testCaseList = []
     }
   } catch (error) {
     state.testCaseList = []
+  }
+}
+
+async function handleVersionChange(event) {
+  const versionId = Number(event?.target?.value)
+  if (!versionId) {
+    resetVersionForm()
+    state.testCaseList = []
+    return
+  }
+  try {
+    await loadVersionDetail(versionId)
+  } catch (error) {
+    showToast(error.message || '技能版本加载失败')
   }
 }
 
@@ -410,8 +469,9 @@ async function handleSaveVersion() {
       forbiddenRules: state.versionForm.forbiddenRules || undefined,
       citationRules: state.versionForm.citationRules || undefined
     }), '版本保存失败')
-    state.versionForm.id = versionId
     showToast('技能版本已保存')
+    await fetchVersionOptions(state.activeSkillId)
+    await loadVersionDetail(versionId)
     await fetchSkills()
   } catch (error) {
     showToast(error.message || '版本保存失败')
@@ -428,6 +488,8 @@ async function handlePublishVersion() {
   try {
     ensureSuccess(await publishSkillVersion({ skillVersionId: state.versionForm.id }), '发布失败')
     showToast('技能版本已发布')
+    await fetchVersionOptions(state.activeSkillId)
+    await loadVersionDetail(state.versionForm.id)
     await fetchSkills()
   } catch (error) {
     showToast(error.message || '发布失败')

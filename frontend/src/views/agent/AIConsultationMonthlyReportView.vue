@@ -1,186 +1,167 @@
 <template>
-  <AppPageShell title="月度报表" description="按年份查看 AI 咨询经营数据，包括趋势、同比环比、知识库命中率和专家维度表现。">
+  <AppPageShell title="月度报表" description="按来源场景、技能、用户查看 AI 咨询月报，确认手机端政策咨询是否已进入统计闭环。">
     <template #actions>
       <div class="action-row">
-        <div class="year-select">
+        <label class="compact-field">
           <span>统计年份</span>
           <select v-model="state.query.year">
             <option v-for="item in yearOptions" :key="item" :value="item">{{ item }}</option>
           </select>
-        </div>
-        <van-button type="success" plain :loading="state.exporting" :disabled="state.loading" @click="handleExport">
+        </label>
+        <van-button size="small" type="success" plain :loading="state.exporting" :disabled="state.loading" @click="handleExport">
           导出月报
         </van-button>
-        <van-button size="small" type="primary" :loading="state.loading" @click="fetchReport">刷新报表</van-button>
+        <van-button size="small" type="primary" :loading="state.loading" @click="fetchReport">刷新</van-button>
       </div>
     </template>
 
-    <section class="panel filter-panel" data-guide="ai-monthly-filter">
-      <div class="panel-title">分析范围</div>
+    <section class="panel">
+      <div class="panel-title">筛选条件</div>
       <div class="filter-grid">
-        <div v-if="canManage" class="select-field">
-          <span class="select-label">用户</span>
+        <label v-if="canManage" class="filter-field">
+          <span>用户</span>
           <select v-model="state.query.userId">
             <option value="">全部</option>
             <option v-for="user in state.userOptions" :key="user.id" :value="String(user.id)">
               {{ user.realName || user.username }}
             </option>
           </select>
-        </div>
-        <div class="select-field">
-          <span class="select-label">技能</span>
+        </label>
+        <label class="filter-field">
+          <span>Skill</span>
           <select v-model="state.query.skillId">
             <option value="">全部</option>
             <option v-for="item in state.skillOptions" :key="item.id" :value="String(item.id)">
               {{ item.skillName }}
             </option>
           </select>
-        </div>
-        <van-field v-model.trim="state.query.keywords" label="关键词" placeholder="按标题、技能、知识库或用户筛选" />
+        </label>
+        <label class="filter-field">
+          <span>来源场景</span>
+          <select v-model="state.query.sourceScene">
+            <option value="">全部</option>
+            <option value="AI_WORKBENCH">AI工作台</option>
+            <option value="MOBILE_POLICY_CONSULTANT">手机端政策咨询</option>
+          </select>
+        </label>
+        <label class="filter-field filter-field--wide">
+          <span>关键词</span>
+          <input v-model.trim="state.query.keywords" type="text" placeholder="按 Skill、知识库、会话标题或用户搜索" />
+        </label>
       </div>
       <div class="action-row">
         <van-button size="small" type="primary" :loading="state.loading" @click="fetchReport">查询</van-button>
-        <van-button size="small" plain :disabled="state.loading || state.exporting" @click="resetQuery">重置</van-button>
+        <van-button size="small" plain :disabled="state.loading" @click="resetQuery">重置</van-button>
       </div>
     </section>
 
-    <section class="stats-grid" data-guide="ai-monthly-overview">
-      <div class="stats-card">
-        <div class="stats-label">年度会话数</div>
+    <section class="stats-grid">
+      <article class="stats-card">
+        <div class="stats-label">会话总数</div>
         <div class="stats-value">{{ report.totalSessionCount || 0 }}</div>
-      </div>
-      <div class="stats-card">
-        <div class="stats-label">年度消息数</div>
+      </article>
+      <article class="stats-card">
+        <div class="stats-label">消息总数</div>
         <div class="stats-value">{{ report.totalMessageCount || 0 }}</div>
-      </div>
-      <div class="stats-card">
-        <div class="stats-label">活跃月份</div>
-        <div class="stats-value">{{ report.activeMonthCount || 0 }}</div>
-      </div>
-      <div class="stats-card">
-        <div class="stats-label">月均会话</div>
-        <div class="stats-value">{{ report.averageMonthlySessions || 0 }}</div>
-      </div>
-      <div class="stats-card">
-        <div class="stats-label">本月会话</div>
-        <div class="stats-value">{{ report.currentMonthSessionCount || 0 }}</div>
-      </div>
-      <div class="stats-card">
-        <div class="stats-label">知识命中率</div>
-        <div class="stats-value stats-value--small">{{ formatPercent(report.citationHitRate) }}</div>
-      </div>
-      <div class="stats-card">
-        <div class="stats-label">环比</div>
-        <div class="stats-value stats-value--small">{{ formatDelta(report.monthOverMonthRate) }}</div>
-      </div>
-      <div class="stats-card">
-        <div class="stats-label">同比</div>
-        <div class="stats-value stats-value--small">{{ formatDelta(report.yearOverYearRate) }}</div>
-      </div>
-      <div class="stats-card">
+      </article>
+      <article class="stats-card">
         <div class="stats-label">AI 回复数</div>
         <div class="stats-value">{{ report.assistantMessageCount || 0 }}</div>
-      </div>
-      <div class="stats-card">
-        <div class="stats-label">带引用回复数</div>
-        <div class="stats-value">{{ report.citedMessageCount || 0 }}</div>
-      </div>
-      <div class="stats-card">
-        <div class="stats-label">TOP 技能</div>
-        <div class="stats-value stats-value--small">{{ report.topSkillLabel || '-' }}</div>
-      </div>
-      <div class="stats-card">
-        <div class="stats-label">TOP 知识库</div>
-        <div class="stats-value stats-value--small">{{ report.topBaseLabel || '-' }}</div>
-      </div>
-      <div class="stats-card stats-card--wide">
-        <div class="stats-label">TOP 专家</div>
-        <div class="stats-value stats-value--small">{{ report.topExpertLabel || '-' }}</div>
-      </div>
+      </article>
+      <article class="stats-card">
+        <div class="stats-label">知识命中率</div>
+        <div class="stats-value stats-value--small">{{ formatPercent(report.citationHitRate) }}</div>
+      </article>
+      <article class="stats-card">
+        <div class="stats-label">环比</div>
+        <div class="stats-value stats-value--small">{{ formatDelta(report.monthOverMonthRate) }}</div>
+      </article>
+      <article class="stats-card">
+        <div class="stats-label">同比</div>
+        <div class="stats-value stats-value--small">{{ formatDelta(report.yearOverYearRate) }}</div>
+      </article>
     </section>
 
     <section class="trend-layout">
-      <section class="panel panel--wide">
+      <section class="panel">
         <div class="panel-title">本年趋势</div>
-        <div class="panel-hint">{{ state.query.year }} 年 1 月至 12 月咨询会话趋势</div>
-        <van-loading v-if="state.loading" class="state-block" size="24px" vertical>加载中...</van-loading>
+        <div class="panel-hint">{{ state.query.year }} 年 1 月到 12 月会话量</div>
+        <div v-if="state.loading" class="state-block">加载中...</div>
         <div v-else class="trend-list">
           <div v-for="item in report.monthlySessions || []" :key="item.label" class="trend-item">
-            <div class="trend-label">{{ monthLabel(item.label) }}</div>
+            <span class="trend-label">{{ monthLabel(item.label) }}</span>
             <div class="trend-bar-wrap">
               <div class="trend-bar" :style="{ width: `${barWidth(item.value, report.monthlySessions)}%` }"></div>
             </div>
-            <div class="trend-value">{{ item.value || 0 }}</div>
+            <strong>{{ item.value || 0 }}</strong>
           </div>
         </div>
       </section>
 
-      <section class="panel panel--wide">
+      <section class="panel">
         <div class="panel-title">去年对比</div>
-        <div class="panel-hint">{{ state.query.year - 1 }} 年与 {{ state.query.year }} 年月度会话对比</div>
-        <van-loading v-if="state.loading" class="state-block" size="24px" vertical>加载中...</van-loading>
+        <div class="panel-hint">{{ state.query.year }} 年与上一年同月对比</div>
+        <div v-if="state.loading" class="state-block">加载中...</div>
         <div v-else class="compare-list">
           <div v-for="item in compareRows" :key="item.month" class="compare-item">
-            <div class="compare-title">{{ item.month }}</div>
-            <div class="compare-metrics">
-              <span>本年 {{ item.current }}</span>
-              <span>去年 {{ item.previous }}</span>
-              <span>同比 {{ formatDelta(item.yoy) }}</span>
-            </div>
+            <strong>{{ item.month }}</strong>
+            <span>今年 {{ item.current }}</span>
+            <span>去年 {{ item.previous }}</span>
+            <span>同比 {{ formatDelta(item.yoy) }}</span>
           </div>
         </div>
       </section>
     </section>
 
-    <section class="panel-grid panel-grid--triple">
+    <section class="rank-layout">
       <section class="panel">
-        <div class="panel-title">技能排行</div>
-        <van-empty v-if="!(report.skillRanking || []).length" description="暂无技能排行" />
+        <div class="panel-title">Skill 排行</div>
+        <div v-if="!(report.skillRanking || []).length" class="state-block">暂无数据</div>
         <div v-else class="rank-list">
           <div v-for="item in report.skillRanking" :key="item.label" class="rank-item">
-            <div class="rank-title">{{ item.label }}</div>
-            <div class="meta-line">会话 {{ item.sessionCount || 0 }} / 消息 {{ item.messageCount || 0 }}</div>
+            <strong>{{ item.label }}</strong>
+            <span>会话 {{ item.sessionCount || 0 }} / 消息 {{ item.messageCount || 0 }}</span>
           </div>
         </div>
       </section>
 
       <section class="panel">
         <div class="panel-title">知识库排行</div>
-        <van-empty v-if="!(report.baseRanking || []).length" description="暂无知识库排行" />
+        <div v-if="!(report.baseRanking || []).length" class="state-block">暂无数据</div>
         <div v-else class="rank-list">
           <div v-for="item in report.baseRanking" :key="item.label" class="rank-item">
-            <div class="rank-title">{{ item.label }}</div>
-            <div class="meta-line">会话 {{ item.sessionCount || 0 }} / 消息 {{ item.messageCount || 0 }}</div>
+            <strong>{{ item.label }}</strong>
+            <span>会话 {{ item.sessionCount || 0 }} / 消息 {{ item.messageCount || 0 }}</span>
           </div>
         </div>
       </section>
 
       <section class="panel">
         <div class="panel-title">用户排行</div>
-        <van-empty v-if="!(report.userRanking || []).length" description="暂无用户排行" />
+        <div v-if="!(report.userRanking || []).length" class="state-block">暂无数据</div>
         <div v-else class="rank-list">
           <div v-for="item in report.userRanking" :key="item.label" class="rank-item">
-            <div class="rank-title">{{ item.label }}</div>
-            <div class="meta-line">会话 {{ item.sessionCount || 0 }} / 消息 {{ item.messageCount || 0 }}</div>
+            <strong>{{ item.label }}</strong>
+            <span>会话 {{ item.sessionCount || 0 }} / 消息 {{ item.messageCount || 0 }}</span>
           </div>
         </div>
       </section>
     </section>
 
-    <section class="panel" data-guide="ai-monthly-expert">
-      <div class="panel-title">专家命中率排行</div>
-      <div class="panel-hint">按专家身份统计 AI 回复、带引用回复和知识命中率</div>
-      <van-empty v-if="!(report.expertRanking || []).length" description="暂无专家指标" />
+    <section class="panel">
+      <div class="panel-title">专家维度</div>
+      <div class="panel-hint">用于确认高频专家、命中率与手机端来源统计是否正常承接。</div>
+      <div v-if="!(report.expertRanking || []).length" class="state-block">暂无数据</div>
       <div v-else class="expert-table">
-        <div class="expert-table__header">
+        <div class="expert-row expert-row--head">
           <span>专家</span>
           <span>等级</span>
           <span>会话</span>
-          <span>回复</span>
-          <span>带引用回复</span>
+          <span>AI 回复</span>
+          <span>引用回复</span>
           <span>命中率</span>
         </div>
-        <div v-for="item in report.expertRanking" :key="`${item.label}-${item.expertLevel}`" class="expert-table__row">
+        <div v-for="item in report.expertRanking" :key="`${item.label}-${item.expertLevel}`" class="expert-row">
           <span>{{ item.label }}</span>
           <span>{{ item.expertLevel || '-' }}</span>
           <span>{{ item.sessionCount || 0 }}</span>
@@ -207,14 +188,14 @@ function createReport() {
     year: new Date().getFullYear(),
     totalSessionCount: 0,
     totalMessageCount: 0,
+    assistantMessageCount: 0,
+    citedMessageCount: 0,
+    citationHitRate: 0,
     activeMonthCount: 0,
     averageMonthlySessions: 0,
     currentMonthSessionCount: 0,
     monthOverMonthRate: 0,
     yearOverYearRate: 0,
-    assistantMessageCount: 0,
-    citedMessageCount: 0,
-    citationHitRate: 0,
     topSkillLabel: '-',
     topBaseLabel: '-',
     topExpertLabel: '-',
@@ -232,6 +213,7 @@ function createQuery() {
     year: new Date().getFullYear(),
     userId: '',
     skillId: '',
+    sourceScene: '',
     keywords: ''
   }
 }
@@ -280,6 +262,7 @@ function buildPayload() {
     year: Number(state.query.year),
     userId: state.query.userId ? Number(state.query.userId) : undefined,
     skillId: state.query.skillId ? Number(state.query.skillId) : undefined,
+    sourceScene: state.query.sourceScene || undefined,
     keywords: state.query.keywords || undefined
   }
 }
@@ -325,15 +308,13 @@ function resetQuery() {
 }
 
 async function fetchPermissions() {
-  state.permissions = ensureSuccess(await queryCurrentAiPermission(), '权限信息加载失败')
+  state.permissions = ensureSuccess(await queryCurrentAiPermission(), '加载权限失败')
 }
 
 async function fetchOptions() {
-  const skillResponse = await querySkillList({ publishStatus: 'PUBLISHED', status: 1 })
-  state.skillOptions = ensureSuccess(skillResponse, '技能列表加载失败') || []
+  state.skillOptions = ensureSuccess(await querySkillList({ publishStatus: 'PUBLISHED', status: 1 }), '加载 Skill 列表失败') || []
   if (canManage.value) {
-    const userResponse = await queryUserPageApi({ pageNo: 1, pageSize: 200 })
-    const userData = ensureSuccess(userResponse, '用户列表加载失败')
+    const userData = ensureSuccess(await queryUserPageApi({ pageNo: 1, pageSize: 200 }), '加载用户列表失败')
     state.userOptions = Array.isArray(userData?.list) ? userData.list : []
   } else {
     state.userOptions = []
@@ -343,9 +324,9 @@ async function fetchOptions() {
 async function fetchReport() {
   state.loading = true
   try {
-    state.report = ensureSuccess(await queryAgentMonthlyReport(buildPayload()), '月度报表加载失败') || createReport()
+    state.report = ensureSuccess(await queryAgentMonthlyReport(buildPayload()), '加载月度报表失败') || createReport()
   } catch (error) {
-    showToast(error.message || '月度报表加载失败')
+    showToast(error.message || '加载月度报表失败')
   } finally {
     state.loading = false
   }
@@ -363,9 +344,9 @@ async function handleExport() {
     link.click()
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
-    showToast('月度报表导出成功')
+    showToast('导出成功')
   } catch (error) {
-    showToast(error.message || '月度报表导出失败')
+    showToast(error.message || '导出失败')
   } finally {
     state.exporting = false
   }
@@ -377,7 +358,7 @@ onMounted(async () => {
     await fetchOptions()
     await fetchReport()
   } catch (error) {
-    showToast(error.message || '月度报表初始化失败')
+    showToast(error.message || '初始化月报失败')
   }
 })
 </script>
@@ -390,126 +371,112 @@ onMounted(async () => {
   align-items: center;
 }
 
-.year-select {
-  display: flex;
-  align-items: center;
+.compact-field,
+.filter-field {
+  display: grid;
   gap: 8px;
-  padding: 8px 12px;
+}
+
+.compact-field {
+  grid-template-columns: auto auto;
+  align-items: center;
+  padding: 10px 12px;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
   background: #fff;
 }
 
-.year-select select {
+.compact-field select,
+.filter-field select,
+.filter-field input {
   border: 0;
-  background: transparent;
   outline: none;
-}
-
-.panel,
-.stats-card,
-.rank-item,
-.trend-item,
-.compare-item {
-  padding: 16px;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  background: #fff;
+  background: transparent;
+  font: inherit;
 }
 
 .panel {
+  padding: 16px;
   margin-bottom: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
 }
 
-.panel-title,
-.rank-title {
+.panel-title {
   color: #111827;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .panel-hint,
-.meta-line,
 .stats-label,
-.trend-label,
-.trend-value,
-.compare-metrics {
+.rank-item span,
+.compare-item span,
+.trend-label {
   color: #6b7280;
   font-size: 13px;
 }
 
-.filter-grid {
+.filter-grid,
+.stats-grid,
+.trend-layout,
+.rank-layout {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin: 12px 0;
+  gap: 16px;
+  margin-top: 12px;
 }
 
-.select-field {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid #ebedf0;
-  border-radius: 8px;
+.filter-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.select-label {
-  flex: 0 0 72px;
+.filter-field {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
 }
 
-.select-field select {
-  flex: 1;
-  border: 0;
-  background: transparent;
-  outline: none;
+.filter-field--wide {
+  grid-column: span 2;
 }
 
 .stats-grid {
-  display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
 }
 
-.stats-card--wide {
-  grid-column: span 2;
+.stats-card {
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
 }
 
 .stats-value {
   margin-top: 10px;
+  color: #111827;
   font-size: 28px;
   font-weight: 700;
-  color: #111827;
 }
 
 .stats-value--small {
   font-size: 18px;
 }
 
-.trend-layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 16px;
+.trend-layout,
+.rank-layout {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.panel-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.panel-grid--triple {
+.rank-layout {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.panel--wide {
-  min-width: 0;
-}
-
-.rank-list,
 .trend-list,
-.compare-list {
+.compare-list,
+.rank-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -518,107 +485,81 @@ onMounted(async () => {
 
 .trend-item {
   display: grid;
-  grid-template-columns: 64px 1fr 36px;
+  grid-template-columns: 56px 1fr auto;
+  gap: 10px;
   align-items: center;
-  gap: 12px;
 }
 
 .trend-bar-wrap {
   height: 10px;
-  background: #eef2ff;
   border-radius: 999px;
+  background: #e5e7eb;
   overflow: hidden;
 }
 
 .trend-bar {
   height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #1677ff, #36cfc9);
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0ea5e9, #2563eb);
 }
 
-.compare-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.compare-title {
-  color: #111827;
-  font-weight: 600;
-}
-
-.compare-metrics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+.compare-item,
+.rank-item,
+.expert-row {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
 }
 
 .expert-table {
-  margin-top: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.expert-table__header,
-.expert-table__row {
   display: grid;
-  grid-template-columns: 1.4fr 0.8fr 0.7fr 0.8fr 1fr 0.8fr;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 10px;
+  margin-top: 12px;
 }
 
-.expert-table__header {
-  background: #f8fafc;
-  color: #374151;
-  font-weight: 600;
+.expert-row {
+  grid-template-columns: 2fr repeat(5, minmax(0, 1fr));
+  align-items: center;
 }
 
-.expert-table__row {
-  border-top: 1px solid #eef2f7;
-  color: #111827;
+.expert-row--head {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 700;
 }
 
 .state-block {
-  padding: 20px 0;
+  margin-top: 12px;
+  color: #6b7280;
 }
 
-@media (max-width: 1280px) {
-  .stats-grid {
+@media (max-width: 1100px) {
+  .stats-grid,
+  .rank-layout {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .trend-layout,
-  .panel-grid,
-  .panel-grid--triple,
   .filter-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .stats-card--wide {
-    grid-column: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 900px) {
-  .stats-grid {
+@media (max-width: 768px) {
+  .filter-grid,
+  .stats-grid,
+  .trend-layout,
+  .rank-layout {
     grid-template-columns: 1fr;
   }
 
-  .select-field,
-  .year-select {
-    flex-direction: column;
-    align-items: flex-start;
+  .filter-field--wide {
+    grid-column: span 1;
   }
 
-  .select-field select,
-  .year-select select {
-    width: 100%;
-  }
-
-  .trend-item,
-  .expert-table__header,
-  .expert-table__row {
+  .expert-row {
     grid-template-columns: 1fr;
   }
 }

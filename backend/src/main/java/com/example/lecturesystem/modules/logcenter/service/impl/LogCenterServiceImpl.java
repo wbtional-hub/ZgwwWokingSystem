@@ -87,6 +87,31 @@ public class LogCenterServiceImpl implements LogCenterService {
     }
 
     @Override
+    public void recordSystemEvent(String module,
+                                  String subModule,
+                                  String level,
+                                  String title,
+                                  String summary,
+                                  String diagnosis,
+                                  String errorCode,
+                                  Object rawData) {
+        LogCenterEntity entity = new LogCenterEntity();
+        entity.setTraceId(TraceIdHolder.getOrCreateTraceId());
+        entity.setLogType("SYSTEM_EVENT");
+        entity.setModule(defaultIfBlank(normalizeText(module), "SYSTEM"));
+        entity.setSubModule(normalizeText(subModule));
+        entity.setLevel(defaultIfBlank(normalizeText(level), "INFO"));
+        entity.setTitle(defaultIfBlank(normalizeText(title), "系统事件"));
+        entity.setSummary(defaultIfBlank(normalizeText(summary), entity.getTitle()));
+        entity.setDiagnosis(defaultIfBlank(normalizeText(diagnosis), "请结合 traceId 和原始上下文排查。"));
+        entity.setErrorCode(normalizeText(errorCode));
+        entity.setRawData(serializeJson(rawData));
+        entity.setEnv("SERVER");
+        fillUserContext(entity, null, null, null, null);
+        persist(entity);
+    }
+
+    @Override
     public void recordBackendException(HttpServletRequest request,
                                        Exception exception,
                                        String friendlyMessage,

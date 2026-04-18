@@ -112,12 +112,14 @@ const welcomeText = computed(() => {
 
 const menuIconMap = {
   '/home': Home,
+  '/ai-map': LayoutGrid,
   '/policy-consultant': Sparkles,
   '/units': Building2,
   '/params': Settings2,
   '/knowledge': BookOpenText,
   '/skills': FolderKanban,
   '/ai-workbench': Bot,
+  '/ai-result-flow': FileClock,
   '/ai-ledger': FileClock,
   '/ai-monthly-report': FileBarChart2,
   '/experts': Users,

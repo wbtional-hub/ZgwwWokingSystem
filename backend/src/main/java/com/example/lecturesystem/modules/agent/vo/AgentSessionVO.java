@@ -14,6 +14,8 @@ public class AgentSessionVO {
     private String baseName;
     private String modelCode;
     private String sessionTitle;
+    private String sourceScene;
+    private String skillMatchMode;
     private String status;
     private Integer messageCount;
     private LocalDateTime lastMessageTime;
@@ -41,6 +43,10 @@ public class AgentSessionVO {
     public void setModelCode(String modelCode) { this.modelCode = modelCode; }
     public String getSessionTitle() { return sessionTitle; }
     public void setSessionTitle(String sessionTitle) { this.sessionTitle = sessionTitle; }
+    public String getSourceScene() { return sourceScene; }
+    public void setSourceScene(String sourceScene) { this.sourceScene = sourceScene; }
+    public String getSkillMatchMode() { return skillMatchMode; }
+    public void setSkillMatchMode(String skillMatchMode) { this.skillMatchMode = skillMatchMode; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public Integer getMessageCount() { return messageCount; }

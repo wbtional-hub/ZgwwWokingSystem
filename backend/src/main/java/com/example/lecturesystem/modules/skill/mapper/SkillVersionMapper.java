@@ -2,8 +2,11 @@ package com.example.lecturesystem.modules.skill.mapper;
 
 import com.example.lecturesystem.modules.skill.entity.SkillVersionEntity;
 import com.example.lecturesystem.modules.skill.vo.SkillVersionDetailVO;
+import com.example.lecturesystem.modules.skill.vo.SkillVersionListItemVO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 @Mapper
 public interface SkillVersionMapper {
@@ -11,6 +14,7 @@ public interface SkillVersionMapper {
     SkillVersionEntity findBySkillIdAndVersionNo(@Param("skillId") Long skillId, @Param("versionNo") String versionNo);
     SkillVersionDetailVO queryDetail(@Param("id") Long id);
     SkillVersionDetailVO queryLatestPublishedBySkillId(@Param("skillId") Long skillId);
+    List<SkillVersionListItemVO> queryBySkillId(@Param("skillId") Long skillId);
     int insert(SkillVersionEntity entity);
     int update(SkillVersionEntity entity);
     int markPublished(@Param("skillId") Long skillId, @Param("skillVersionId") Long skillVersionId);

@@ -7,6 +7,15 @@ import jakarta.servlet.http.HttpServletRequest;
 public interface LogCenterService {
     void report(LogCenterReportRequest request, HttpServletRequest servletRequest);
 
+    void recordSystemEvent(String module,
+                           String subModule,
+                           String level,
+                           String title,
+                           String summary,
+                           String diagnosis,
+                           String errorCode,
+                           Object rawData);
+
     void recordBackendException(HttpServletRequest request,
                                 Exception exception,
                                 String friendlyMessage,

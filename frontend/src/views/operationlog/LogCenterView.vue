@@ -1,32 +1,32 @@
 <template>
-  <AppPageShell title="日志中台" description="统一查看前端异常、接口失败、定位诊断与后端业务异常，支持 traceId 串联与一键复制给 AI。">
+  <AppPageShell title="日志中台" description="统一追踪 AI 主链、前端异常和后台业务异常，便于定位来源场景、Skill 命中与回流承接问题。">
     <template #actions>
       <div class="action-row">
-        <van-button type="primary" :loading="state.loading" :disabled="state.loading" @click="fetchList">刷新日志</van-button>
+        <van-button type="primary" size="small" :loading="state.loading" @click="fetchList">刷新日志</van-button>
       </div>
     </template>
 
     <section class="panel">
-      <div class="panel-title">查询区</div>
+      <div class="panel-title">查询条件</div>
       <div class="query-grid">
         <van-field v-model.trim="state.queryForm.traceId" label="traceId" placeholder="输入 traceId" :disabled="state.loading" />
-        <van-field v-model.trim="state.queryForm.keyword" label="关键字" placeholder="标题 / 摘要 / 错误码 / 页面" :disabled="state.loading" />
+        <van-field v-model.trim="state.queryForm.keyword" label="关键词" placeholder="标题 / 摘要 / 错误码 / 页面" :disabled="state.loading" />
         <van-field v-model.trim="state.queryForm.userKeyword" label="用户" placeholder="用户名 / 用户ID / 组织" :disabled="state.loading" />
-        <div class="select-field">
+        <label class="select-field">
           <span class="select-label">类型</span>
           <select v-model="state.queryForm.logType" :disabled="state.loading">
             <option value="">全部</option>
             <option v-for="item in LOG_TYPE_OPTIONS" :key="item.value" :value="item.value">{{ item.label }}</option>
           </select>
-        </div>
-        <div class="select-field">
+        </label>
+        <label class="select-field">
           <span class="select-label">模块</span>
           <select v-model="state.queryForm.module" :disabled="state.loading">
             <option value="">全部</option>
             <option v-for="item in MODULE_OPTIONS" :key="item.value" :value="item.value">{{ item.label }}</option>
           </select>
-        </div>
-        <div class="select-field">
+        </label>
+        <label class="select-field">
           <span class="select-label">级别</span>
           <select v-model="state.queryForm.level" :disabled="state.loading">
             <option value="">全部</option>
@@ -34,12 +34,12 @@
             <option value="WARN">WARN</option>
             <option value="INFO">INFO</option>
           </select>
-        </div>
+        </label>
         <van-field v-model="state.queryForm.startTime" label="开始时间" type="datetime-local" :disabled="state.loading" />
         <van-field v-model="state.queryForm.endTime" label="结束时间" type="datetime-local" :disabled="state.loading" />
       </div>
-      <div class="panel-actions">
-        <van-button size="small" type="primary" :loading="state.loading" :disabled="state.loading" @click="handleSearch">查询</van-button>
+      <div class="action-row">
+        <van-button size="small" type="primary" :loading="state.loading" @click="handleSearch">查询</van-button>
         <van-button size="small" plain :disabled="state.loading" @click="handleReset">重置</van-button>
       </div>
       <div class="panel-hint">当前筛选：{{ querySummaryText }}</div>
@@ -47,39 +47,30 @@
 
     <section class="panel">
       <div class="panel-title">日志列表</div>
-      <div class="panel-hint">共 {{ state.total }} 条日志记录</div>
+      <div class="panel-hint">共 {{ state.total }} 条日志</div>
       <van-loading v-if="state.loading" class="state-block" size="24px" vertical>加载中...</van-loading>
-      <van-empty v-else-if="!state.list.length" description="暂无日志">
-        <template #default>
-          <div class="panel-hint">当前条件下暂无日志，可调整时间范围、traceId 或关键字重试。</div>
-        </template>
-      </van-empty>
-
+      <van-empty v-else-if="!state.list.length" description="暂无日志" />
       <div v-else class="list-wrap">
-        <van-card v-for="item in state.list" :key="item.id" class="log-card">
-          <template #title>
-            <div class="log-title">
-              <span>{{ item.title || '未命名日志' }}</span>
-              <van-tag :type="levelTagType(item.level)">{{ item.level || 'ERROR' }}</van-tag>
-            </div>
-          </template>
-          <template #desc>
-            <div class="log-meta">类型：{{ logTypeLabel(item.logType) }}</div>
-            <div class="log-meta">模块：{{ joinText(item.module, item.subModule) }}</div>
-            <div class="log-meta">用户：{{ joinText(item.userName, item.orgName) || '-' }}</div>
-            <div class="log-meta">错误码：{{ item.errorCode || '-' }}</div>
-            <div class="log-meta">traceId：{{ item.traceId || '-' }}</div>
-            <div class="log-meta">时间：{{ formatDateTime(item.createTime) }}</div>
-            <div class="log-content">{{ item.summary || item.message || '-' }}</div>
-            <div class="log-diagnosis">{{ item.diagnosis || '暂无诊断结论' }}</div>
-          </template>
-          <template #footer>
-            <div class="action-row">
-              <van-button size="small" plain type="primary" @click="openDetail(item)">查看详情</van-button>
-              <van-button size="small" plain type="success" :disabled="!item.traceId" @click="applyTraceIdFilter(item.traceId)">按 traceId 串联</van-button>
-            </div>
-          </template>
-        </van-card>
+        <article v-for="item in state.list" :key="item.id" class="log-card">
+          <div class="log-title">
+            <strong>{{ item.title || '未命名日志' }}</strong>
+            <van-tag :type="levelTagType(item.level)">{{ item.level || 'ERROR' }}</van-tag>
+          </div>
+          <div class="log-meta">类型：{{ logTypeLabel(item.logType) }}</div>
+          <div class="log-meta">模块：{{ joinText(item.module, item.subModule) || '-' }}</div>
+          <div class="log-meta">用户：{{ joinText(item.userName, item.orgName) || '-' }}</div>
+          <div class="log-meta">错误码：{{ item.errorCode || '-' }}</div>
+          <div class="log-meta">traceId：{{ item.traceId || '-' }}</div>
+          <div class="log-meta">时间：{{ formatDateTime(item.createTime) }}</div>
+          <div class="log-content">{{ item.summary || item.message || '-' }}</div>
+          <div class="log-diagnosis">{{ item.diagnosis || '暂无诊断建议' }}</div>
+          <div class="action-row">
+            <van-button size="small" plain type="primary" @click="openDetail(item)">查看详情</van-button>
+            <van-button size="small" plain type="success" :disabled="!item.traceId" @click="applyTraceIdFilter(item.traceId)">
+              按 traceId 串联
+            </van-button>
+          </div>
+        </article>
         <van-pagination
           v-if="state.total > state.pageSize"
           v-model="state.pageNo"
@@ -96,7 +87,7 @@
         <div class="detail-header">
           <div>
             <div class="panel-title">日志详情</div>
-            <div class="panel-hint">支持格式化查看与一键复制给 AI</div>
+            <div class="panel-hint">支持查看原始参数并一键复制给 AI 排查</div>
           </div>
           <div class="action-row">
             <van-button size="small" plain type="primary" :loading="state.detailLoading" :disabled="!state.detail" @click="handleCopyAi">
@@ -132,24 +123,20 @@
               <div class="detail-item"><span>设备</span><strong>{{ joinText(state.detail.deviceType, state.detail.platform) || '-' }}</strong></div>
               <div class="detail-item detail-item--full"><span>页面</span><strong>{{ state.detail.pageUrl || '-' }}</strong></div>
             </div>
-            <pre class="json-block">{{ state.detail.requestParams || '{}' }}</pre>
+            <pre class="json-block">{{ prettyJson(state.detail.requestParams) }}</pre>
           </section>
 
           <section class="detail-section">
-            <div class="detail-section__title">错误信息</div>
+            <div class="detail-section__title">错误与诊断</div>
             <div class="detail-text-block"><strong>错误码：</strong>{{ state.detail.errorCode || '-' }}</div>
             <div class="detail-text-block"><strong>摘要：</strong>{{ state.detail.summary || '-' }}</div>
             <div class="detail-text-block"><strong>消息：</strong>{{ state.detail.message || '-' }}</div>
-          </section>
-
-          <section class="detail-section">
-            <div class="detail-section__title">诊断建议</div>
-            <div class="detail-text-block">{{ state.detail.diagnosis || '暂无诊断建议' }}</div>
+            <div class="detail-text-block"><strong>诊断：</strong>{{ state.detail.diagnosis || '暂无诊断建议' }}</div>
           </section>
 
           <section class="detail-section">
             <div class="detail-section__title">原始 JSON</div>
-            <pre class="json-block">{{ state.detail.rawData || '{}' }}</pre>
+            <pre class="json-block">{{ prettyJson(state.detail.rawData) }}</pre>
           </section>
         </template>
       </div>
@@ -164,6 +151,7 @@ import AppPageShell from '@/components/layout/AppPageShell.vue'
 import { queryLogCenterDetailApi, queryLogCenterPageApi } from '@/api/log-center'
 
 const LOG_TYPE_OPTIONS = [
+  { label: '系统事件', value: 'SYSTEM_EVENT' },
   { label: '前端 JS 异常', value: 'FRONTEND_JS_ERROR' },
   { label: '前端接口异常', value: 'FRONTEND_API_ERROR' },
   { label: '前端定位异常', value: 'FRONTEND_LOCATION_ERROR' },
@@ -176,6 +164,7 @@ const LOG_TYPE_OPTIONS = [
 ]
 
 const MODULE_OPTIONS = [
+  { label: 'AI主链', value: 'AI_CHAIN' },
   { label: '认证', value: 'AUTH' },
   { label: '考勤', value: 'ATTENDANCE' },
   { label: '周报', value: 'WEEKLY_WORK' },
@@ -221,7 +210,7 @@ const querySummaryText = computed(() => {
     parts.push(`用户 ${state.queryForm.userKeyword}`)
   }
   if (state.queryForm.keyword) {
-    parts.push(`关键字 ${state.queryForm.keyword}`)
+    parts.push(`关键词 ${state.queryForm.keyword}`)
   }
   if (state.queryForm.startTime || state.queryForm.endTime) {
     parts.push(`时间 ${formatRangeText(state.queryForm.startTime, state.queryForm.endTime)}`)
@@ -247,7 +236,7 @@ function levelTagType(level) {
 }
 
 function logTypeLabel(value) {
-  return LOG_TYPE_OPTIONS.find(item => item.value === value)?.label || value || '-'
+  return LOG_TYPE_OPTIONS.find((item) => item.value === value)?.label || value || '-'
 }
 
 function joinText(...parts) {
@@ -276,6 +265,24 @@ function toBackendDateTime(value) {
     return undefined
   }
   return `${value.replace('T', ' ')}:00`
+}
+
+function prettyJson(value) {
+  if (!value) {
+    return '{}'
+  }
+  if (typeof value === 'string') {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2)
+    } catch {
+      return value
+    }
+  }
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
 }
 
 async function fetchList() {
@@ -348,13 +355,19 @@ function applyTraceIdFilter(traceId) {
 }
 
 async function handleCopyAi() {
-  if (!state.detail?.aiAnalysisText) {
-    showToast('暂无可复制内容')
-    return
-  }
+  const text = state.detail?.aiAnalysisText
+    || [
+      `标题: ${state.detail?.title || '-'}`,
+      `类型: ${logTypeLabel(state.detail?.logType)}`,
+      `模块: ${joinText(state.detail?.module, state.detail?.subModule) || '-'}`,
+      `traceId: ${state.detail?.traceId || '-'}`,
+      `摘要: ${state.detail?.summary || '-'}`,
+      `诊断: ${state.detail?.diagnosis || '-'}`,
+      `原始数据: ${prettyJson(state.detail?.rawData)}`
+    ].join('\n')
   try {
-    await navigator.clipboard.writeText(state.detail.aiAnalysisText)
-    showToast('已复制 AI 分析文本')
+    await navigator.clipboard.writeText(text)
+    showToast('已复制排查内容')
   } catch (error) {
     showToast('复制失败，请检查浏览器剪贴板权限')
   }
@@ -401,13 +414,6 @@ onMounted(() => {
   margin-top: 12px;
 }
 
-.panel-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
 .select-field {
   display: flex;
   align-items: center;
@@ -443,9 +449,10 @@ onMounted(() => {
 }
 
 .log-card {
+  padding: 16px;
   border-radius: 14px;
-  box-shadow: none;
   border: 1px solid #eef2f7;
+  background: #fff;
 }
 
 .log-title {
@@ -456,7 +463,7 @@ onMounted(() => {
 }
 
 .log-meta {
-  margin-top: 4px;
+  margin-top: 6px;
   color: #6b7280;
   font-size: 12px;
 }
@@ -468,7 +475,7 @@ onMounted(() => {
 }
 
 .log-diagnosis {
-  margin-top: 8px;
+  margin: 10px 0 12px;
   padding: 10px 12px;
   border-radius: 10px;
   background: #f8fafc;

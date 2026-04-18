@@ -13,4 +13,6 @@ public interface SkillService {
     Object runValidation(RunSkillValidationRequest request);
     Object getValidationDetail(Long runId);
     Object getPublishedVersion(Long skillId);
+    Object listVersions(Long skillId);
+    Object getVersionDetail(Long versionId);
 }

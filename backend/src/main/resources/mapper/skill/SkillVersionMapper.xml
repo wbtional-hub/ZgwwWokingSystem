@@ -40,12 +40,23 @@
         WHERE ver.skill_id = #{skillId} AND ver.publish_status = 'PUBLISHED'
         ORDER BY ver.create_time DESC, ver.id DESC LIMIT 1
     </select>
+    <select id="queryBySkillId" resultType="com.example.lecturesystem.modules.skill.vo.SkillVersionListItemVO">
+        SELECT ver.id,
+               ver.skill_id,
+               ver.version_no,
+               ver.publish_status,
+               ver.create_time,
+               ver.create_time AS update_time
+        FROM ai_skill_version ver
+        WHERE ver.skill_id = #{skillId}
+        ORDER BY ver.create_time DESC, ver.id DESC
+    </select>
     <insert id="insert" parameterType="com.example.lecturesystem.modules.skill.entity.SkillVersionEntity" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO ai_skill_version (skill_id, version_no, provider_config_id, model_code, system_prompt, task_prompt, output_template, forbidden_rules, citation_rules, validation_status, publish_status, score, create_time, create_user)
         VALUES (#{skillId}, #{versionNo}, #{providerConfigId}, #{modelCode}, #{systemPrompt}, #{taskPrompt}, #{outputTemplate}, #{forbiddenRules}, #{citationRules}, #{validationStatus}, #{publishStatus}, #{score}, #{createTime}, #{createUser})
     </insert>
     <update id="update" parameterType="com.example.lecturesystem.modules.skill.entity.SkillVersionEntity">
-        UPDATE ai_skill_version SET provider_config_id=#{providerConfigId}, model_code=#{modelCode}, system_prompt=#{systemPrompt}, task_prompt=#{taskPrompt}, output_template=#{outputTemplate}, forbidden_rules=#{forbiddenRules}, citation_rules=#{citationRules}
+        UPDATE ai_skill_version SET version_no=#{versionNo}, provider_config_id=#{providerConfigId}, model_code=#{modelCode}, system_prompt=#{systemPrompt}, task_prompt=#{taskPrompt}, output_template=#{outputTemplate}, forbidden_rules=#{forbiddenRules}, citation_rules=#{citationRules}
         WHERE id=#{id}
     </update>
     <update id="markPublished">

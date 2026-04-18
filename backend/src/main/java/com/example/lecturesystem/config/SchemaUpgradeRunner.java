@@ -123,7 +123,10 @@ public class SchemaUpgradeRunner implements ApplicationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_sys_log_center_type_time ON sys_log_center(log_type, create_time DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_sys_log_center_module_time ON sys_log_center(module, create_time DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_sys_log_center_user_time ON sys_log_center(user_id, create_time DESC)",
-                "CREATE INDEX IF NOT EXISTS idx_sys_log_center_time ON sys_log_center(create_time DESC)"
+                "CREATE INDEX IF NOT EXISTS idx_sys_log_center_time ON sys_log_center(create_time DESC)",
+                "ALTER TABLE ai_agent_session ADD COLUMN IF NOT EXISTS source_scene VARCHAR(64) NOT NULL DEFAULT 'AI_WORKBENCH'",
+                "COMMENT ON COLUMN ai_agent_session.source_scene IS 'Conversation source scene, such as AI_WORKBENCH or MOBILE_POLICY_CONSULTANT'",
+                "CREATE INDEX IF NOT EXISTS idx_ai_agent_session_source_scene ON ai_agent_session(source_scene, create_time DESC)"
         );
 
         for (String statement : statements) {

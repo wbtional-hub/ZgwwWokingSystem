@@ -34,6 +34,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.lecturesystem.modules.attendance.entity.AttendanceRuleEntity;
+import com.example.lecturesystem.modules.attendance.mapper.AttendanceRuleMapper;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -78,100 +80,138 @@ public class AttendanceServiceImpl implements AttendanceService {
     private static final String TREND_FALLING = "FALLING";
     private static final String TREND_STABLE = "STABLE";
 
-    private final AttendanceMapper attendanceMapper;
-    private final PermissionService permissionService;
-    private final UserMapper userMapper;
-    private final OperationLogService operationLogService;
-    private final CurrentUserFacade currentUserFacade;
-    private final DataScopeService dataScopeService;
-    private final ParamService paramService;
+ private final AttendanceMapper attendanceMapper;
+private final AttendanceRuleMapper attendanceRuleMapper;
+private final PermissionService permissionService;
+private final UserMapper userMapper;
+private final OperationLogService operationLogService;
+private final CurrentUserFacade currentUserFacade;
+private final DataScopeService dataScopeService;
+private final ParamService paramService;
 
     public AttendanceServiceImpl(AttendanceMapper attendanceMapper,
-                                 PermissionService permissionService,
-                                 UserMapper userMapper) {
-        this(attendanceMapper, permissionService, userMapper, new OperationLogService() {
-            @Override
-            public void log(String moduleName, String actionName, Long bizId, String content) {
-            }
+                             PermissionService permissionService,
+                             UserMapper userMapper) {
+    this(
+            attendanceMapper,
+            null,
+            permissionService,
+            userMapper,
+            new OperationLogService() {
+                @Override
+                public void log(String moduleName, String actionName, Long bizId, String content) {
+                }
 
-            @Override
-            public Object query(com.example.lecturesystem.modules.operationlog.dto.OperationLogQueryRequest request) {
-                return java.util.List.of();
-            }
-        }, null, new DataScopeService(), new ParamService() {
-            @Override
-            public Object listParams(com.example.lecturesystem.modules.param.dto.ParamQueryRequest request) {
-                return java.util.List.of();
-            }
+                @Override
+                public Object query(com.example.lecturesystem.modules.operationlog.dto.OperationLogQueryRequest request) {
+                    return java.util.List.of();
+                }
+            },
+            null,
+            new DataScopeService(),
+            new ParamService() {
+                @Override
+                public Object listParams(com.example.lecturesystem.modules.param.dto.ParamQueryRequest request) {
+                    return java.util.List.of();
+                }
 
-            @Override
-            public String getByCode(String code) {
-                return null;
-            }
+                @Override
+                public String getByCode(String code) {
+                    return null;
+                }
 
-            @Override
-            public com.example.lecturesystem.modules.config.vo.AmapConfigVO queryAmapConfig() {
-                return null;
-            }
+                @Override
+                public com.example.lecturesystem.modules.config.vo.AmapConfigVO queryAmapConfig() {
+                    return null;
+                }
 
-            @Override
-            public Long saveParam(com.example.lecturesystem.modules.param.dto.SaveParamRequest request) {
-                return null;
-            }
+                @Override
+                public Long saveParam(com.example.lecturesystem.modules.param.dto.SaveParamRequest request) {
+                    return null;
+                }
 
-            @Override
-            public void deleteParam(Long id) {
-            }
+                @Override
+                public void deleteParam(Long id) {
+                }
 
-            @Override
-            public void toggleStatus(com.example.lecturesystem.modules.param.dto.ToggleParamStatusRequest request) {
+                @Override
+                public void toggleStatus(com.example.lecturesystem.modules.param.dto.ToggleParamStatusRequest request) {
+                }
             }
-        });
-    }
+    );
+}
 
-    @Autowired
-    public AttendanceServiceImpl(AttendanceMapper attendanceMapper,
-                                 PermissionService permissionService,
-                                 UserMapper userMapper,
-                                 OperationLogService operationLogService,
-                                 CurrentUserFacade currentUserFacade,
-                                 DataScopeService dataScopeService,
-                                 ParamService paramService) {
-        this.attendanceMapper = attendanceMapper;
-        this.permissionService = permissionService;
-        this.userMapper = userMapper;
-        this.operationLogService = operationLogService;
-        this.currentUserFacade = currentUserFacade;
-        this.dataScopeService = dataScopeService;
-        this.paramService = paramService;
-    }
+@Autowired
+public AttendanceServiceImpl(AttendanceMapper attendanceMapper,
+                             AttendanceRuleMapper attendanceRuleMapper,
+                             PermissionService permissionService,
+                             UserMapper userMapper,
+                             OperationLogService operationLogService,
+                             CurrentUserFacade currentUserFacade,
+                             DataScopeService dataScopeService,
+                             ParamService paramService) {
+    this.attendanceMapper = attendanceMapper;
+    this.attendanceRuleMapper = attendanceRuleMapper;
+    this.permissionService = permissionService;
+    this.userMapper = userMapper;
+    this.operationLogService = operationLogService;
+    this.currentUserFacade = currentUserFacade;
+    this.dataScopeService = dataScopeService;
+    this.paramService = paramService;
+}
 
     @Override
-    public Object queryCurrentAttendanceLocation() {
-        LoginUser loginUser = currentLoginUser();
-        UserEntity currentUser = requireCurrentUser(loginUser.getUserId());
-        CheckInScope scope = resolveCheckInScope(currentUser);
+public Object queryCurrentAttendanceLocation() {
+    LoginUser loginUser = currentLoginUser();
+    UserEntity currentUser = requireCurrentUser(loginUser.getUserId());
+    CheckInScope scope = resolveCheckInScope(currentUser);
+    AttendanceRecordEntity todayRecord = attendanceMapper.findByUserIdAndDate(currentUser.getId(), LocalDate.now());
+    TimeDrivenActionDecision actionDecision = resolveTimeDrivenActionDecision(
+            currentUser.getUnitId(),
+            todayRecord,
+            LocalTime.now()
+    );
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("userId", currentUser.getId());
-        result.put("unitId", currentUser.getUnitId());
-        result.put("unitName", scope.unitName);
-        result.put("configured", scope.location != null);
-        result.put("allowCheckIn", scope.reason == null);
-        result.put("status", scope.status);
-        result.put("reason", scope.reason);
-        result.put("accuracyGoodThreshold", resolveGoodAccuracyThreshold());
-        result.put("accuracyMaxThreshold", resolveMaxAccuracyThreshold());
-        if (scope.location != null) {
-            result.put("locationName", scope.location.getLocationName());
-            result.put("latitude", scope.location.getLatitude());
-            result.put("longitude", scope.location.getLongitude());
-            result.put("radiusMeters", scope.location.getRadiusMeters());
-            result.put("address", scope.location.getAddress());
-            result.put("locationStatus", scope.location.getStatus());
-        }
-        return result;
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("userId", currentUser.getId());
+    result.put("unitId", currentUser.getUnitId());
+    result.put("unitName", scope.unitName);
+    result.put("configured", scope.location != null);
+    result.put("status", scope.status);
+    result.put("accuracyGoodThreshold", resolveGoodAccuracyThreshold());
+    result.put("accuracyMaxThreshold", resolveMaxAccuracyThreshold());
+
+    if (scope.location != null) {
+        result.put("locationName", scope.location.getLocationName());
+        result.put("latitude", scope.location.getLatitude());
+        result.put("longitude", scope.location.getLongitude());
+        result.put("radiusMeters", scope.location.getRadiusMeters());
+        result.put("address", scope.location.getAddress());
+        result.put("locationStatus", scope.location.getStatus());
     }
+
+    result.put("currentAction", actionDecision.action);
+    result.put("currentActionLabel", actionDecision.actionLabel);
+    result.put("currentActionAvailable", actionDecision.actionAvailable);
+    result.put("currentActionHint", actionDecision.hint);
+    result.put("finished", actionDecision.finished);
+
+    if (todayRecord != null) {
+        result.put("checkInTime", todayRecord.getCheckInTime());
+        result.put("amOffTime", todayRecord.getAmOffTime());
+        result.put("pmOnTime", todayRecord.getPmOnTime());
+        result.put("checkOutTime", todayRecord.getCheckOutTime());
+    }
+
+    if (scope.reason != null) {
+        result.put("allowCheckIn", false);
+        result.put("reason", scope.reason);
+    } else {
+        result.put("allowCheckIn", actionDecision.actionAvailable);
+        result.put("reason", actionDecision.actionAvailable ? null : actionDecision.hint);
+    }
+    return result;
+}
 
     @Override
     @Transactional
@@ -990,8 +1030,14 @@ public Long saveAttendance(SaveAttendanceRequest request) {
     result.put("locationName", scope.location == null ? null : scope.location.getLocationName());
     result.put("locationAddress", scope.location == null ? null : scope.location.getAddress());
 
+    Long unitId = resolveDecisionUnitId(entity);
+    TimeDrivenActionDecision actionDecision = resolveTimeDrivenActionDecision(
+            unitId,
+            entity,
+            LocalTime.now()
+    );
+
     if (entity != null) {
-        String nextAction = resolveNextCheckAction(entity);
         result.put("id", entity.getId());
         result.put("attendanceDate", entity.getAttendanceDate());
         result.put("checkType", entity.getCheckType());
@@ -1002,14 +1048,14 @@ public Long saveAttendance(SaveAttendanceRequest request) {
         result.put("checkOutTime", entity.getCheckOutTime());
 
         result.put("validFlag", entity.getValidFlag());
-        result.put("nextAction", nextAction);
-        result.put("nextActionLabel", resolveActionLabel(nextAction));
-        result.put("finished", nextAction == null);
-    } else {
-        result.put("nextAction", CHECK_ACTION_AM_ON);
-        result.put("nextActionLabel", resolveActionLabel(CHECK_ACTION_AM_ON));
-        result.put("finished", false);
     }
+
+    result.put("nextAction", actionDecision.action);
+    result.put("nextActionLabel", actionDecision.actionLabel);
+    result.put("currentActionAvailable", actionDecision.actionAvailable);
+    result.put("currentActionHint", actionDecision.hint);
+    result.put("finished", actionDecision.finished);
+
     return result;
 }
 
@@ -1025,15 +1071,19 @@ public Long saveAttendance(SaveAttendanceRequest request) {
                                                   String decisionBranch) {
     AttendanceRecordEntity entity = attendanceMapper.findByUserIdAndDate(loginUser.getUserId(), today);
     String requestedAction = resolveRequestedCheckAction(request);
-    String nextAction = resolveNextCheckAction(entity);
+    TimeDrivenActionDecision currentDecision = resolveTimeDrivenActionDecision(
+            currentUser.getUnitId(),
+            entity,
+            now.toLocalTime()
+    );
 
-    if (nextAction == null) {
+    if (currentDecision.finished) {
         return buildCheckInResult(
                 false,
                 null,
                 scope,
                 distanceMeters,
-                REASON_TODAY_FINISHED,
+                currentDecision.hint,
                 AttendanceCheckInStatus.ALREADY_FINISHED,
                 entity,
                 accuracyMeters,
@@ -1043,14 +1093,30 @@ public Long saveAttendance(SaveAttendanceRequest request) {
         );
     }
 
-    String action = resolveEffectiveCheckAction(requestedAction, entity);
-    if (!nextAction.equals(action)) {
+    if (!currentDecision.actionAvailable || currentDecision.action == null) {
         return buildCheckInResult(
                 false,
                 null,
                 scope,
                 distanceMeters,
-                "当前应执行：" + resolveActionLabel(nextAction),
+                currentDecision.hint,
+                AttendanceCheckInStatus.ALREADY_FINISHED,
+                entity,
+                accuracyMeters,
+                "TIME_WINDOW_BLOCKED",
+                false,
+                0
+        );
+    }
+
+    String action = resolveEffectiveCheckAction(requestedAction, currentDecision.action);
+    if (!currentDecision.action.equals(action)) {
+        return buildCheckInResult(
+                false,
+                null,
+                scope,
+                distanceMeters,
+                "当前时段应执行：" + currentDecision.actionLabel,
                 AttendanceCheckInStatus.ALREADY_FINISHED,
                 entity,
                 accuracyMeters,
@@ -1107,10 +1173,6 @@ public Long saveAttendance(SaveAttendanceRequest request) {
             entity.setAmOffLongitude(request.getLongitude());
             entity.setAmOffDistanceMeters(distanceMeters);
         } else if (CHECK_ACTION_PM_ON.equals(action)) {
-            if (entity.getAmOffTime() == null) {
-                return buildCheckInResult(false, null, scope, distanceMeters, "请先完成上午下班打卡",
-                        AttendanceCheckInStatus.LOCATION_REQUIRED, entity, accuracyMeters, "PM_ON_BEFORE_AM_OFF", false, 0);
-            }
             if (entity.getPmOnTime() != null) {
                 return buildDuplicateCheckInResult(scope, distanceMeters, accuracyMeters, entity, "PM_ON_DUPLICATE");
             }
@@ -1120,10 +1182,6 @@ public Long saveAttendance(SaveAttendanceRequest request) {
             entity.setPmOnLongitude(request.getLongitude());
             entity.setPmOnDistanceMeters(distanceMeters);
         } else if (CHECK_ACTION_PM_OFF.equals(action)) {
-            if (entity.getPmOnTime() == null) {
-                return buildCheckInResult(false, null, scope, distanceMeters, "请先完成下午上班打卡",
-                        AttendanceCheckInStatus.LOCATION_REQUIRED, entity, accuracyMeters, "PM_OFF_BEFORE_PM_ON", false, 0);
-            }
             if (entity.getCheckOutTime() != null) {
                 return buildDuplicateCheckInResult(scope, distanceMeters, accuracyMeters, entity, "PM_OFF_DUPLICATE");
             }
@@ -1227,13 +1285,12 @@ public Long saveAttendance(SaveAttendanceRequest request) {
     return null;
 }
 
-    private String resolveEffectiveCheckAction(String requestedAction, AttendanceRecordEntity entity) {
-    String nextAction = resolveNextCheckAction(entity);
-    if (nextAction == null) {
+    private String resolveEffectiveCheckAction(String requestedAction, String currentAction) {
+    if (currentAction == null) {
         return null;
     }
     if (requestedAction == null) {
-        return nextAction;
+        return currentAction;
     }
     return requestedAction;
 }
@@ -1413,6 +1470,142 @@ private LocalDateTime resolveCheckTime(String checkType, AttendanceRecordEntity 
         return entity.getAmOffTime();
     }
     return entity.getCheckInTime();
+}
+private static final class TimeDrivenActionDecision {
+    private final String action;
+    private final String actionLabel;
+    private final boolean actionAvailable;
+    private final boolean finished;
+    private final String hint;
+
+    private TimeDrivenActionDecision(String action,
+                                     String actionLabel,
+                                     boolean actionAvailable,
+                                     boolean finished,
+                                     String hint) {
+        this.action = action;
+        this.actionLabel = actionLabel;
+        this.actionAvailable = actionAvailable;
+        this.finished = finished;
+        this.hint = hint;
+    }
+}
+
+private Long resolveDecisionUnitId(AttendanceRecordEntity entity) {
+    if (entity != null && entity.getUnitId() != null) {
+        return entity.getUnitId();
+    }
+    try {
+        LoginUser loginUser = currentLoginUser();
+        UserEntity currentUser = requireCurrentUser(loginUser.getUserId());
+        return currentUser.getUnitId();
+    } catch (Exception ignore) {
+        return null;
+    }
+}
+
+private AttendanceRuleEntity findActiveAttendanceRule(Long unitId) {
+    if (unitId == null || attendanceRuleMapper == null) {
+        return null;
+    }
+    AttendanceRuleEntity rule = attendanceRuleMapper.findByUnitId(unitId);
+    if (rule == null || rule.getStatus() == null || rule.getStatus() != 1) {
+        return null;
+    }
+    if (rule.getWorkStartTime() == null
+            || rule.getAmOffTime() == null
+            || rule.getPmOnTime() == null
+            || rule.getWorkEndTime() == null) {
+        return null;
+    }
+    return rule;
+}
+
+private TimeDrivenActionDecision resolveTimeDrivenActionDecision(Long unitId,
+                                                                 AttendanceRecordEntity entity,
+                                                                 LocalTime nowTime) {
+    boolean amOnDone = entity != null && entity.getCheckInTime() != null;
+    boolean amOffDone = entity != null && entity.getAmOffTime() != null;
+    boolean pmOnDone = entity != null && entity.getPmOnTime() != null;
+    boolean pmOffDone = entity != null && entity.getCheckOutTime() != null;
+
+    if (pmOffDone) {
+        return finishedDecision("今日四次打卡已全部完成，无需重复提交。");
+    }
+
+    AttendanceRuleEntity rule = findActiveAttendanceRule(unitId);
+    if (rule == null) {
+        String fallbackAction = resolveNextCheckAction(entity);
+        if (fallbackAction == null) {
+            return finishedDecision("今日四次打卡已全部完成，无需重复提交。");
+        }
+        return availableDecision(fallbackAction, "当前未读取到完整四段规则，暂按顺序打卡。");
+    }
+
+    if (nowTime.isBefore(rule.getAmOffTime())) {
+        if (!amOnDone) {
+            return availableDecision(CHECK_ACTION_AM_ON, "当前为上午时段，请完成上午上班打卡。");
+        }
+        if (!amOffDone) {
+            return availableDecision(CHECK_ACTION_AM_OFF, "当前为上午时段，请完成上午下班打卡。");
+        }
+        return unavailableDecision("上午打卡已完成，请在下午上班时间后继续打卡。");
+    }
+
+    if (nowTime.isBefore(rule.getPmOnTime())) {
+        if (!amOnDone || !amOffDone) {
+            return unavailableDecision("上午时段已结束，上午漏卡请走补卡申请。");
+        }
+        return unavailableDecision("当前为午休时段，请在下午上班时间后继续打卡。");
+    }
+
+    if (nowTime.isBefore(rule.getWorkEndTime())) {
+        if (!pmOnDone) {
+            return availableDecision(CHECK_ACTION_PM_ON, "当前为下午时段，请完成下午上班打卡；上午漏卡请走补卡申请。");
+        }
+        if (!pmOffDone) {
+            return availableDecision(CHECK_ACTION_PM_OFF, "当前为下午时段，请完成下午下班打卡。");
+        }
+        return finishedDecision("今日四次打卡已全部完成，无需重复提交。");
+    }
+
+    if (!pmOnDone) {
+        return unavailableDecision("下午上班时段已结束，请通过补卡申请补下午上班卡。");
+    }
+    if (!pmOffDone) {
+        return availableDecision(CHECK_ACTION_PM_OFF, "已到下班时段，请完成下午下班打卡。");
+    }
+    return finishedDecision("今日四次打卡已全部完成，无需重复提交。");
+}
+
+private TimeDrivenActionDecision availableDecision(String action, String hint) {
+    return new TimeDrivenActionDecision(
+            action,
+            resolveActionLabel(action),
+            true,
+            false,
+            hint
+    );
+}
+
+private TimeDrivenActionDecision unavailableDecision(String hint) {
+    return new TimeDrivenActionDecision(
+            null,
+            "",
+            false,
+            false,
+            hint
+    );
+}
+
+private TimeDrivenActionDecision finishedDecision(String hint) {
+    return new TimeDrivenActionDecision(
+            null,
+            "",
+            false,
+            true,
+            hint
+    );
 }
 
     private int calculateDistanceMeters(double latitude1, double longitude1, double latitude2, double longitude2) {

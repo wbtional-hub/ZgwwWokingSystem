@@ -14,6 +14,9 @@
         <slot name="actions" />
       </div>
     </div>
+
+    <AIPageGuideCard v-if="resolvedGuideKey" :guide-key="resolvedGuideKey" />
+
     <div class="page-shell-body">
       <slot />
     </div>
@@ -24,6 +27,7 @@
 import { computed, useSlots } from 'vue'
 import { useRoute } from 'vue-router'
 import PageHelp from '@/components/PageHelp.vue'
+import AIPageGuideCard from '@/components/ai/AIPageGuideCard.vue'
 
 const route = useRoute()
 const slots = useSlots()
@@ -54,6 +58,19 @@ const routeHelpKeyMap = {
   '/ai-ledger': 'aiLedger',
   '/ai-monthly-report': 'aiMonthlyReport',
   '/experts': 'experts'
+}
+
+const routeGuideKeyMap = {
+  '/ai-map': 'aiMap',
+  '/ai-provider': 'aiProvider',
+  '/ai-permissions': 'aiPermissions',
+  '/knowledge': 'knowledge',
+  '/skills': 'skills',
+  '/ai-workbench': 'aiWorkbench',
+  '/ai-result-flow': 'aiResultFlow',
+  '/ai-ledger': 'aiLedger',
+  '/ai-monthly-report': 'aiMonthlyReport',
+  '/log-center': 'logCenter'
 }
 
 const routeHelpLabelMap = {
@@ -90,11 +107,16 @@ const props = defineProps({
   helpKey: {
     type: String,
     default: ''
+  },
+  guideKey: {
+    type: String,
+    default: ''
   }
 })
 
 const hasTitleExtraSlot = computed(() => Boolean(slots['title-extra']))
 const resolvedHelpKey = computed(() => props.helpKey || routeHelpKeyMap[route.path] || '')
+const resolvedGuideKey = computed(() => props.guideKey || routeGuideKeyMap[route.path] || '')
 const resolvedHelpKeyLabel = computed(() => routeHelpLabelMap[resolvedHelpKey.value] || 'Workspace')
 </script>
 

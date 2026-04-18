@@ -8,6 +8,8 @@ public class KnowledgeSearchRequest {
     private Long categoryId;
     private String keywords;
     private String policyRegion;
+    private String regionPriority;
+    private String questionType;
     private Boolean effectiveOnly;
     private Integer topN;
 
@@ -41,6 +43,22 @@ public class KnowledgeSearchRequest {
 
     public void setPolicyRegion(String policyRegion) {
         this.policyRegion = policyRegion;
+    }
+
+    public String getRegionPriority() {
+        return regionPriority;
+    }
+
+    public void setRegionPriority(String regionPriority) {
+        this.regionPriority = regionPriority;
+    }
+
+    public String getQuestionType() {
+        return questionType;
+    }
+
+    public void setQuestionType(String questionType) {
+        this.questionType = questionType;
     }
 
     public Boolean getEffectiveOnly() {

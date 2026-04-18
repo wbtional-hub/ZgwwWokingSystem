@@ -41,6 +41,16 @@ public class SkillController {
         return ApiResponse.success(skillService.getPublishedVersion(skillId));
     }
 
+    @GetMapping("/{skillId}/versions")
+    public ApiResponse<?> listVersions(@PathVariable Long skillId) {
+        return ApiResponse.success(skillService.listVersions(skillId));
+    }
+
+    @GetMapping("/version/{versionId}")
+    public ApiResponse<?> getVersionDetail(@PathVariable Long versionId) {
+        return ApiResponse.success(skillService.getVersionDetail(versionId));
+    }
+
     @PostMapping("/binding/save")
     public ApiResponse<?> saveBinding(@Validated @RequestBody SaveSkillBindingRequest request) {
         skillService.saveSkillBinding(request);

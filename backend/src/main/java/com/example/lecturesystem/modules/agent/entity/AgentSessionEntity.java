@@ -11,6 +11,7 @@ public class AgentSessionEntity {
     private String modelCode;
     private Long baseId;
     private String sessionTitle;
+    private String sourceScene;
     private String status;
     private LocalDateTime createTime;
 
@@ -30,6 +31,8 @@ public class AgentSessionEntity {
     public void setBaseId(Long baseId) { this.baseId = baseId; }
     public String getSessionTitle() { return sessionTitle; }
     public void setSessionTitle(String sessionTitle) { this.sessionTitle = sessionTitle; }
+    public String getSourceScene() { return sourceScene; }
+    public void setSourceScene(String sourceScene) { this.sourceScene = sourceScene; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public LocalDateTime getCreateTime() { return createTime; }

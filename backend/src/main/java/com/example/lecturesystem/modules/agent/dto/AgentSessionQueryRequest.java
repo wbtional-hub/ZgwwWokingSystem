@@ -7,6 +7,7 @@ public class AgentSessionQueryRequest {
     private Long skillId;
     private String status;
     private String keywords;
+    private String sourceScene;
     private LocalDate startDate;
     private LocalDate endDate;
     private Integer year;
@@ -19,6 +20,8 @@ public class AgentSessionQueryRequest {
     public void setStatus(String status) { this.status = status; }
     public String getKeywords() { return keywords; }
     public void setKeywords(String keywords) { this.keywords = keywords; }
+    public String getSourceScene() { return sourceScene; }
+    public void setSourceScene(String sourceScene) { this.sourceScene = sourceScene; }
     public LocalDate getStartDate() { return startDate; }
     public void setStartDate(LocalDate startDate) { this.startDate = startDate; }
     public LocalDate getEndDate() { return endDate; }

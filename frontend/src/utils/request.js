@@ -18,6 +18,10 @@ function isLogCenterReportRequest(config) {
   return typeof config?.url === 'string' && config.url.includes('/log-center/report')
 }
 
+function isAiAgentRequest(config) {
+  return typeof config?.url === 'string' && config.url.includes('/agent/')
+}
+
 function normalizeText(value) {
   if (value == null) {
     return ''
@@ -213,8 +217,13 @@ request.interceptors.response.use(
   error => {
     const status = error.response?.status
 const backendCode = error.response?.data?.code
-const backendMessage = error.response?.data?.message
+const isAiTimeout = error.code === 'ECONNABORTED' && isAiAgentRequest(error.config)
+const backendMessage = error.response?.data?.message || (isAiTimeout ? 'AI响应较慢，请稍后重试' : '')
 const responseTraceId = error.response?.headers?.[TRACE_ID_HEADER.toLowerCase()] || error.config?.metadata?.traceId || ''
+
+if (isAiTimeout) {
+  error.message = backendMessage
+}
 
 if ((status === 401 || status === 403) && !isLoginRequest(error.config) && !authRedirecting) {
       // FIX: wechat login recovery protection

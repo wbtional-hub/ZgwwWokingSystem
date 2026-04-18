@@ -1,7 +1,11 @@
 import request from '@/utils/request'
 
-export function queryUnitList() {
+export function queryUnitListApi() {
   return request.get('/unit/list')
+}
+
+export function queryUnitList() {
+  return queryUnitListApi()
 }
 
 export function createUnit(data) {

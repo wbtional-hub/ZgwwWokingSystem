@@ -60,8 +60,8 @@ export function rejectAttendancePatchApplyApi(id, data) {
   return request.post(`/attendance/patch-apply/${id}/reject`, data)
 }
 
-export function queryCurrentAttendanceRuleApi() {
-  return request.get('/attendance/rule/current')
+export function queryCurrentAttendanceRuleApi(params) {
+  return request.get('/attendance/rule/current', { params })
 }
 
 export function saveAttendanceRuleApi(data) {

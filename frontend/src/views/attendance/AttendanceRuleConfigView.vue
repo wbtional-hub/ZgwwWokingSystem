@@ -1,5 +1,5 @@
 <template>
-  <AppPageShell title="考勤规则" description="为当前单位配置上下班时间，以及迟到、早退的宽限分钟。" help-key="attendance">
+  <AppPageShell title="考勤规则" description="按单位配置四段考勤时间，以及迟到、早退的宽限分钟。" help-key="attendance">
     <template #actions>
       <van-button plain type="primary" :disabled="pageBusy" @click="fetchRule">刷新规则</van-button>
     </template>
@@ -7,25 +7,54 @@
     <AttendanceWorkspaceTabs />
 
     <section class="panel">
-      <div class="panel-title">当前单位规则</div>
-      <div class="panel-subtitle">单位：{{ rule.unitName || '-' }}</div>
+      <div class="panel-title">单位规则配置</div>
+      <div class="panel-subtitle">员工打卡会按所属单位规则判断，超级管理员可切换单位查看和维护规则。</div>
+
       <div class="panel-grid">
+        <label v-if="showUnitSelector" class="field">
+          <span class="field-label">选择单位</span>
+          <select v-model="selectedUnitId" class="field-input" :disabled="pageBusy" @change="handleUnitChange">
+            <option v-for="item in unitOptions" :key="item.id" :value="item.id">
+              {{ item.unitName }}
+            </option>
+          </select>
+        </label>
+
+        <label v-else class="field">
+          <span class="field-label">当前单位</span>
+          <input class="field-input" type="text" :value="rule.unitName || '-'" disabled>
+        </label>
+
         <label class="field">
-          <span class="field-label">上班时间</span>
+          <span class="field-label">上午上班时间</span>
           <input v-model="form.workStartTime" class="field-input" type="time" :disabled="pageBusy">
         </label>
+
         <label class="field">
-          <span class="field-label">下班时间</span>
+          <span class="field-label">上午下班时间</span>
+          <input v-model="form.amOffTime" class="field-input" type="time" :disabled="pageBusy">
+        </label>
+
+        <label class="field">
+          <span class="field-label">下午上班时间</span>
+          <input v-model="form.pmOnTime" class="field-input" type="time" :disabled="pageBusy">
+        </label>
+
+        <label class="field">
+          <span class="field-label">下午下班时间</span>
           <input v-model="form.workEndTime" class="field-input" type="time" :disabled="pageBusy">
         </label>
+
         <label class="field">
           <span class="field-label">迟到宽限（分钟）</span>
           <input v-model.number="form.lateGraceMinutes" class="field-input" type="number" min="0" :disabled="pageBusy">
         </label>
+
         <label class="field">
           <span class="field-label">早退宽限（分钟）</span>
           <input v-model.number="form.earlyLeaveGraceMinutes" class="field-input" type="number" min="0" :disabled="pageBusy">
         </label>
+
         <label class="field">
           <span class="field-label">规则状态</span>
           <select v-model.number="form.status" class="field-input" :disabled="pageBusy">
@@ -34,25 +63,32 @@
           </select>
         </label>
       </div>
+
       <div class="panel-actions">
-        <van-button type="primary" :loading="saving" :disabled="pageBusy" @click="handleSave">保存规则</van-button>
+        <van-button type="primary" :loading="saving" :disabled="pageBusy || !selectedUnitId" @click="handleSave">保存规则</van-button>
       </div>
+
       <div class="rule-note">
-        说明：统计模块会优先按本单位规则判断迟到和早退。本轮不会强制回算历史数据，只影响后续查看口径。
+        说明：超级管理员可切换单位维护规则；普通单位管理员只能看到和维护本单位规则。员工打卡始终按自己所属单位规则关联。
       </div>
     </section>
   </AppPageShell>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, computed } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { showToast } from 'vant'
 import AppPageShell from '@/components/layout/AppPageShell.vue'
 import AttendanceWorkspaceTabs from '@/components/attendance/AttendanceWorkspaceTabs.vue'
 import { queryCurrentAttendanceRuleApi, saveAttendanceRuleApi } from '@/api/attendance'
+import { queryUnitListApi } from '@/api/unit'
 
 const loading = ref(false)
 const saving = ref(false)
+const unitLoading = ref(false)
+
+const unitOptions = ref([])
+const selectedUnitId = ref(null)
 
 const rule = reactive({
   unitName: '',
@@ -61,26 +97,58 @@ const rule = reactive({
 
 const form = reactive({
   workStartTime: '09:00',
+  amOffTime: '12:00',
+  pmOnTime: '14:00',
   workEndTime: '18:00',
   lateGraceMinutes: 0,
   earlyLeaveGraceMinutes: 0,
   status: 1
 })
 
-const pageBusy = computed(() => loading.value || saving.value)
+const pageBusy = computed(() => loading.value || saving.value || unitLoading.value)
+const showUnitSelector = computed(() => unitOptions.value.length > 1)
 
-onMounted(() => {
-  fetchRule()
+onMounted(async () => {
+  await fetchUnits()
+  await fetchRule()
 })
 
+async function fetchUnits() {
+  unitLoading.value = true
+  try {
+    const response = await queryUnitListApi()
+    const data = ensureSuccess(response)
+    unitOptions.value = Array.isArray(data) ? data : []
+
+    if (!selectedUnitId.value && unitOptions.value.length) {
+      selectedUnitId.value = unitOptions.value[0].id
+    }
+  } finally {
+    unitLoading.value = false
+  }
+}
+
 async function fetchRule() {
+  if (!selectedUnitId.value) {
+    return
+  }
   loading.value = true
   try {
-    const response = await queryCurrentAttendanceRuleApi()
+    const response = await queryCurrentAttendanceRuleApi({
+      unitId: selectedUnitId.value
+    })
     const data = ensureSuccess(response) || {}
+
     rule.unitName = data.unitName || ''
     rule.unitId = data.unitId || null
+
+    if (data.unitId) {
+      selectedUnitId.value = data.unitId
+    }
+
     form.workStartTime = normalizeTime(data.workStartTime) || '09:00'
+    form.amOffTime = normalizeTime(data.amOffTime) || '12:00'
+    form.pmOnTime = normalizeTime(data.pmOnTime) || '14:00'
     form.workEndTime = normalizeTime(data.workEndTime) || '18:00'
     form.lateGraceMinutes = Number(data.lateGraceMinutes || 0)
     form.earlyLeaveGraceMinutes = Number(data.earlyLeaveGraceMinutes || 0)
@@ -90,15 +158,27 @@ async function fetchRule() {
   }
 }
 
+async function handleUnitChange() {
+  await fetchRule()
+}
+
 async function handleSave() {
-  if (!form.workStartTime || !form.workEndTime) {
-    showToast('请先填写上下班时间')
+  if (!selectedUnitId.value) {
+    showToast('请先选择单位')
     return
   }
+  if (!form.workStartTime || !form.amOffTime || !form.pmOnTime || !form.workEndTime) {
+    showToast('请先填写完整四段考勤时间')
+    return
+  }
+
   saving.value = true
   try {
     const response = await saveAttendanceRuleApi({
+      unitId: selectedUnitId.value,
       workStartTime: ensureTimeSeconds(form.workStartTime),
+      amOffTime: ensureTimeSeconds(form.amOffTime),
+      pmOnTime: ensureTimeSeconds(form.pmOnTime),
       workEndTime: ensureTimeSeconds(form.workEndTime),
       lateGraceMinutes: Number(form.lateGraceMinutes || 0),
       earlyLeaveGraceMinutes: Number(form.earlyLeaveGraceMinutes || 0),

@@ -717,18 +717,23 @@ const state = reactive({
     backupDateTo: ''
   },
   locationInfo: {
-    unitName: '',
-    locationName: '',
-    address: '',
-    latitude: null,
-    longitude: null,
-    radiusMeters: null,
-    accuracyGoodThreshold: 100,
-    accuracyMaxThreshold: 1000,
-    allowCheckIn: false,
-    status: '',
-    reason: ''
-  },
+  unitName: '',
+  locationName: '',
+  address: '',
+  latitude: null,
+  longitude: null,
+  radiusMeters: null,
+  accuracyGoodThreshold: 100,
+  accuracyMaxThreshold: 1000,
+  allowCheckIn: false,
+  status: '',
+  reason: '',
+  currentAction: '',
+  currentActionLabel: '',
+  currentActionAvailable: false,
+  currentActionHint: '',
+  finished: false
+},
   checkInResult: {
     success: null,
     allowCheckIn: null,
@@ -1157,44 +1162,34 @@ const personalRecentRecords = computed(() => {
 })
 
 const personalCheckInButtonText = computed(() => {
-  const nextAction = resolveTodayNextAction(personalTodayRecord.value)
-  if (!nextAction) {
+  if (state.locationInfo.finished) {
     return '今日已完成'
   }
-  return resolveCheckInActionLabel(nextAction)
+  if (state.locationInfo.currentActionAvailable && state.locationInfo.currentActionLabel) {
+    return state.locationInfo.currentActionLabel
+  }
+  return '当前时段无需打卡'
 })
 
 const personalCanCheckIn = computed(() => {
-  return Boolean(resolveTodayNextAction(personalTodayRecord.value))
+  return Boolean(state.locationInfo.allowCheckIn)
+    && Boolean(state.locationInfo.currentActionAvailable)
     && !state.locationLoading
-    && Boolean(state.locationInfo.allowCheckIn)
 })
 
 const personalWorkspaceCheckInHint = computed(() => {
-  const nextAction = resolveTodayNextAction(personalTodayRecord.value)
-
-  if (!nextAction) {
-    return '今日四次打卡已全部完成，无需重复提交。'
-  }
-  if (!personalCanCheckIn.value) {
-    return state.locationInfo.reason || '当前打卡点不可用，请联系管理员检查配置。'
-  }
   if (state.checkingIn) {
     return '正在获取定位并提交本次打卡...'
   }
-  if (nextAction === 'AM_OFF') {
-    return '已完成上午上班打卡，本次提交将记录上午下班时间。'
+  if (state.locationInfo.finished) {
+    return state.locationInfo.currentActionHint || '今日四次打卡已全部完成，无需重复提交。'
   }
-  if (nextAction === 'PM_ON') {
-    return '已完成上午下班打卡，本次提交将记录下午上班时间。'
+  if (!personalCanCheckIn.value) {
+    return state.locationInfo.currentActionHint
+      || state.locationInfo.reason
+      || '当前时段无需打卡，漏卡请走补卡申请。'
   }
-  if (nextAction === 'PM_OFF') {
-    return '已完成下午上班打卡，本次提交将记录下午下班时间。'
-  }
-  if (leadershipTodayIsNonWorkday.value) {
-    return '今日按加班 / 值班记录处理，打卡成功后会在当前页面单独展示，不并入工作日未打卡统计。'
-  }
-  return '点击后会自动获取定位、提交打卡并刷新今日状态。'
+  return state.locationInfo.currentActionHint || '点击后会自动获取定位、提交打卡并刷新今日状态。'
 })
 
 function createEmptyForm() {
@@ -1345,21 +1340,6 @@ function resolveCheckInSuccessMessage(action) {
   return '打卡成功'
 }
 
-function resolveTodayNextAction(record) {
-  if (!record || !record.checkInTime) {
-    return 'AM_ON'
-  }
-  if (!record.amOffTime) {
-    return 'AM_OFF'
-  }
-  if (!record.pmOnTime) {
-    return 'PM_ON'
-  }
-  if (!record.checkOutTime) {
-    return 'PM_OFF'
-  }
-  return ''
-}
 
 function getTodayDateText() {
   return toInputDate(new Date())
@@ -2347,6 +2327,7 @@ async function resolveLocationSelectionOrFail() {
 function buildCheckInSubmissionPayload(locationSelection) {
   const usingWechatJsapi = locationSelection?.source === 'WECHAT_JSAPI'
   return {
+    action: state.locationInfo.currentAction || undefined,
     address: `${usingWechatJsapi ? '微信定位' : '浏览器定位'}：${locationSelection.latitude}, ${locationSelection.longitude}`,
     latitude: locationSelection.latitude,
     longitude: locationSelection.longitude,
@@ -2855,6 +2836,11 @@ async function fetchCurrentLocation() {
     state.locationInfo.allowCheckIn = Boolean(data.allowCheckIn)
     state.locationInfo.status = data.status || ''
     state.locationInfo.reason = data.reason || ''
+    state.locationInfo.currentAction = data.currentAction || ''
+    state.locationInfo.currentActionLabel = data.currentActionLabel || ''
+    state.locationInfo.currentActionAvailable = Boolean(data.currentActionAvailable)
+    state.locationInfo.currentActionHint = data.currentActionHint || ''
+    state.locationInfo.finished = Boolean(data.finished)
     resetCheckInVisualizationTarget()
   } catch (error) {
     state.locationInfo.unitName = ''
@@ -2868,6 +2854,11 @@ async function fetchCurrentLocation() {
     state.locationInfo.allowCheckIn = false
     state.locationInfo.status = ''
     state.locationInfo.reason = error.message || '打卡点信息加载失败'
+    state.locationInfo.currentAction = ''
+    state.locationInfo.currentActionLabel = ''
+    state.locationInfo.currentActionAvailable = false
+    state.locationInfo.currentActionHint = ''
+    state.locationInfo.finished = false
     resetCheckInVisualizationTarget()
   } finally {
     state.locationLoading = false

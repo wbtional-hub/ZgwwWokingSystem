@@ -77,7 +77,25 @@
             AND (doc.effective_date IS NULL OR doc.effective_date &lt;= CURRENT_DATE)
             AND (doc.expire_date IS NULL OR doc.expire_date &gt;= CURRENT_DATE)
         </if>
-        ORDER BY doc.update_time DESC, chunk.sort_no ASC
+        <choose>
+            <when test="request.regionPriority != null and request.regionPriority != ''">
+                ORDER BY
+                CASE
+                    WHEN COALESCE(chunk.heading_path, '') LIKE CONCAT('%', #{request.regionPriority}, '%') THEN 0
+                    WHEN chunk.content_text LIKE CONCAT('%', #{request.regionPriority}, '%') THEN 1
+                    WHEN doc.doc_title LIKE CONCAT('%', #{request.regionPriority}, '%') THEN 2
+                    WHEN COALESCE(chunk.keyword_text, '') LIKE CONCAT('%', #{request.regionPriority}, '%')
+                         AND COALESCE(chunk.heading_path, '') NOT LIKE CONCAT('%', #{request.regionPriority}, '%')
+                         AND chunk.content_text NOT LIKE CONCAT('%', #{request.regionPriority}, '%')
+                         AND doc.doc_title NOT LIKE CONCAT('%', #{request.regionPriority}, '%') THEN 4
+                    ELSE 3
+                END,
+                doc.update_time DESC, chunk.sort_no ASC
+            </when>
+            <otherwise>
+                ORDER BY doc.update_time DESC, chunk.sort_no ASC
+            </otherwise>
+        </choose>
         LIMIT #{request.topN}
     </select>
 </mapper>

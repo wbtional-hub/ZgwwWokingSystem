@@ -20,6 +20,14 @@ export function getPublishedSkillVersion(skillId) {
   return request.get(`/skill/${skillId}/published-version`)
 }
 
+export function querySkillVersions(skillId) {
+  return request.get(`/skill/${skillId}/versions`)
+}
+
+export function getSkillVersionDetail(versionId) {
+  return request.get(`/skill/version/${versionId}`)
+}
+
 export function saveSkillBinding(data) {
   return request.post('/skill/binding/save', data)
 }

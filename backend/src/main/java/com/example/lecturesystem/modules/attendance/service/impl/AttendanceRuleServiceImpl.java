@@ -33,16 +33,18 @@ public class AttendanceRuleServiceImpl implements AttendanceRuleService {
     }
 
     @Override
-    public Object queryCurrentRule() {
+    public Object queryCurrentRule(Long unitId) {
         UserEntity currentUser = currentUserFacade.currentUserEntity();
-        Long unitId = requireCurrentUnitId(currentUser);
-        AttendanceRuleVO detail = attendanceRuleMapper.detailByUnitId(unitId);
+        Long targetUnitId = resolveTargetUnitId(currentUser, unitId, false);
+
+        AttendanceRuleVO detail = attendanceRuleMapper.detailByUnitId(targetUnitId);
         if (detail != null) {
             return detail;
         }
+
         AttendanceRuleVO empty = new AttendanceRuleVO();
-        empty.setUnitId(unitId);
-        empty.setUnitName(attendanceMapper.findUnitNameById(unitId));
+        empty.setUnitId(targetUnitId);
+        empty.setUnitName(requireUnitName(targetUnitId));
         empty.setStatus(1);
         empty.setLateGraceMinutes(0);
         empty.setEarlyLeaveGraceMinutes(0);
@@ -53,8 +55,7 @@ public class AttendanceRuleServiceImpl implements AttendanceRuleService {
     @Transactional
     public Long saveCurrentRule(SaveAttendanceRuleRequest request) {
         UserEntity currentUser = currentUserFacade.currentUserEntity();
-        requireRuleManagePermission(currentUser);
-        Long unitId = requireCurrentUnitId(currentUser);
+        Long targetUnitId = resolveTargetUnitId(currentUser, request.getUnitId(), true);
 
         LocalTime workStartTime = parseLocalTime(request.getWorkStartTime(), "上午上班时间不能为空");
         LocalTime amOffTime = parseLocalTime(request.getAmOffTime(), "上午下班时间不能为空");
@@ -66,10 +67,10 @@ public class AttendanceRuleServiceImpl implements AttendanceRuleService {
         Integer lateGraceMinutes = normalizeMinutes(request.getLateGraceMinutes(), "迟到宽限分钟不能小于 0");
         Integer earlyLeaveGraceMinutes = normalizeMinutes(request.getEarlyLeaveGraceMinutes(), "早退宽限分钟不能小于 0");
 
-        AttendanceRuleEntity existed = attendanceRuleMapper.findByUnitId(unitId);
+        AttendanceRuleEntity existed = attendanceRuleMapper.findByUnitId(targetUnitId);
         if (existed == null) {
             AttendanceRuleEntity entity = new AttendanceRuleEntity();
-            entity.setUnitId(unitId);
+            entity.setUnitId(targetUnitId);
             entity.setWorkStartTime(workStartTime);
             entity.setAmOffTime(amOffTime);
             entity.setPmOnTime(pmOnTime);
@@ -83,6 +84,7 @@ public class AttendanceRuleServiceImpl implements AttendanceRuleService {
             return entity.getId();
         }
 
+        existed.setUnitId(targetUnitId);
         existed.setWorkStartTime(workStartTime);
         existed.setAmOffTime(amOffTime);
         existed.setPmOnTime(pmOnTime);
@@ -93,6 +95,41 @@ public class AttendanceRuleServiceImpl implements AttendanceRuleService {
         existed.setUpdateTime(LocalDateTime.now());
         attendanceRuleMapper.update(existed);
         return existed.getId();
+    }
+
+    private Long resolveTargetUnitId(UserEntity currentUser, Long requestUnitId, boolean saving) {
+        boolean superAdmin = permissionService.isSuperAdmin(currentUser.getId());
+        boolean unitAdmin = permissionService.isUnitAdmin(currentUser.getId());
+
+        if (!superAdmin && !unitAdmin) {
+            throw new IllegalArgumentException("当前用户无权配置考勤规则");
+        }
+
+        if (superAdmin) {
+            Long targetUnitId = requestUnitId != null ? requestUnitId : currentUser.getUnitId();
+            if (targetUnitId == null) {
+                throw new IllegalArgumentException(saving ? "保存规则时请选择单位" : "查询规则时请选择单位");
+            }
+            requireUnitName(targetUnitId);
+            return targetUnitId;
+        }
+
+        if (currentUser.getUnitId() == null) {
+            throw new IllegalArgumentException("当前用户未绑定单位，无法配置考勤规则");
+        }
+
+        if (requestUnitId != null && !requestUnitId.equals(currentUser.getUnitId())) {
+            throw new IllegalArgumentException("仅可查看和配置本单位规则");
+        }
+        return currentUser.getUnitId();
+    }
+
+    private String requireUnitName(Long unitId) {
+        String unitName = attendanceMapper.findUnitNameById(unitId);
+        if (unitName == null || unitName.isBlank()) {
+            throw new IllegalArgumentException("目标单位不存在");
+        }
+        return unitName;
     }
 
     private void validateRuleTimeOrder(LocalTime workStartTime,
@@ -108,21 +145,6 @@ public class AttendanceRuleServiceImpl implements AttendanceRuleService {
         if (!workEndTime.isAfter(pmOnTime)) {
             throw new IllegalArgumentException("下午下班时间必须晚于下午上班时间");
         }
-    }
-
-    private void requireRuleManagePermission(UserEntity currentUser) {
-        boolean superAdmin = permissionService.isSuperAdmin(currentUser.getId());
-        boolean unitAdmin = permissionService.isUnitAdmin(currentUser.getId());
-        if (!superAdmin && !unitAdmin) {
-            throw new IllegalArgumentException("当前用户无权配置考勤规则");
-        }
-    }
-
-    private Long requireCurrentUnitId(UserEntity currentUser) {
-        if (currentUser.getUnitId() == null) {
-            throw new IllegalArgumentException("当前用户未绑定单位，无法配置考勤规则");
-        }
-        return currentUser.getUnitId();
     }
 
     private Integer normalizeMinutes(Integer value, String message) {

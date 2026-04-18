@@ -10,6 +10,7 @@
         <result property="modelCode" column="model_code"/>
         <result property="baseId" column="base_id"/>
         <result property="sessionTitle" column="session_title"/>
+        <result property="sourceScene" column="source_scene"/>
         <result property="status" column="status"/>
         <result property="createTime" column="create_time"/>
     </resultMap>
@@ -39,6 +40,7 @@
         <if test="request.userId != null">AND s.user_id = #{request.userId}</if>
         <if test="request.skillId != null">AND s.skill_id = #{request.skillId}</if>
         <if test="request.status != null and request.status != ''">AND s.status = #{request.status}</if>
+        <if test="request.sourceScene != null and request.sourceScene != ''">AND s.source_scene = #{request.sourceScene}</if>
         <if test="request.startDate != null">AND DATE(s.create_time) &gt;= #{request.startDate}</if>
         <if test="request.endDate != null">AND DATE(s.create_time) &lt;= #{request.endDate}</if>
         <if test="request.keywords != null and request.keywords != ''">
@@ -57,6 +59,7 @@
         <if test="request.userId != null">AND s.user_id = #{request.userId}</if>
         <if test="request.skillId != null">AND s.skill_id = #{request.skillId}</if>
         <if test="request.status != null and request.status != ''">AND s.status = #{request.status}</if>
+        <if test="request.sourceScene != null and request.sourceScene != ''">AND s.source_scene = #{request.sourceScene}</if>
         <if test="request.keywords != null and request.keywords != ''">
             AND (
                 s.session_title LIKE CONCAT('%', #{request.keywords}, '%')
@@ -70,8 +73,8 @@
     </sql>
 
     <insert id="insert" parameterType="com.example.lecturesystem.modules.agent.entity.AgentSessionEntity" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO ai_agent_session (user_id, skill_id, skill_version_id, provider_config_id, model_code, base_id, session_title, status, create_time)
-        VALUES (#{userId}, #{skillId}, #{skillVersionId}, #{providerConfigId}, #{modelCode}, #{baseId}, #{sessionTitle}, #{status}, #{createTime})
+        INSERT INTO ai_agent_session (user_id, skill_id, skill_version_id, provider_config_id, model_code, base_id, session_title, source_scene, status, create_time)
+        VALUES (#{userId}, #{skillId}, #{skillVersionId}, #{providerConfigId}, #{modelCode}, #{baseId}, #{sessionTitle}, #{sourceScene}, #{status}, #{createTime})
     </insert>
 
     <update id="updateTitle">
@@ -86,7 +89,7 @@
         SELECT s.id, s.user_id, usr.username, usr.real_name,
                s.skill_id, s.skill_version_id, s.base_id,
                sk.skill_name, kb.base_name,
-               s.model_code, s.session_title, s.status,
+               s.model_code, s.session_title, s.source_scene, s.status,
                COALESCE(msg.message_count, 0) AS message_count,
                msg.last_message_time,
                s.create_time
@@ -106,6 +109,7 @@
         <if test="request.userId != null">AND s.user_id = #{request.userId}</if>
         <if test="request.skillId != null">AND s.skill_id = #{request.skillId}</if>
         <if test="request.status != null and request.status != ''">AND s.status = #{request.status}</if>
+        <if test="request.sourceScene != null and request.sourceScene != ''">AND s.source_scene = #{request.sourceScene}</if>
         <if test="request.startDate != null">AND DATE(s.create_time) &gt;= #{request.startDate}</if>
         <if test="request.endDate != null">AND DATE(s.create_time) &lt;= #{request.endDate}</if>
         <if test="request.keywords != null and request.keywords != ''">
@@ -251,7 +255,7 @@
         SELECT s.id, s.user_id, usr.username, usr.real_name,
                s.skill_id, s.skill_version_id, s.base_id,
                sk.skill_name, kb.base_name,
-               s.model_code, s.session_title, s.status,
+               s.model_code, s.session_title, s.source_scene, s.status,
                COALESCE(msg.message_count, 0) AS message_count,
                msg.last_message_time,
                s.create_time

@@ -115,14 +115,14 @@ public class AttendanceController {
     }
 
     @GetMapping("/rule/current")
-    public ApiResponse<?> queryCurrentAttendanceRule() {
-        return ApiResponse.success(attendanceRuleService.queryCurrentRule());
-    }
+public ApiResponse<?> queryCurrentAttendanceRule(@RequestParam(value = "unitId", required = false) Long unitId) {
+    return ApiResponse.success(attendanceRuleService.queryCurrentRule(unitId));
+}
 
-    @PostMapping("/rule/save")
-    public ApiResponse<?> saveAttendanceRule(@Validated @RequestBody SaveAttendanceRuleRequest request) {
-        return ApiResponse.success(attendanceRuleService.saveCurrentRule(request));
-    }
+@PostMapping("/rule/save")
+public ApiResponse<?> saveAttendanceRule(@Validated @RequestBody SaveAttendanceRuleRequest request) {
+    return ApiResponse.success(attendanceRuleService.saveCurrentRule(request));
+}
 
     @PostMapping("/team-statistics/query")
     public ApiResponse<?> queryTeamStatistics(@RequestBody(required = false) AttendanceStatsQueryRequest request) {

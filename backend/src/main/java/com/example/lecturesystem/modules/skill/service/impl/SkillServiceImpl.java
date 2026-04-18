@@ -193,6 +193,13 @@ public class SkillServiceImpl implements SkillService {
         }
         SkillVersionEntity existed = requireVersion(request.getId());
         requireTrainPermission(existed.getSkillId());
+        if (!versionNo.equals(existed.getVersionNo())) {
+            SkillVersionEntity sameVersion = skillVersionMapper.findBySkillIdAndVersionNo(existed.getSkillId(), versionNo);
+            if (sameVersion != null && !sameVersion.getId().equals(existed.getId())) {
+                throw new IllegalArgumentException("version already exists");
+            }
+        }
+        existed.setVersionNo(versionNo);
         existed.setProviderConfigId(request.getProviderConfigId());
         existed.setModelCode(normalize(request.getModelCode()));
         existed.setSystemPrompt(normalizeRequired(request.getSystemPrompt(), "system prompt is required"));
@@ -361,6 +368,26 @@ public class SkillServiceImpl implements SkillService {
             throw new IllegalArgumentException("current user cannot view this skill");
         }
         return skillVersionMapper.queryLatestPublishedBySkillId(skillId);
+    }
+
+    @Override
+    public Object listVersions(Long skillId) {
+        LoginUser user = currentUserFacade.currentLoginUser();
+        if (!isAdmin(user) && !aiPermissionService.canTrainSkill(user.getUserId()) && !aiPermissionService.canViewSkill(user.getUserId(), skillId)) {
+            throw new IllegalArgumentException("current user cannot view this skill");
+        }
+        requireSkill(skillId);
+        return skillVersionMapper.queryBySkillId(skillId);
+    }
+
+    @Override
+    public Object getVersionDetail(Long versionId) {
+        SkillVersionEntity version = requireVersion(versionId);
+        LoginUser user = currentUserFacade.currentLoginUser();
+        if (!isAdmin(user) && !aiPermissionService.canTrainSkill(user.getUserId()) && !aiPermissionService.canViewSkill(user.getUserId(), version.getSkillId())) {
+            throw new IllegalArgumentException("current user cannot view this skill");
+        }
+        return skillVersionMapper.queryDetail(versionId);
     }
 
     private KnowledgeCitationContext buildContext(Long baseId, String question, int topN) {

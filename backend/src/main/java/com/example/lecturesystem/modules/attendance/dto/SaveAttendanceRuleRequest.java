@@ -4,6 +4,11 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 public class SaveAttendanceRuleRequest {
+    /**
+     * 超级管理员可传目标单位；普通单位管理员忽略该值，后端强制按本人单位处理
+     */
+    private Long unitId;
+
     @NotBlank(message = "上午上班时间不能为空")
     private String workStartTime;
 
@@ -23,6 +28,14 @@ public class SaveAttendanceRuleRequest {
     private Integer earlyLeaveGraceMinutes;
 
     private Integer status = 1;
+
+    public Long getUnitId() {
+        return unitId;
+    }
+
+    public void setUnitId(Long unitId) {
+        this.unitId = unitId;
+    }
 
     public String getWorkStartTime() {
         return workStartTime;
