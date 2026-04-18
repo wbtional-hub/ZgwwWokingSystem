@@ -85,6 +85,8 @@ public class AgentServiceImpl implements AgentService {
     private final PermissionService permissionService;
     private final AiPermissionService aiPermissionService;
     private final OperationLogService operationLogService;
+    private static final String SOURCE_SCENE_AI_WORKBENCH = "AI_WORKBENCH";
+    private static final String SOURCE_SCENE_MOBILE_POLICY_CONSULTANT = "MOBILE_POLICY_CONSULTANT";
 
     public AgentServiceImpl(AgentSessionMapper agentSessionMapper,
                             AgentMessageMapper agentMessageMapper,
@@ -125,6 +127,8 @@ public class AgentServiceImpl implements AgentService {
         }
         requireKnowledgeAnalyze(user, baseId);
 
+        String sourceScene = normalizeSourceScene(request == null ? null : request.getSourceScene());
+
         AgentSessionEntity entity = new AgentSessionEntity();
         entity.setUserId(user.getUserId());
         entity.setSkillId(request.getSkillId());
@@ -133,8 +137,11 @@ public class AgentServiceImpl implements AgentService {
         entity.setModelCode(version.getModelCode());
         entity.setBaseId(baseId);
         entity.setSessionTitle(DEFAULT_SESSION_TITLE);
+        entity.setSourceScene(sourceScene);
         entity.setStatus(STATUS_ACTIVE);
         entity.setCreateTime(LocalDateTime.now());
+        
+
         agentSessionMapper.insert(entity);
         return agentSessionMapper.queryDetail(entity.getId());
     }
