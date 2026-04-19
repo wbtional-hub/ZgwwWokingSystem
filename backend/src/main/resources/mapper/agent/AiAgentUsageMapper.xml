@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AiAgentUsageMapper">
+
+    <insert id="insert"
+            parameterType="com.example.lecturesystem.modules.agent.entity.AiAgentUsageEntity"
+            useGeneratedKeys="true"
+            keyProperty="id">
+        INSERT INTO ai_agent_usage (
+            session_id,
+            message_id,
+            user_id,
+            source_scene,
+            provider_name,
+            model_code,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            duration_ms,
+            usage_source,
+            create_time
+        ) VALUES (
+            #{sessionId},
+            #{messageId},
+            #{userId},
+            #{sourceScene},
+            #{providerName},
+            #{modelCode},
+            #{promptTokens},
+            #{completionTokens},
+            #{totalTokens},
+            #{durationMs},
+            #{usageSource},
+            #{createTime}
+        )
+    </insert>
+
+    <select id="sumMonthTotalTokensByUserId" resultType="java.lang.Long">
+        SELECT COALESCE(SUM(total_tokens), 0)
+        FROM ai_agent_usage
+        WHERE user_id = #{userId}
+          AND create_time >= date_trunc('month', CURRENT_TIMESTAMP)
+          AND create_time &lt; (date_trunc('month', CURRENT_TIMESTAMP) + INTERVAL '1 month')
+    </select>
+
+</mapper>

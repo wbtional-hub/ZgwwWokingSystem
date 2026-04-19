@@ -4,10 +4,12 @@ import com.example.lecturesystem.modules.agent.dto.AgentChatRequest;
 import com.example.lecturesystem.modules.agent.dto.AgentSessionQueryRequest;
 import com.example.lecturesystem.modules.agent.dto.CreateAgentSessionRequest;
 import com.example.lecturesystem.modules.agent.dto.UpdateAgentSessionStatusRequest;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 public interface AgentService {
     Object createSession(CreateAgentSessionRequest request);
     Object chat(AgentChatRequest request);
+    SseEmitter chatStream(AgentChatRequest request);
     Object querySessions(AgentSessionQueryRequest request);
     Object querySessionStats(AgentSessionQueryRequest request);
     Object querySessionTrend(AgentSessionQueryRequest request);

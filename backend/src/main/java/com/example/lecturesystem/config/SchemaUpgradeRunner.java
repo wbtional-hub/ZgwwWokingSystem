@@ -126,7 +126,22 @@ public class SchemaUpgradeRunner implements ApplicationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_sys_log_center_time ON sys_log_center(create_time DESC)",
                 "ALTER TABLE ai_agent_session ADD COLUMN IF NOT EXISTS source_scene VARCHAR(64) NOT NULL DEFAULT 'AI_WORKBENCH'",
                 "COMMENT ON COLUMN ai_agent_session.source_scene IS 'Conversation source scene, such as AI_WORKBENCH or MOBILE_POLICY_CONSULTANT'",
-                "CREATE INDEX IF NOT EXISTS idx_ai_agent_session_source_scene ON ai_agent_session(source_scene, create_time DESC)"
+                "CREATE INDEX IF NOT EXISTS idx_ai_agent_session_source_scene ON ai_agent_session(source_scene, create_time DESC)",
+                "ALTER TABLE ai_knowledge_chunk ADD COLUMN IF NOT EXISTS region_scope VARCHAR(16)",
+                "ALTER TABLE ai_knowledge_chunk ADD COLUMN IF NOT EXISTS doc_type VARCHAR(32)",
+                "ALTER TABLE ai_knowledge_chunk ADD COLUMN IF NOT EXISTS topic_type VARCHAR(32)",
+                "ALTER TABLE ai_knowledge_chunk ADD COLUMN IF NOT EXISTS policy_name VARCHAR(255)",
+                "ALTER TABLE ai_knowledge_chunk ADD COLUMN IF NOT EXISTS policy_aliases VARCHAR(1000)",
+                "ALTER TABLE ai_knowledge_chunk ADD COLUMN IF NOT EXISTS policy_no VARCHAR(128)",
+                "ALTER TABLE ai_knowledge_chunk ADD COLUMN IF NOT EXISTS chapter_title VARCHAR(255)",
+                "ALTER TABLE ai_knowledge_chunk ADD COLUMN IF NOT EXISTS section_title VARCHAR(255)",
+                "ALTER TABLE ai_knowledge_chunk ADD COLUMN IF NOT EXISTS scene_priority VARCHAR(64)",
+                "ALTER TABLE ai_knowledge_chunk ADD COLUMN IF NOT EXISTS searchable BOOLEAN NOT NULL DEFAULT TRUE",
+                "CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunk_region_scope ON ai_knowledge_chunk(region_scope)",
+                "CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunk_doc_topic ON ai_knowledge_chunk(doc_type, topic_type)",
+                "CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunk_policy_name ON ai_knowledge_chunk(policy_name)",
+                "CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunk_policy_no ON ai_knowledge_chunk(policy_no)",
+                "CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunk_scene_priority ON ai_knowledge_chunk(scene_priority)"
         );
 
         for (String statement : statements) {

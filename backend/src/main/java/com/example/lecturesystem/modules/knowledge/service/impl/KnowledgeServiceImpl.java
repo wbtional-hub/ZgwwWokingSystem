@@ -25,6 +25,7 @@ import com.example.lecturesystem.modules.knowledge.support.DocxPolicyParser;
 import com.example.lecturesystem.modules.knowledge.support.KnowledgeChunkBuilder;
 import com.example.lecturesystem.modules.knowledge.support.ParsedDocResult;
 import com.example.lecturesystem.modules.knowledge.support.ParsedDocSection;
+import com.example.lecturesystem.modules.knowledge.support.PolicyKnowledgeSupport;
 import com.example.lecturesystem.modules.knowledge.vo.KnowledgeImportResultVO;
 import com.example.lecturesystem.modules.knowledge.vo.WebKnowledgeImportResultVO;
 import com.example.lecturesystem.modules.knowledge.vo.WebKnowledgePreviewVO;
@@ -360,12 +361,22 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         ParsedDocSection bodySection = new ParsedDocSection();
         bodySection.setSectionNo(1);
         bodySection.setHeadingPath(title);
+        bodySection.setChapterTitle(title);
         bodySection.setChunkType("web-content");
         bodySection.setContentText(content);
         sections.add(bodySection);
-        List<KnowledgeChunkEntity> chunks = knowledgeChunkBuilder.build(documentEntity.getId(), documentEntity.getBaseId(), null, null, sections);
+        ParsedDocResult parsedDocResult = new ParsedDocResult();
+        parsedDocResult.setTitle(title);
+        parsedDocResult.setSummary(summary);
+        parsedDocResult.setStructuredDocType(PolicyKnowledgeSupport.StructuredDocType.GENERIC.name());
+        parsedDocResult.setRegionScope("UNKNOWN");
+        parsedDocResult.setSearchable(Boolean.TRUE);
+        parsedDocResult.setSections(sections);
+        List<KnowledgeChunkEntity> chunks = knowledgeChunkBuilder.build(documentEntity.getId(), documentEntity.getBaseId(), null, null, parsedDocResult);
         if (!chunks.isEmpty()) {
-            knowledgeChunkMapper.batchInsert(chunks);
+            if (!chunks.isEmpty()) {
+                knowledgeChunkMapper.batchInsert(chunks);
+            }
         }
 
         String feedbackText = buildImportFeedbackText(now, sourceUrl, base.getBaseName(), title, content.length(), documentEntity.getId(), null);
@@ -447,10 +458,18 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         ParsedDocSection bodySection = new ParsedDocSection();
         bodySection.setSectionNo(1);
         bodySection.setHeadingPath(finalTitle);
+        bodySection.setChapterTitle(finalTitle);
         bodySection.setChunkType("web-snapshot");
         bodySection.setContentText(finalContent);
         sections.add(bodySection);
-        List<KnowledgeChunkEntity> chunks = knowledgeChunkBuilder.build(documentEntity.getId(), documentEntity.getBaseId(), null, null, sections);
+        ParsedDocResult parsedDocResult = new ParsedDocResult();
+        parsedDocResult.setTitle(finalTitle);
+        parsedDocResult.setSummary(finalSummary);
+        parsedDocResult.setStructuredDocType(PolicyKnowledgeSupport.StructuredDocType.GENERIC.name());
+        parsedDocResult.setRegionScope("UNKNOWN");
+        parsedDocResult.setSearchable(Boolean.TRUE);
+        parsedDocResult.setSections(sections);
+        List<KnowledgeChunkEntity> chunks = knowledgeChunkBuilder.build(documentEntity.getId(), documentEntity.getBaseId(), null, null, parsedDocResult);
         if (!chunks.isEmpty()) {
             knowledgeChunkMapper.batchInsert(chunks);
         }
@@ -552,6 +571,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             ParsedDocResult parsedDocResult = lowerFileName.endsWith(".pdf")
                     ? parsePdfDocument(file, fileName)
                     : docxPolicyParser.parse(file.getInputStream());
+            PolicyKnowledgeSupport.enrichParsedDocResult(parsedDocResult, fileName);
             KnowledgeDocumentEntity documentEntity = new KnowledgeDocumentEntity();
             documentEntity.setBaseId(base.getId());
             documentEntity.setCategoryId(request.getCategoryId());
@@ -559,14 +579,18 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             documentEntity.setSourceType("UPLOAD");
             documentEntity.setFileName(fileName);
             documentEntity.setFilePath(savedPath.toString());
-            documentEntity.setDocType(lowerFileName.endsWith(".pdf") ? "PDF" : "POLICY");
-            documentEntity.setPolicyRegion(normalize(request.getPolicyRegion()));
+            documentEntity.setDocType(parsedDocResult.getStructuredDocType() == null
+                    ? (lowerFileName.endsWith(".pdf") ? "PDF" : "POLICY")
+                    : parsedDocResult.getStructuredDocType());
+            documentEntity.setPolicyRegion(normalize(request.getPolicyRegion()) != null
+                    ? normalize(request.getPolicyRegion())
+                    : PolicyKnowledgeSupport.normalizeRegionLabel(parsedDocResult.getRegionScope()));
             documentEntity.setPolicyLevel(normalize(request.getPolicyLevel()));
             documentEntity.setEffectiveDate(request.getEffectiveDate());
             documentEntity.setExpireDate(request.getExpireDate());
             documentEntity.setKeywords(normalize(request.getKeywords()));
             documentEntity.setSummary(normalize(request.getSummary()) != null ? request.getSummary().trim() : parsedDocResult.getSummary());
-            documentEntity.setParseStatus("SUCCESS");
+            documentEntity.setParseStatus(Boolean.FALSE.equals(parsedDocResult.getSearchable()) ? "SKIPPED" : "SUCCESS");
             documentEntity.setStatus(1);
             documentEntity.setCreateTime(LocalDateTime.now());
             documentEntity.setUpdateTime(LocalDateTime.now());
@@ -580,9 +604,9 @@ public class KnowledgeServiceImpl implements KnowledgeService {
                     documentEntity.getBaseId(),
                     documentEntity.getCategoryId(),
                     normalize(request.getKeywords()),
-                    parsedDocResult.getSections()
+                    parsedDocResult
             );
-            if (chunks.isEmpty()) {
+            if (Boolean.TRUE.equals(parsedDocResult.getSearchable()) && chunks.isEmpty()) {
                 throw new IllegalArgumentException("文档未解析出可入库内容");
             }
             knowledgeChunkMapper.batchInsert(chunks);
@@ -652,6 +676,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             ParsedDocSection section = new ParsedDocSection();
             section.setSectionNo(1);
             section.setHeadingPath(title);
+            section.setChapterTitle(title);
             section.setChunkType("pdf-body");
             section.setContentText(cleanText);
             result.setSections(List.of(section));
@@ -850,6 +875,9 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         }
         int topN = request.getTopN() == null || request.getTopN() <= 0 ? 10 : Math.min(request.getTopN(), 50);
         request.setTopN(topN);
+        if (request.getSearchable() == null) {
+            request.setSearchable(Boolean.TRUE);
+        }
         return knowledgeChunkMapper.search(request);
     }
 

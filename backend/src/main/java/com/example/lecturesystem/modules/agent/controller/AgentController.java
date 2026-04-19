@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -96,6 +97,11 @@ public class AgentController {
     @PostMapping("/chat")
     public ApiResponse<?> chat(@Validated @RequestBody AgentChatRequest request) {
         return ApiResponse.success(agentService.chat(request));
+    }
+
+    @PostMapping(value = "/chat-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter chatStream(@Validated @RequestBody AgentChatRequest request) {
+        return agentService.chatStream(request);
     }
 
     @GetMapping("/session/{sessionId}/messages")

@@ -22,6 +22,18 @@ public interface LogCenterService {
                                 Integer responseStatus,
                                 boolean unhandled);
 
+    void recordAiChainSuccess(String eventType,
+                          Long refId,
+                          Long userId,
+                          String sourceScene,
+                          String content);
+
+    void recordAiChainFailed(String eventType,
+                         Long refId,
+                         Long userId,
+                         String sourceScene,
+                         String content);
+
     Object query(LogCenterQueryRequest request);
 
     Object detail(Long id);

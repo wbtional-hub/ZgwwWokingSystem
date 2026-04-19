@@ -19,13 +19,14 @@
             <span class="summary-chip">{{ state.sessionInfo?.id ? `会话 #${state.sessionInfo.id}` : '未创建会话' }}</span>
           </div>
           <div class="summary-text">{{ helperText }}</div>
+          <div v-if="usageSummaryText" class="usage-strip">{{ usageSummaryText }}</div>
         </section>
 
         <section class="panel">
           <div class="panel-head">
             <div>
               <div class="panel-title">对话区</div>
-              <div class="panel-subtitle">用户只管提问，后端统一决定 Skill、知识来源和 AI 调用。</div>
+              <div class="panel-subtitle">查询到什么内容，就即时展示什么内容。优先走流式返回，失败后再回退原有接口。</div>
             </div>
             <button type="button" class="ghost-button" :disabled="state.asking" @click="handleResetSession">新会话</button>
           </div>
@@ -41,7 +42,10 @@
                 :class="item.messageRole === 'user' ? 'message-bubble--user' : 'message-bubble--assistant'"
               >
                 <div class="message-bubble__role">{{ item.messageRole === 'user' ? '我' : '政策咨询助手' }}</div>
-                <div class="message-bubble__text">{{ item.messageText }}</div>
+                <div class="message-bubble__text">
+                  <span>{{ item.messageText }}</span>
+                  <span v-if="item.isStreaming" class="stream-cursor"></span>
+                </div>
                 <div v-if="item.messageRole !== 'user' && formatCitations(item).length" class="message-bubble__meta">
                   引用：{{ formatCitations(item).join(' / ') }}
                 </div>
@@ -50,9 +54,9 @@
             <div v-else class="empty-state">
               先直接问一个具体问题，例如“厦门市高层次人才住房补贴怎么申请？”
             </div>
-            <article v-if="state.asking" class="message-bubble message-bubble--assistant">
+            <article v-if="state.asking && !hasStreamingMessage" class="message-bubble message-bubble--assistant">
               <div class="message-bubble__role">政策咨询助手</div>
-              <div class="message-bubble__text">正在整理知识依据，请稍候...</div>
+              <div class="message-bubble__text">正在整理政策依据，请稍候...</div>
             </article>
           </div>
         </section>
@@ -64,7 +68,7 @@
             class="question-input"
             rows="4"
             maxlength="500"
-            placeholder="输入问题，或用 @技能名 指定 Skill"
+            placeholder="输入问题，或使用 @技能名 指定 Skill"
             :disabled="state.asking || !permissionFlags.canUseAgent"
             @input="handleQuestionInput"
             @keydown.enter.exact.prevent="handleSend"
@@ -83,7 +87,7 @@
           </div>
           <div class="composer-footer">
             <div class="composer-hint">
-              输入 `@` 会提示可用 Skills；不写 `@` 时后端会自动匹配，匹配失败会走默认 Skill 或知识库兜底。
+              输入 `@` 会提示可用 Skills；不写 `@` 时后端会自动路由到默认政策咨询链路。
             </div>
             <button type="button" class="primary-button" :disabled="!canSend" @click="handleSend">
               {{ state.asking ? '发送中...' : '发送' }}
@@ -95,7 +99,7 @@
           <div class="panel-head">
             <div>
               <div class="panel-title">会话入口</div>
-              <div class="panel-subtitle">点击已有会话继续追问；不点则默认按新问题重新路由。</div>
+              <div class="panel-subtitle">点击已有会话继续追问；不点击则默认按新问题重新路由。</div>
             </div>
             <button type="button" class="ghost-button" :disabled="state.loading" @click="loadSessions">刷新</button>
           </div>
@@ -127,7 +131,13 @@ import { showToast } from 'vant'
 import { useRouter } from 'vue-router'
 import AIPageGuideCard from '@/components/ai/AIPageGuideCard.vue'
 import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
-import { createAgentSession, queryAgentMessages, queryAgentSessions, sendAgentQuestion } from '@/api/agent'
+import {
+  createAgentSession,
+  queryAgentMessages,
+  queryAgentSessions,
+  sendAgentQuestion,
+  streamAgentQuestion
+} from '@/api/agent'
 import { queryCurrentAiPermission } from '@/api/ai'
 import { querySkillList } from '@/api/skill'
 import { useUserStore } from '@/stores/user'
@@ -193,15 +203,34 @@ const mentionSuggestions = computed(() => {
 })
 const currentSkillLabel = computed(() => state.lastChatMeta?.skillName || state.sessionInfo?.skillName || '自动选择 Skill')
 const currentRouteLabel = computed(() => formatMatchMode(state.lastChatMeta?.skillMatchMode || state.sessionInfo?.skillMatchMode))
+const usageSummaryText = computed(() => {
+  const meta = state.lastChatMeta || {}
+  const hasUsage = ['promptTokens', 'completionTokens', 'totalTokens', 'monthTotalTokens', 'durationMs', 'modelCode']
+    .some((key) => meta[key] !== undefined && meta[key] !== null && meta[key] !== '')
+  if (!hasUsage) {
+    return ''
+  }
+  return [
+    `本次 P ${Number(meta.promptTokens || 0)}`,
+    `C ${Number(meta.completionTokens || 0)}`,
+    `T ${Number(meta.totalTokens || 0)}`,
+    `本月 ${Number(meta.monthTotalTokens || 0)}`,
+    `模型 ${meta.modelCode || '-'}`,
+    `${Number(meta.durationMs || 0)} ms`
+  ].join(' / ')
+})
 const helperText = computed(() => {
   if (state.errorMessage) {
     return state.errorMessage
   }
   if (!permissionFlags.value.canUseAgent) {
-    return '当前账号还没有 AI 主链问答权限，请先去 AI 权限配置开通。'
+    return '当前账号还没有 AI 主链权限，请先到权限配置中开通。'
   }
   if (!permissionFlags.value.canUseAi) {
-    return '当前链路会优先走知识库兜底回答，Provider 恢复后会自动切回 AI。'
+    return '当前链路会优先走知识库兜底，AI Provider 恢复后会自动切回 AI。'
+  }
+  if (state.lastChatMeta?.answerSource === 'FAST_PATH_STRUCTURED') {
+    return '本次回答已命中快路径，页面会按真实流式逐段展示。'
   }
   if (state.lastChatMeta?.skillName) {
     return `本次问题命中 ${state.lastChatMeta.skillName}，路由方式：${formatMatchMode(state.lastChatMeta.skillMatchMode)}。`
@@ -209,6 +238,7 @@ const helperText = computed(() => {
   return '当前链路已准备好，可直接发问；来源场景会自动标记为“手机端政策咨询”。'
 })
 const canSend = computed(() => permissionFlags.value.canUseAgent && Boolean(state.question.trim()) && !state.asking)
+const hasStreamingMessage = computed(() => state.messageList.some((item) => item.isStreaming))
 
 function ensureSuccess(response, fallback = '请求失败') {
   if (!response || response.code !== 0) {
@@ -263,6 +293,118 @@ function applyMention(skill) {
   const suffix = `@${skill.skillCode} `
   state.question = String(state.question || '').replace(/(?:^|\s)(@[^\s@]*)$/, ` ${suffix}`).trimStart()
   state.mentionKeyword = ''
+}
+
+function createLocalMessage({ id, messageRole, messageText, isStreaming = false, citedTitles = [] }) {
+  return {
+    id,
+    messageRole,
+    messageText,
+    isStreaming,
+    citedTitles
+  }
+}
+
+function appendLocalConversation(question) {
+  const seed = Date.now()
+  const userId = `local-user-${seed}`
+  const assistantId = `local-assistant-${seed}`
+  state.messageList.push(createLocalMessage({
+    id: userId,
+    messageRole: 'user',
+    messageText: question
+  }))
+  state.messageList.push(createLocalMessage({
+    id: assistantId,
+    messageRole: 'assistant',
+    messageText: '',
+    isStreaming: true
+  }))
+  return { userId, assistantId }
+}
+
+function findMessageById(id) {
+  return state.messageList.find((item) => item.id === id)
+}
+
+function removeLocalConversation(localIds) {
+  if (!localIds) {
+    return
+  }
+  const blocked = new Set([localIds.userId, localIds.assistantId])
+  state.messageList = state.messageList.filter((item) => !blocked.has(item.id))
+}
+
+function appendAssistantDelta(assistantId, text) {
+  const message = findMessageById(assistantId)
+  if (!message) {
+    return
+  }
+  message.messageText = `${message.messageText || ''}${text || ''}`
+}
+
+function applyDoneMeta(assistantId, payload) {
+  const message = findMessageById(assistantId)
+  if (message && Array.isArray(payload?.citations)) {
+    message.citedTitles = payload.citations
+  }
+  state.lastChatMeta = {
+    ...(state.lastChatMeta || {}),
+    answerSource: payload?.answerSource || '',
+    promptTokens: Number(payload?.promptTokens ?? 0),
+    completionTokens: Number(payload?.completionTokens ?? 0),
+    totalTokens: Number(payload?.totalTokens ?? 0),
+    monthTotalTokens: Number(payload?.monthTotalTokens ?? 0),
+    durationMs: Number(payload?.durationMs ?? 0),
+    modelCode: payload?.modelCode || ''
+  }
+}
+
+function finishStreamingAssistant(assistantId) {
+  const message = findMessageById(assistantId)
+  if (message) {
+    message.isStreaming = false
+  }
+}
+
+function splitTypingSegments(text) {
+  const normalized = String(text || '').replace(/\r\n/g, '\n')
+  const segments = []
+  normalized.split('\n').forEach((line) => {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      return
+    }
+    if (/^\d+[.、]/.test(trimmed) || trimmed.startsWith('- ')) {
+      segments.push(`${trimmed}\n`)
+      return
+    }
+    trimmed.split(/(?<=[。！？!?；;])/).forEach((part) => {
+      if (part.trim()) {
+        segments.push(part)
+      }
+    })
+  })
+  return segments.length ? segments : [normalized]
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+async function playFallbackTyping(assistantId, answer) {
+  const message = findMessageById(assistantId)
+  if (!message) {
+    return
+  }
+  message.messageText = ''
+  message.isStreaming = true
+  for (const segment of splitTypingSegments(answer)) {
+    appendAssistantDelta(assistantId, segment)
+    await scrollToBottom()
+    await sleep(48)
+  }
+  message.isStreaming = false
 }
 
 async function scrollToBottom() {
@@ -352,7 +494,7 @@ async function handleSend() {
     return
   }
   if (!permissionFlags.value.canUseAgent) {
-    showToast(state.errorMessage || '当前账号还不能发起问答')
+    showToast(state.errorMessage || '当前账号暂时无法发起问答')
     return
   }
 
@@ -360,28 +502,85 @@ async function handleSend() {
   const cleanQuestion = normalizeQuestion(rawQuestion)
 
   state.asking = true
+  state.errorMessage = ''
+  let localIds = null
+  const streamProgress = {
+    receivedStart: false,
+    receivedDelta: false
+  }
+
   try {
     await createOrReuseSession({ question: cleanQuestion, skillHint })
-    const result = ensureSuccess(await sendAgentQuestion({
+    localIds = appendLocalConversation(cleanQuestion)
+    await scrollToBottom()
+    await streamAgentQuestion({
       sessionId: state.sessionInfo.id,
       question: cleanQuestion,
       sourceScene: SOURCE_SCENE,
       skillHint: skillHint || undefined
-    }), '发送问题失败')
-    state.lastChatMeta = {
-      skillName: result?.skillName || state.sessionInfo?.skillName || '',
-      skillMatchMode: result?.skillMatchMode || state.sessionInfo?.skillMatchMode || ''
-    }
-    if (state.sessionInfo) {
-      state.sessionInfo.skillName = result?.skillName || state.sessionInfo.skillName
-      state.sessionInfo.skillMatchMode = result?.skillMatchMode || state.sessionInfo.skillMatchMode
-    }
+    }, {
+      onStart(payload) {
+        streamProgress.receivedStart = true
+        state.lastChatMeta = {
+          ...(state.lastChatMeta || {}),
+          answerSource: payload?.answerSource || ''
+        }
+      },
+      onDelta(payload) {
+        streamProgress.receivedDelta = true
+        appendAssistantDelta(localIds.assistantId, payload?.text || '')
+        scrollToBottom()
+      },
+      onDoneMeta(payload) {
+        applyDoneMeta(localIds.assistantId, payload)
+      },
+      onDone() {
+        finishStreamingAssistant(localIds.assistantId)
+      }
+    })
     state.question = ''
     state.mentionKeyword = ''
     await Promise.all([fetchMessages(), loadSessions()])
   } catch (error) {
+    if (!streamProgress.receivedStart && !streamProgress.receivedDelta && localIds) {
+      try {
+        const result = ensureSuccess(await sendAgentQuestion({
+          sessionId: state.sessionInfo.id,
+          question: cleanQuestion,
+          sourceScene: SOURCE_SCENE,
+          skillHint: skillHint || undefined
+        }), '发送问题失败')
+        state.lastChatMeta = {
+          skillName: result?.skillName || state.sessionInfo?.skillName || '',
+          skillMatchMode: result?.skillMatchMode || state.sessionInfo?.skillMatchMode || '',
+          promptTokens: result?.promptTokens ?? 0,
+          completionTokens: result?.completionTokens ?? 0,
+          totalTokens: result?.totalTokens ?? 0,
+          monthTotalTokens: result?.monthTotalTokens ?? 0,
+          durationMs: result?.durationMs ?? 0,
+          modelCode: result?.modelCode || state.sessionInfo?.modelCode || '',
+          answerSource: 'CHAT_FALLBACK'
+        }
+        await playFallbackTyping(localIds.assistantId, result?.answer || '')
+        const assistant = findMessageById(localIds.assistantId)
+        if (assistant) {
+          assistant.citedTitles = Array.isArray(result?.citedTitles) ? result.citedTitles : []
+        }
+        state.question = ''
+        state.mentionKeyword = ''
+        await Promise.all([fetchMessages(), loadSessions()])
+        return
+      } catch (fallbackError) {
+        removeLocalConversation(localIds)
+        showToast(fallbackError.message || '发送问题失败')
+        state.errorMessage = fallbackError.message || '发送问题失败'
+        return
+      }
+    }
+    finishStreamingAssistant(localIds?.assistantId)
     showToast(error.message || '发送问题失败')
     state.errorMessage = error.message || '发送问题失败'
+    await fetchMessages()
   } finally {
     state.asking = false
   }
@@ -400,7 +599,7 @@ onMounted(async () => {
     state.permissionInfo = ensureSuccess(permissionResponse, '加载 AI 权限失败') || {}
     state.skillOptions = ensureSuccess(skillResponse, '加载 Skill 列表失败') || []
     if (!permissionFlags.value.canUseAgent) {
-      state.errorMessage = '当前账号还没有 AI 主链权限，请先去 AI 权限配置开通。'
+      state.errorMessage = '当前账号还没有 AI 主链权限，请先到 AI 权限配置中开通。'
       return
     }
     await loadSessions()
@@ -490,6 +689,17 @@ onMounted(async () => {
   margin-top: 12px;
 }
 
+.usage-strip {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .message-list {
   max-height: 52vh;
   margin-top: 16px;
@@ -526,6 +736,17 @@ onMounted(async () => {
 .message-bubble__text {
   white-space: pre-wrap;
   line-height: 1.7;
+}
+
+.stream-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  border-radius: 999px;
+  background: #2563eb;
+  animation: blink-cursor 1s steps(1) infinite;
 }
 
 .question-input {
@@ -604,6 +825,17 @@ onMounted(async () => {
 
 .empty-state--warning {
   color: #b45309;
+}
+
+@keyframes blink-cursor {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
 
 @media (max-width: 768px) {

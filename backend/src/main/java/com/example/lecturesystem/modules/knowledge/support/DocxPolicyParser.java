@@ -11,9 +11,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 @Component
 public class DocxPolicyParser {
+    private static final Pattern CHAPTER_PATTERN = Pattern.compile("^(第[一二三四五六七八九十百]+[章节部分篇]|[一二三四五六七八九十百]+、|\\d+\\.\\s*|\\d+、).*");
+    private static final Pattern SECTION_PATTERN = Pattern.compile("^(\\(?[一二三四五六七八九十]+\\)|（[一二三四五六七八九十]+）|\\d+\\.\\d+|[①②③④⑤⑥⑦⑧⑨⑩]).*");
+
     static {
         // Internal policy compilations can legitimately contain many embedded docx entries.
         ZipSecureFile.setMaxFileCount(20000L);
@@ -23,7 +28,8 @@ public class DocxPolicyParser {
         try (XWPFDocument document = new XWPFDocument(inputStream)) {
             ParsedDocResult result = new ParsedDocResult();
             List<ParsedDocSection> sections = new ArrayList<>();
-            String currentHeading = "\u6b63\u6587";
+            String currentChapter = "正文";
+            String currentSection = null;
             int sectionNo = 1;
 
             for (IBodyElement element : document.getBodyElements()) {
@@ -35,13 +41,21 @@ public class DocxPolicyParser {
                     if (result.getTitle() == null) {
                         result.setTitle(text);
                     }
-                    if (isHeading(paragraph, text)) {
-                        currentHeading = text;
+                    int headingLevel = resolveHeadingLevel(paragraph, text);
+                    if (headingLevel == 1) {
+                        currentChapter = text;
+                        currentSection = null;
+                        continue;
+                    }
+                    if (headingLevel == 2) {
+                        currentSection = text;
                         continue;
                     }
                     ParsedDocSection section = new ParsedDocSection();
                     section.setSectionNo(sectionNo++);
-                    section.setHeadingPath(currentHeading);
+                    section.setChapterTitle(currentChapter);
+                    section.setSectionTitle(currentSection);
+                    section.setHeadingPath(buildHeadingPath(currentChapter, currentSection));
                     section.setChunkType("PARAGRAPH");
                     section.setContentText(text);
                     sections.add(section);
@@ -57,7 +71,9 @@ public class DocxPolicyParser {
                     }
                     ParsedDocSection section = new ParsedDocSection();
                     section.setSectionNo(sectionNo++);
-                    section.setHeadingPath(currentHeading);
+                    section.setChapterTitle(currentChapter);
+                    section.setSectionTitle(currentSection);
+                    section.setHeadingPath(buildHeadingPath(currentChapter, currentSection));
                     section.setChunkType("TABLE");
                     section.setContentText(text);
                     sections.add(section);
@@ -75,10 +91,43 @@ public class DocxPolicyParser {
         }
     }
 
-    private boolean isHeading(XWPFParagraph paragraph, String text) {
+    private int resolveHeadingLevel(XWPFParagraph paragraph, String text) {
         String style = paragraph.getStyle();
-        return (style != null && style.toLowerCase().contains("heading"))
-                || (text.length() <= 30 && text.matches("^[\\u4e00-\\u9fa5A-Za-z0-9\\(\\)\\uff08\\uff09\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341].*"));
+        String lowerStyle = style == null ? "" : style.toLowerCase(Locale.ROOT);
+        if (lowerStyle.contains("heading 1") || lowerStyle.contains("heading1") || lowerStyle.contains("title")) {
+            return 1;
+        }
+        if (lowerStyle.contains("heading 2") || lowerStyle.contains("heading2")) {
+            return 2;
+        }
+        if (text.length() > 40) {
+            return 0;
+        }
+        if (CHAPTER_PATTERN.matcher(text).matches()) {
+            return 1;
+        }
+        if (SECTION_PATTERN.matcher(text).matches()) {
+            return 2;
+        }
+        if (lowerStyle.contains("heading")) {
+            return 2;
+        }
+        return 0;
+    }
+
+    private String buildHeadingPath(String chapterTitle, String sectionTitle) {
+        String chapter = normalize(chapterTitle);
+        String section = normalize(sectionTitle);
+        if (chapter == null && section == null) {
+            return "正文";
+        }
+        if (section == null) {
+            return chapter;
+        }
+        if (chapter == null) {
+            return section;
+        }
+        return chapter + " / " + section;
     }
 
     private String normalize(String text) {

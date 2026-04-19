@@ -12,6 +12,12 @@ public class AgentChatResultVO {
     private String citedChunkIds;
     private List<String> citedChunkIdList;
     private List<String> citedTitles;
+    private Integer promptTokens;
+    private Integer completionTokens;
+    private Integer totalTokens;
+    private Long durationMs;
+    private Long monthTotalTokens;
+    private String modelCode;
 
     public Long getSessionId() { return sessionId; }
     public void setSessionId(Long sessionId) { this.sessionId = sessionId; }
@@ -31,4 +37,16 @@ public class AgentChatResultVO {
     public void setCitedChunkIdList(List<String> citedChunkIdList) { this.citedChunkIdList = citedChunkIdList; }
     public List<String> getCitedTitles() { return citedTitles; }
     public void setCitedTitles(List<String> citedTitles) { this.citedTitles = citedTitles; }
+    public Integer getPromptTokens() { return promptTokens; }
+    public void setPromptTokens(Integer promptTokens) { this.promptTokens = promptTokens; }
+    public Integer getCompletionTokens() { return completionTokens; }
+    public void setCompletionTokens(Integer completionTokens) { this.completionTokens = completionTokens; }
+    public Integer getTotalTokens() { return totalTokens; }
+    public void setTotalTokens(Integer totalTokens) { this.totalTokens = totalTokens; }
+    public Long getDurationMs() { return durationMs; }
+    public void setDurationMs(Long durationMs) { this.durationMs = durationMs; }
+    public Long getMonthTotalTokens() { return monthTotalTokens; }
+    public void setMonthTotalTokens(Long monthTotalTokens) { this.monthTotalTokens = monthTotalTokens; }
+    public String getModelCode() { return modelCode; }
+    public void setModelCode(String modelCode) { this.modelCode = modelCode; }
 }

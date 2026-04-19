@@ -7,9 +7,14 @@ public class KnowledgeSearchRequest {
     private Long baseId;
     private Long categoryId;
     private String keywords;
+    private String regionScope;
     private String policyRegion;
     private String regionPriority;
     private String questionType;
+    private String docType;
+    private String topicType;
+    private String scenePriority;
+    private Boolean searchable;
     private Boolean effectiveOnly;
     private Integer topN;
 
@@ -37,6 +42,14 @@ public class KnowledgeSearchRequest {
         this.keywords = keywords;
     }
 
+    public String getRegionScope() {
+        return regionScope;
+    }
+
+    public void setRegionScope(String regionScope) {
+        this.regionScope = regionScope;
+    }
+
     public String getPolicyRegion() {
         return policyRegion;
     }
@@ -59,6 +72,38 @@ public class KnowledgeSearchRequest {
 
     public void setQuestionType(String questionType) {
         this.questionType = questionType;
+    }
+
+    public String getDocType() {
+        return docType;
+    }
+
+    public void setDocType(String docType) {
+        this.docType = docType;
+    }
+
+    public String getTopicType() {
+        return topicType;
+    }
+
+    public void setTopicType(String topicType) {
+        this.topicType = topicType;
+    }
+
+    public String getScenePriority() {
+        return scenePriority;
+    }
+
+    public void setScenePriority(String scenePriority) {
+        this.scenePriority = scenePriority;
+    }
+
+    public Boolean getSearchable() {
+        return searchable;
+    }
+
+    public void setSearchable(Boolean searchable) {
+        this.searchable = searchable;
     }
 
     public Boolean getEffectiveOnly() {

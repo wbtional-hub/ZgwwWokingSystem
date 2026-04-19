@@ -154,6 +154,7 @@
               <div class="answer-title">最新回答</div>
             </div>
             <div class="answer-text">{{ state.lastAnswer.answer }}</div>
+            <div v-if="usageSummaryText" class="meta-line answer-usage">{{ usageSummaryText }}</div>
             <div class="meta-line">引用文档：{{ (state.lastAnswer.citedTitles || []).join(' / ') || '-' }}</div>
             <div class="meta-line">引用 Chunk：{{ (state.lastAnswer.citedChunkIdList || []).join(', ') || '-' }}</div>
           </div>
@@ -221,6 +222,22 @@ const permissionFlags = computed(() => {
 })
 const selectedSkill = computed(() => state.skillOptions.find((item) => String(item.id) === state.selectedSkillId) || null)
 const selectedExpert = computed(() => state.expertList.find((item) => String(item.skillId) === state.selectedSkillId) || null)
+const usageSummaryText = computed(() => {
+  const meta = state.lastAnswer || {}
+  const hasUsage = ['promptTokens', 'completionTokens', 'totalTokens', 'monthTotalTokens', 'durationMs', 'modelCode']
+    .some((key) => meta[key] !== undefined && meta[key] !== null && meta[key] !== '')
+  if (!hasUsage) {
+    return ''
+  }
+  return [
+    `本次 P ${Number(meta.promptTokens || 0)}`,
+    `C ${Number(meta.completionTokens || 0)}`,
+    `T ${Number(meta.totalTokens || 0)}`,
+    `本月 ${Number(meta.monthTotalTokens || 0)}`,
+    `模型 ${meta.modelCode || '-'}`,
+    `${Number(meta.durationMs || 0)} ms`
+  ].join(' / ')
+})
 
 function ensureSuccess(response, fallback = '请求失败') {
   if (!response || response.code !== 0) throw new Error(response?.message || fallback)

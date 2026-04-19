@@ -181,6 +181,62 @@ public class LogCenterServiceImpl implements LogCenterService {
         return detail;
     }
 
+    @Override
+    public void recordAiChainSuccess(String eventType,
+                                     Long refId,
+                                     Long userId,
+                                     String sourceScene,
+                                     String content) {
+        recordAiChain(true, eventType, refId, userId, sourceScene, content);
+    }
+
+    @Override
+    public void recordAiChainFailed(String eventType,
+                                    Long refId,
+                                    Long userId,
+                                    String sourceScene,
+                                    String content) {
+        recordAiChain(false, eventType, refId, userId, sourceScene, content);
+    }
+
+    private void recordAiChain(boolean success,
+                               String eventType,
+                               Long refId,
+                               Long userId,
+                               String sourceScene,
+                               String content) {
+        LogCenterEntity entity = new LogCenterEntity();
+        entity.setTraceId(TraceIdHolder.getOrCreateTraceId());
+        entity.setLogType("AI_CHAIN_EVENT");
+        entity.setModule("AI_CHAIN");
+        entity.setSubModule(defaultIfBlank(normalizeText(eventType), "UNKNOWN"));
+        entity.setLevel(success ? "INFO" : "ERROR");
+        entity.setTitle(defaultIfBlank(normalizeText(eventType), success ? "AI chain success" : "AI chain failed"));
+        entity.setSummary(defaultIfBlank(normalizeText(content), entity.getTitle()));
+        entity.setDiagnosis("AI chain event from " + defaultIfBlank(normalizeText(sourceScene), "UNKNOWN"));
+        entity.setMessage(normalizeText(content));
+        entity.setRawData(serializeJson(buildAiChainRawData(success, eventType, refId, userId, sourceScene, content)));
+        entity.setEnv("SERVER");
+        fillUserContext(entity, userId, null, null, null);
+        persist(entity);
+    }
+
+    private Map<String, Object> buildAiChainRawData(boolean success,
+                                                    String eventType,
+                                                    Long refId,
+                                                    Long userId,
+                                                    String sourceScene,
+                                                    String content) {
+        Map<String, Object> rawData = new LinkedHashMap<>();
+        rawData.put("eventType", normalizeText(eventType));
+        rawData.put("success", success);
+        rawData.put("refId", refId);
+        rawData.put("userId", userId);
+        rawData.put("sourceScene", normalizeText(sourceScene));
+        rawData.put("content", normalizeText(content));
+        return rawData;
+    }
+
     private void persist(LogCenterEntity entity) {
         entity.setCreateTime(LocalDateTime.now());
         entity.setTraceId(normalizeTraceId(entity.getTraceId()));

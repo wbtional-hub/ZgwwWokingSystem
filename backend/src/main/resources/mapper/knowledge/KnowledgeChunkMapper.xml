@@ -12,6 +12,16 @@
         <result property="headingPath" column="heading_path"/>
         <result property="contentText" column="content_text"/>
         <result property="keywordText" column="keyword_text"/>
+        <result property="regionScope" column="region_scope"/>
+        <result property="docType" column="doc_type"/>
+        <result property="topicType" column="topic_type"/>
+        <result property="policyName" column="policy_name"/>
+        <result property="policyAliases" column="policy_aliases"/>
+        <result property="policyNo" column="policy_no"/>
+        <result property="chapterTitle" column="chapter_title"/>
+        <result property="sectionTitle" column="section_title"/>
+        <result property="scenePriority" column="scene_priority"/>
+        <result property="searchable" column="searchable"/>
         <result property="contentLength" column="content_length"/>
         <result property="sortNo" column="sort_no"/>
     </resultMap>
@@ -24,11 +34,23 @@
         <result property="headingPath" column="heading_path"/>
         <result property="snippet" column="snippet"/>
         <result property="keywordText" column="keyword_text"/>
+        <result property="regionScope" column="region_scope"/>
+        <result property="docType" column="doc_type"/>
+        <result property="topicType" column="topic_type"/>
+        <result property="policyName" column="policy_name"/>
+        <result property="policyAliases" column="policy_aliases"/>
+        <result property="policyNo" column="policy_no"/>
+        <result property="chapterTitle" column="chapter_title"/>
+        <result property="sectionTitle" column="section_title"/>
+        <result property="scenePriority" column="scene_priority"/>
+        <result property="searchable" column="searchable"/>
         <result property="chunkNo" column="chunk_no"/>
     </resultMap>
 
     <select id="queryByDocumentId" resultMap="KnowledgeChunkListMap">
-        SELECT id, document_id, chunk_no, chunk_type, heading_path, content_text, keyword_text, content_length, sort_no
+        SELECT id, document_id, chunk_no, chunk_type, heading_path, content_text, keyword_text,
+               region_scope, doc_type, topic_type, policy_name, policy_aliases, policy_no,
+               chapter_title, section_title, scene_priority, searchable, content_length, sort_no
         FROM ai_knowledge_chunk
         WHERE document_id = #{documentId}
         ORDER BY sort_no ASC, id ASC
@@ -37,12 +59,14 @@
     <insert id="batchInsert">
         INSERT INTO ai_knowledge_chunk (
             document_id, base_id, category_id, chunk_no, chunk_type, heading_path,
-            content_text, keyword_text, content_length, sort_no, create_time
+            content_text, keyword_text, region_scope, doc_type, topic_type, policy_name, policy_aliases, policy_no,
+            chapter_title, section_title, scene_priority, searchable, content_length, sort_no, create_time
         ) VALUES
         <foreach collection="list" item="item" separator=",">
             (
                 #{item.documentId}, #{item.baseId}, #{item.categoryId}, #{item.chunkNo}, #{item.chunkType}, #{item.headingPath},
-                #{item.contentText}, #{item.keywordText}, #{item.contentLength}, #{item.sortNo}, #{item.createTime}
+                #{item.contentText}, #{item.keywordText}, #{item.regionScope}, #{item.docType}, #{item.topicType}, #{item.policyName}, #{item.policyAliases}, #{item.policyNo},
+                #{item.chapterTitle}, #{item.sectionTitle}, #{item.scenePriority}, #{item.searchable}, #{item.contentLength}, #{item.sortNo}, #{item.createTime}
             )
         </foreach>
     </insert>
@@ -55,19 +79,49 @@
                chunk.heading_path,
                chunk.content_text AS snippet,
                chunk.keyword_text,
+               chunk.region_scope,
+               chunk.doc_type,
+               chunk.topic_type,
+               chunk.policy_name,
+               chunk.policy_aliases,
+               chunk.policy_no,
+               chunk.chapter_title,
+               chunk.section_title,
+               chunk.scene_priority,
+               chunk.searchable,
                chunk.chunk_no
         FROM ai_knowledge_chunk chunk
         INNER JOIN ai_knowledge_document doc ON doc.id = chunk.document_id
         WHERE doc.is_deleted = FALSE
           AND chunk.base_id = #{request.baseId}
+        <if test="request.searchable != null">
+            AND chunk.searchable = #{request.searchable}
+        </if>
         <if test="request.categoryId != null">
             AND chunk.category_id = #{request.categoryId}
+        </if>
+        <if test="request.regionScope != null and request.regionScope != ''">
+            AND chunk.region_scope = #{request.regionScope}
+        </if>
+        <if test="request.docType != null and request.docType != ''">
+            AND chunk.doc_type = #{request.docType}
+        </if>
+        <if test="request.topicType != null and request.topicType != ''">
+            AND chunk.topic_type = #{request.topicType}
+        </if>
+        <if test="request.scenePriority != null and request.scenePriority != ''">
+            AND (chunk.scene_priority = #{request.scenePriority} OR chunk.scene_priority = 'GENERAL')
         </if>
         <if test="request.keywords != null and request.keywords != ''">
             AND (
                 chunk.content_text LIKE CONCAT('%', #{request.keywords}, '%')
                 OR doc.doc_title LIKE CONCAT('%', #{request.keywords}, '%')
                 OR COALESCE(chunk.keyword_text, '') LIKE CONCAT('%', #{request.keywords}, '%')
+                OR COALESCE(chunk.policy_name, '') LIKE CONCAT('%', #{request.keywords}, '%')
+                OR COALESCE(chunk.policy_aliases, '') LIKE CONCAT('%', #{request.keywords}, '%')
+                OR COALESCE(chunk.policy_no, '') LIKE CONCAT('%', #{request.keywords}, '%')
+                OR COALESCE(chunk.chapter_title, '') LIKE CONCAT('%', #{request.keywords}, '%')
+                OR COALESCE(chunk.section_title, '') LIKE CONCAT('%', #{request.keywords}, '%')
             )
         </if>
         <if test="request.policyRegion != null and request.policyRegion != ''">
@@ -81,19 +135,39 @@
             <when test="request.regionPriority != null and request.regionPriority != ''">
                 ORDER BY
                 CASE
-                    WHEN COALESCE(chunk.heading_path, '') LIKE CONCAT('%', #{request.regionPriority}, '%') THEN 0
-                    WHEN chunk.content_text LIKE CONCAT('%', #{request.regionPriority}, '%') THEN 1
-                    WHEN doc.doc_title LIKE CONCAT('%', #{request.regionPriority}, '%') THEN 2
+                    WHEN #{request.regionScope} IS NOT NULL AND #{request.regionScope} != '' AND COALESCE(chunk.region_scope, '') = #{request.regionScope} THEN 0
+                    WHEN #{request.keywords} IS NOT NULL AND #{request.keywords} != '' AND COALESCE(chunk.policy_name, '') = #{request.keywords} THEN 1
+                    WHEN #{request.keywords} IS NOT NULL AND #{request.keywords} != '' AND COALESCE(chunk.policy_aliases, '') LIKE CONCAT('%', #{request.keywords}, '%') THEN 2
+                    WHEN #{request.keywords} IS NOT NULL AND #{request.keywords} != '' AND COALESCE(chunk.policy_no, '') LIKE CONCAT('%', #{request.keywords}, '%') THEN 3
+                    WHEN #{request.questionType} IS NOT NULL AND #{request.questionType} != '' AND COALESCE(chunk.topic_type, '') = #{request.questionType} THEN 4
+                    WHEN COALESCE(chunk.doc_type, '') = 'topic' THEN 5
+                    WHEN COALESCE(chunk.doc_type, '') = 'main' THEN 6
+                    WHEN COALESCE(chunk.doc_type, '') = 'guide' THEN 9
+                    WHEN COALESCE(chunk.heading_path, '') LIKE CONCAT('%', #{request.regionPriority}, '%') THEN 7
+                    WHEN chunk.content_text LIKE CONCAT('%', #{request.regionPriority}, '%') THEN 7
+                    WHEN doc.doc_title LIKE CONCAT('%', #{request.regionPriority}, '%') THEN 8
                     WHEN COALESCE(chunk.keyword_text, '') LIKE CONCAT('%', #{request.regionPriority}, '%')
                          AND COALESCE(chunk.heading_path, '') NOT LIKE CONCAT('%', #{request.regionPriority}, '%')
                          AND chunk.content_text NOT LIKE CONCAT('%', #{request.regionPriority}, '%')
-                         AND doc.doc_title NOT LIKE CONCAT('%', #{request.regionPriority}, '%') THEN 4
-                    ELSE 3
+                         AND doc.doc_title NOT LIKE CONCAT('%', #{request.regionPriority}, '%') THEN 10
+                    ELSE 11
                 END,
                 doc.update_time DESC, chunk.sort_no ASC
             </when>
             <otherwise>
-                ORDER BY doc.update_time DESC, chunk.sort_no ASC
+                ORDER BY
+                CASE
+                    WHEN #{request.regionScope} IS NOT NULL AND #{request.regionScope} != '' AND COALESCE(chunk.region_scope, '') = #{request.regionScope} THEN 0
+                    WHEN #{request.keywords} IS NOT NULL AND #{request.keywords} != '' AND COALESCE(chunk.policy_name, '') = #{request.keywords} THEN 1
+                    WHEN #{request.keywords} IS NOT NULL AND #{request.keywords} != '' AND COALESCE(chunk.policy_aliases, '') LIKE CONCAT('%', #{request.keywords}, '%') THEN 2
+                    WHEN #{request.keywords} IS NOT NULL AND #{request.keywords} != '' AND COALESCE(chunk.policy_no, '') LIKE CONCAT('%', #{request.keywords}, '%') THEN 3
+                    WHEN #{request.questionType} IS NOT NULL AND #{request.questionType} != '' AND COALESCE(chunk.topic_type, '') = #{request.questionType} THEN 4
+                    WHEN COALESCE(chunk.doc_type, '') = 'topic' THEN 5
+                    WHEN COALESCE(chunk.doc_type, '') = 'main' THEN 6
+                    WHEN COALESCE(chunk.doc_type, '') = 'guide' THEN 9
+                    ELSE 10
+                END,
+                doc.update_time DESC, chunk.sort_no ASC
             </otherwise>
         </choose>
         LIMIT #{request.topN}
