@@ -15,6 +15,8 @@ import com.example.lecturesystem.modules.agent.mapper.AgentUserPreferenceMapper;
 import com.example.lecturesystem.modules.agent.service.AgentService;
 import com.example.lecturesystem.modules.agent.support.KnowledgeCitationContext;
 import com.example.lecturesystem.modules.agent.support.OpenAiCompatibleChatClient;
+import com.example.lecturesystem.modules.agent.support.PolicyRouteIntent;
+import com.example.lecturesystem.modules.agent.support.PolicyRouteService;
 import com.example.lecturesystem.modules.agent.vo.AgentChatResultVO;
 import com.example.lecturesystem.modules.agent.vo.AgentExpertMetricVO;
 import com.example.lecturesystem.modules.agent.vo.AgentMessageVO;
@@ -32,6 +34,7 @@ import com.example.lecturesystem.modules.aipermission.service.AiPermissionServic
 import com.example.lecturesystem.modules.auth.security.LoginUser;
 import com.example.lecturesystem.modules.knowledge.dto.KnowledgeSearchRequest;
 import com.example.lecturesystem.modules.knowledge.mapper.KnowledgeChunkMapper;
+import com.example.lecturesystem.modules.knowledge.service.PolicyCatalogService;
 import com.example.lecturesystem.modules.knowledge.support.PolicyKnowledgeSupport;
 import com.example.lecturesystem.modules.knowledge.vo.KnowledgeSearchResultVO;
 import com.example.lecturesystem.modules.operationlog.service.OperationLogService;
@@ -69,6 +72,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -91,7 +96,11 @@ public class AgentServiceImpl implements AgentService {
     private static final String LOG_EVENT_STREAM_START = "STREAM_START";
     private static final String LOG_EVENT_STREAM_DELTA = "STREAM_DELTA";
     private static final String LOG_EVENT_STREAM_DONE = "STREAM_DONE";
+    private static final String LOG_EVENT_STREAM_EMPTY_RESULT = "STREAM_EMPTY_RESULT";
+    private static final String LOG_EVENT_STREAM_DONE_WITHOUT_DELTA = "STREAM_DONE_WITHOUT_DELTA";
     private static final String LOG_EVENT_STREAM_ERROR = "STREAM_ERROR";
+    private static final String LOG_EVENT_POLICY_ROUTE_COMPARE = "POLICY_ROUTE_COMPARE";
+    private static final String LOG_EVENT_POLICY_BOUNDARY_CATALOG = "POLICY_BOUNDARY_CATALOG";
     private static final String LOG_EVENT_PROVIDER_STREAM_START = "PROVIDER_STREAM_START";
     private static final String LOG_EVENT_PROVIDER_STREAM_DELTA = "PROVIDER_STREAM_DELTA";
     private static final String LOG_EVENT_PROVIDER_STREAM_DONE = "PROVIDER_STREAM_DONE";
@@ -166,6 +175,8 @@ public class AgentServiceImpl implements AgentService {
     private final OperationLogService operationLogService;
     private final AiAgentUsageMapper aiAgentUsageMapper;
     private final ParamService paramService;
+    private final PolicyRouteService policyRouteService;
+    private final PolicyCatalogService policyCatalogService;
     private static final String SOURCE_SCENE_AI_WORKBENCH = "AI_WORKBENCH";
     private static final String SOURCE_SCENE_MOBILE_POLICY_CONSULTANT = "MOBILE_POLICY_CONSULTANT";
     private final LogCenterService logCenterService;
@@ -184,7 +195,9 @@ public class AgentServiceImpl implements AgentService {
                             OperationLogService operationLogService,
                             LogCenterService logCenterService,
                             AiAgentUsageMapper aiAgentUsageMapper,
-                            ParamService paramService) {
+                            ParamService paramService,
+                            PolicyRouteService policyRouteService,
+                            PolicyCatalogService policyCatalogService) {
         this.agentSessionMapper = agentSessionMapper;
         this.agentMessageMapper = agentMessageMapper;
         this.agentUserPreferenceMapper = agentUserPreferenceMapper;
@@ -200,6 +213,8 @@ public class AgentServiceImpl implements AgentService {
         this.logCenterService = logCenterService;
         this.aiAgentUsageMapper = aiAgentUsageMapper;
         this.paramService = paramService;
+        this.policyRouteService = policyRouteService;
+        this.policyCatalogService = policyCatalogService;
     }
 
     @Override
@@ -454,7 +469,7 @@ public class AgentServiceImpl implements AgentService {
         AgentUserPreferenceEntity preference = agentUserPreferenceMapper.findByUserId(user.getUserId());
         boolean canUseAi = permissionService.isSuperAdmin(user.getUserId()) || aiPermissionService.canUseAi(user.getUserId());
         ProviderResolution providerResolution = canUseAi ? resolveProvider(session, version) : null;
-        String fastPathAnswer = resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, context, providerResolution);
+        String fastPathAnswer = resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, session.getBaseId(), context, providerResolution);
 
         AgentMessageEntity userMessage = new AgentMessageEntity();
         userMessage.setSessionId(session.getId());
@@ -502,9 +517,9 @@ public class AgentServiceImpl implements AgentService {
         } else if (providerResolution == null) {
             usageSource = canUseAi ? USAGE_SOURCE_FALLBACK_NO_PROVIDER : USAGE_SOURCE_FALLBACK_NO_AI_PERMISSION;
             answerSource = usageSource;
-            answer = buildFallbackAnswer(request.getQuestion(), context, preference,
-                    sourceScene,
-                    canUseAi ? FALLBACK_REASON_NO_PROVIDER : FALLBACK_REASON_NO_AI_PERMISSION);
+                answer = buildFallbackAnswer(session.getBaseId(), request.getQuestion(), context, preference,
+                        sourceScene,
+                        canUseAi ? FALLBACK_REASON_NO_PROVIDER : FALLBACK_REASON_NO_AI_PERMISSION);
         } else {
             validateMonthlyTokenQuota(user.getUserId());
             providerName = resolveProviderName(providerResolution.provider());
@@ -540,7 +555,7 @@ public class AgentServiceImpl implements AgentService {
                         "sessionId=" + session.getId() + ", provider=" + valueOrBlank(providerName) + ", model=" + valueOrBlank(providerResolution.modelCode())
                                 + ", error=" + valueOrBlank(normalizeText(ex.getMessage()))
                 );
-                answer = buildFallbackAnswer(request.getQuestion(), context, preference,
+                answer = buildFallbackAnswer(session.getBaseId(), request.getQuestion(), context, preference,
                         sourceScene,
                         FALLBACK_REASON_AI_UNAVAILABLE + "原因：" + valueOrBlank(normalizeText(ex.getMessage())));
             }
@@ -633,7 +648,7 @@ public class AgentServiceImpl implements AgentService {
         AgentUserPreferenceEntity preference = agentUserPreferenceMapper.findByUserId(user.getUserId());
         boolean canUseAi = permissionService.isSuperAdmin(user.getUserId()) || aiPermissionService.canUseAi(user.getUserId());
         ProviderResolution providerResolution = canUseAi ? resolveProvider(session, version) : null;
-        String fastPathAnswer = resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, context, providerResolution);
+        String fastPathAnswer = resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, session.getBaseId(), context, providerResolution);
 
         SseEmitter emitter = new SseEmitter(0L);
         CompletableFuture.runAsync(() -> executeChatStream(
@@ -684,6 +699,7 @@ public class AgentServiceImpl implements AgentService {
                                    String fastPathAnswer) {
         String answerSource = normalizeText(fastPathAnswer) != null ? USAGE_SOURCE_FAST_PATH_STRUCTURED
                 : (providerResolution == null ? ANSWER_SOURCE_KNOWLEDGE_FALLBACK_STRUCTURED : ANSWER_SOURCE_LLM_PROVIDER);
+        final boolean[] streamDeltaSent = {false};
         try {
             sendStreamStart(emitter, session.getId(), user.getUserId(), sourceScene, answerSource);
 
@@ -734,6 +750,7 @@ public class AgentServiceImpl implements AgentService {
                 usageSource = canUseAi ? USAGE_SOURCE_FALLBACK_NO_PROVIDER : USAGE_SOURCE_FALLBACK_NO_AI_PERMISSION;
                 answerSource = ANSWER_SOURCE_KNOWLEDGE_FALLBACK_STRUCTURED;
                 answer = buildFallbackAnswer(
+                        session.getBaseId(),
                         request.getQuestion(),
                         context,
                         preference,
@@ -781,6 +798,7 @@ public class AgentServiceImpl implements AgentService {
                                     }
                                     streamedAnswer.append(delta);
                                     nativeDeltaSent[0] = true;
+                                    streamDeltaSent[0] = true;
                                     sendStreamDelta(emitter, delta);
                                     logCenterService.recordAiChainSuccess(
                                             LOG_EVENT_PROVIDER_STREAM_DELTA,
@@ -843,7 +861,7 @@ public class AgentServiceImpl implements AgentService {
                         usageSource = USAGE_SOURCE_PROVIDER_STREAM_FALLBACK_SEGMENTED;
                         answerSource = ANSWER_SOURCE_LLM_PROVIDER;
                         String remainingAnswer = resolveRemainingStreamAnswer(answer, streamedAnswer.toString(), nativeDeltaSent[0]);
-                        emitStreamAnswer(
+                        streamDeltaSent[0] = emitStreamAnswer(
                                 emitter,
                                 session.getId(),
                                 user.getUserId(),
@@ -851,7 +869,7 @@ public class AgentServiceImpl implements AgentService {
                                 answerSource,
                                 remainingAnswer,
                                 splitGenericStreamSegments(remainingAnswer)
-                        );
+                        ) > 0 || streamDeltaSent[0];
                         logCenterService.recordAiChainSuccess(
                                 LOG_EVENT_PROVIDER_CALL_SUCCESS,
                                 session.getId(),
@@ -876,6 +894,7 @@ public class AgentServiceImpl implements AgentService {
                                     + ", streamMode=SERVER_SEGMENTED"
                     );
                     answer = buildFallbackAnswer(
+                            session.getBaseId(),
                             request.getQuestion(),
                             context,
                             preference,
@@ -885,16 +904,20 @@ public class AgentServiceImpl implements AgentService {
                 }
             }
 
-            if (!ANSWER_SOURCE_LLM_PROVIDER.equals(answerSource)) {
-                emitStreamAnswer(
+            answer = ensureNonEmptyStreamAnswer(answer, session.getId(), user.getUserId(), sourceScene, answerSource);
+            if (!streamDeltaSent[0]) {
+                List<String> segments = ANSWER_SOURCE_LLM_PROVIDER.equals(answerSource)
+                        ? splitGenericStreamSegments(answer)
+                        : splitStructuredStreamSegments(answer);
+                streamDeltaSent[0] = emitStreamAnswer(
                         emitter,
                         session.getId(),
                         user.getUserId(),
                         sourceScene,
                         answerSource,
                         answer,
-                        splitStructuredStreamSegments(answer)
-                );
+                        segments
+                ) > 0;
             }
 
             AgentMessageEntity assistantMessage = new AgentMessageEntity();
@@ -935,6 +958,15 @@ public class AgentServiceImpl implements AgentService {
             operationLogService.log("AGENT", "CHAT_STREAM", session.getId(), "chat stream in AI workbench");
 
             AgentChatResultVO result = buildChatResultVO(session, sourceScene, answer, context, usageEntity, monthTotalTokens);
+            if (!streamDeltaSent[0]) {
+                logCenterService.recordAiChainSuccess(
+                        LOG_EVENT_STREAM_DONE_WITHOUT_DELTA,
+                        session.getId(),
+                        user.getUserId(),
+                        sourceScene,
+                        "sessionId=" + session.getId() + ", answerSource=" + valueOrBlank(answerSource)
+                );
+            }
             sendDoneMeta(emitter, result, answerSource);
             sendDoneEvent(emitter, session.getId(), user.getUserId(), sourceScene, answerSource, usageEntity, monthTotalTokens, context.getChunks().size());
             emitter.complete();
@@ -1391,14 +1423,15 @@ public class AgentServiceImpl implements AgentService {
         );
     }
 
-    private void emitStreamAnswer(SseEmitter emitter,
-                                  Long sessionId,
-                                  Long userId,
-                                  String sourceScene,
-                                  String answerSource,
-                                  String answer,
-                                  List<String> segments) throws IOException {
+    private int emitStreamAnswer(SseEmitter emitter,
+                                 Long sessionId,
+                                 Long userId,
+                                 String sourceScene,
+                                 String answerSource,
+                                 String answer,
+                                 List<String> segments) throws IOException {
         List<String> safeSegments = (segments == null || segments.isEmpty()) ? List.of(valueOrBlank(answer)) : segments;
+        int emitted = 0;
         for (int i = 0; i < safeSegments.size(); i++) {
             String text = safeSegments.get(i);
             if (normalizeText(text) == null) {
@@ -1417,7 +1450,9 @@ public class AgentServiceImpl implements AgentService {
                             + ", segmentIndex=" + (i + 1)
                             + ", segmentLength=" + safeLength(text)
             );
+            emitted++;
         }
+        return emitted;
     }
 
     private void sendStreamDelta(SseEmitter emitter, String text) throws IOException {
@@ -1490,6 +1525,24 @@ public class AgentServiceImpl implements AgentService {
 
     private void sendSseEvent(SseEmitter emitter, String eventName, Object data) throws IOException {
         emitter.send(SseEmitter.event().name(eventName).data(data, MediaType.APPLICATION_JSON));
+    }
+
+    private String ensureNonEmptyStreamAnswer(String answer,
+                                              Long sessionId,
+                                              Long userId,
+                                              String sourceScene,
+                                              String answerSource) {
+        if (normalizeText(answer) != null) {
+            return answer;
+        }
+        logCenterService.recordAiChainSuccess(
+                LOG_EVENT_STREAM_EMPTY_RESULT,
+                sessionId,
+                userId,
+                sourceScene,
+                "sessionId=" + sessionId + ", answerSource=" + valueOrBlank(answerSource)
+        );
+        return "当前未获取到可展示内容，请稍后重试或补充更具体条件。";
     }
 
     private List<String> splitStructuredStreamSegments(String answer) {
@@ -1577,12 +1630,20 @@ public class AgentServiceImpl implements AgentService {
         if (baseId == null || topN <= 0) {
             return context;
         }
-        PolicyQuestionType questionType = detectPolicyQuestionType(question);
+        PolicyRouteIntent routeIntent = policyRouteService.route(question);
+        PolicyQuestionType questionType = resolvePolicyQuestionType(routeIntent, question);
         List<String> formalPolicyNames = extractFormalPolicyNames(question);
         List<String> specialTopicTerms = extractMatchedSpecialTopicTerms(question);
-        String regionScope = detectPreferredRegionScope(question, questionType);
+        String regionScope = normalizeText(routeIntent.getRegionScope()) != null
+                ? routeIntent.getRegionScope()
+                : detectPreferredRegionScope(question, questionType);
         int contextLimit = resolveContextLimit(questionType, topN);
         LinkedHashSet<Long> chunkIds = new LinkedHashSet<>();
+        List<String> catalogCandidates = policyCatalogService.resolveCandidateSearchTerms(baseId, routeIntent, Math.min(contextLimit, 4));
+        if (!catalogCandidates.isEmpty()) {
+            appendContextChunks(context, chunkIds, baseId, catalogCandidates, Math.min(contextLimit, 4), contextLimit, questionType, regionScope, sourceScene,
+                    item -> matchesPolicyIntent(item, formalPolicyNames, specialTopicTerms) || containsAny(buildChunkSearchText(item), catalogCandidates));
+        }
         if (questionType == PolicyQuestionType.LIST) {
             appendContextChunks(context, chunkIds, baseId, extractStructuredListRecallCandidates(question), Math.min(contextLimit, 6), contextLimit, questionType, regionScope, sourceScene,
                     item -> isPreferredListChunk(item, formalPolicyNames, specialTopicTerms));
@@ -1772,20 +1833,7 @@ public class AgentServiceImpl implements AgentService {
     }
 
     private String resolvePolicyRouteSkills(String question) {
-        LinkedHashSet<String> skills = new LinkedHashSet<>();
-        skills.add("POLICY_ROUTE_SKILL");
-        String regionScope = detectPreferredRegionScope(question, detectPolicyQuestionType(question));
-        if ("XM".equalsIgnoreCase(regionScope)) {
-            skills.add("XM_POLICY_SKILL");
-        } else if ("FJ".equalsIgnoreCase(regionScope)) {
-            skills.add("FJ_POLICY_SKILL");
-        } else if (detectPolicyQuestionType(question) == PolicyQuestionType.BOUNDARY) {
-            skills.add("TALENT_BOUNDARY_SKILL");
-        }
-        if (detectPolicyQuestionType(question) == PolicyQuestionType.BOUNDARY) {
-            skills.add("TALENT_BOUNDARY_SKILL");
-        }
-        return String.join(", ", skills);
+        return String.join(", ", policyRouteService.route(question).getRouteSkills());
     }
 
     private void requireAgentPermission(LoginUser user) {
@@ -1935,13 +1983,38 @@ public class AgentServiceImpl implements AgentService {
                                          PolicyQuestionType questionType,
                                          String regionScope,
                                          String sourceScene,
+                                         Long baseId,
                                          KnowledgeCitationContext context,
                                          ProviderResolution providerResolution) {
         if (!SOURCE_SCENE_MOBILE_POLICY_CONSULTANT.equals(sourceScene)
                 || providerResolution == null
-                || context == null
-                || context.getChunks().size() < 2
                 || !isFastPathQuestionType(questionType)) {
+            return null;
+        }
+        PolicyRouteIntent routeIntent = policyRouteService.route(question);
+        if (routeIntent.getRouteSkills().contains("XM_FJ_BOUNDARY_COMPARE")) {
+            logCenterService.recordAiChainSuccess(
+                    LOG_EVENT_POLICY_ROUTE_COMPARE,
+                    null,
+                    null,
+                    sourceScene,
+                    "question=" + valueOrBlank(normalizeText(question)) + ", routeSkills=" + String.join("|", routeIntent.getRouteSkills())
+            );
+        }
+        PolicyCatalogService.CatalogAnswer catalogAnswer = policyCatalogService.buildCatalogAnswer(baseId, routeIntent, sourceScene);
+        if (catalogAnswer.hasAnswer()) {
+            if (routeIntent.getRouteSkills().contains("XM_FJ_BOUNDARY_COMPARE")) {
+                logCenterService.recordAiChainSuccess(
+                        LOG_EVENT_POLICY_BOUNDARY_CATALOG,
+                        null,
+                        null,
+                        sourceScene,
+                        "answerSource=FAST_PATH_CATALOG_COMPARE"
+                );
+            }
+            return catalogAnswer.answer();
+        }
+        if (context == null || context.getChunks().size() < 2) {
             return null;
         }
         if ((questionType == PolicyQuestionType.CONDITION || questionType == PolicyQuestionType.BENEFIT)
@@ -1952,7 +2025,7 @@ public class AgentServiceImpl implements AgentService {
         if (!hasFastPathEvidence(question, questionType, regionScope, rankedChunks)) {
             return null;
         }
-        return buildFastPathStructuredAnswer(question, questionType, regionScope, rankedChunks);
+        return buildFastPathStructuredAnswer(question, questionType, regionScope, sourceScene, baseId, rankedChunks);
     }
 
     private boolean isFastPathQuestionType(PolicyQuestionType questionType) {
@@ -2063,9 +2136,11 @@ public class AgentServiceImpl implements AgentService {
     private String buildFastPathStructuredAnswer(String question,
                                                  PolicyQuestionType questionType,
                                                  String regionScope,
+                                                 String sourceScene,
+                                                 Long baseId,
                                                  List<KnowledgeSearchResultVO> chunks) {
         return switch (questionType) {
-            case LIST -> buildFastPathListAnswer(regionScope, chunks);
+            case LIST -> buildFastPathStrictListAnswer(question, regionScope, sourceScene, baseId, chunks);
             case FAQ -> buildFastPathFaqAnswer(regionScope, chunks);
             case BOUNDARY -> buildFastPathBoundaryAnswer(chunks);
             case CONDITION -> buildFastPathConditionAnswer(regionScope, chunks);
@@ -2099,6 +2174,856 @@ public class AgentServiceImpl implements AgentService {
         builder.append("提示：以下为当前知识库已命中的主要政策/项目，不代表完整官方清单。\n");
         appendCitationsBlock(builder, collectFallbackCitations(selected, regionScope));
         return builder.toString().trim();
+    }
+
+    private String buildFastPathStrictListAnswer(String question,
+                                                 String regionScope,
+                                                 String sourceScene,
+                                                 Long baseId,
+                                                 List<KnowledgeSearchResultVO> chunks) {
+        if (isHousingTopicListQuestion(question, sourceScene)) {
+            String housingAnswer = buildHousingTopicListAnswer(baseId, question, regionScope, sourceScene, chunks);
+            if (normalizeText(housingAnswer) != null) {
+                return housingAnswer;
+            }
+        }
+        if (isCatalogOverviewListQuestion(question, sourceScene)) {
+            String catalogAnswer = buildCatalogListAnswer(baseId, question, regionScope, sourceScene, chunks);
+            if (normalizeText(catalogAnswer) != null) {
+                return catalogAnswer;
+            }
+        }
+        List<FastPathListItem> selected = selectFastPathListItems(chunks);
+        LinkedHashMap<ListPolicyGroup, List<FastPathListItem>> grouped = groupFastPathListItems(selected, 4);
+        StringBuilder builder = new StringBuilder();
+        String regionLabel = resolveRegionLabel(regionScope);
+        builder.append("结论：");
+        builder.append(regionLabel == null ? "当前知识库已命中的主要人才政策/项目如下。" : regionLabel + "当前已命中的主要人才政策/项目如下。");
+        if (grouped.isEmpty()) {
+            builder.append("\n政策/项目清单：\n");
+            builder.append("1. 当前命中结果以说明性材料为主，暂未识别出可直接列示的正式政策名称。\n");
+        } else {
+            for (Map.Entry<ListPolicyGroup, List<FastPathListItem>> entry : grouped.entrySet()) {
+                List<FastPathListItem> items = entry.getValue();
+                if (items == null || items.isEmpty()) {
+                    continue;
+                }
+                builder.append("\n").append(entry.getKey().label()).append("：\n");
+                for (int i = 0; i < items.size(); i++) {
+                    FastPathListItem fastPathItem = items.get(i);
+                    builder.append(i + 1)
+                            .append(". ")
+                            .append(fastPathItem.policyName())
+                            .append("：")
+                            .append(buildListItemSummary(fastPathItem.chunk()))
+                            .append("\n");
+                }
+            }
+        }
+        builder.append("以下为当前知识库已命中的主要政策/项目，不代表完整官方清单\n");
+        appendCitationsBlock(builder, collectFallbackCitations(selected.stream().map(FastPathListItem::chunk).collect(Collectors.toList()), regionScope));
+        return builder.toString().trim();
+    }
+
+    private boolean isHousingTopicListQuestion(String question, String sourceScene) {
+        String normalized = normalizeText(question);
+        if (!SOURCE_SCENE_MOBILE_POLICY_CONSULTANT.equals(sourceScene) || normalized == null) {
+            return false;
+        }
+        return containsAny(normalized, LIST_QUESTION_KEYWORDS)
+                && containsAny(normalized, List.of("住房", "住房补贴", "安居", "租房", "购房"));
+    }
+
+    private String buildHousingTopicListAnswer(Long baseId,
+                                               String question,
+                                               String regionScope,
+                                               String sourceScene,
+                                               List<KnowledgeSearchResultVO> chunks) {
+        List<FastPathListItem> selected = collectXiamenHousingPolicyItems(baseId, question, regionScope, sourceScene, chunks);
+        if (selected.isEmpty()) {
+            return null;
+        }
+        String regionLabel = resolveRegionLabel(regionScope);
+        StringBuilder builder = new StringBuilder();
+        builder.append("结论：");
+        builder.append(regionLabel == null ? "当前知识库已命中的住房类人才政策如下。" : regionLabel + "当前已命中的住房类人才政策如下。");
+        builder.append("\n住房类政策清单：\n");
+        for (int i = 0; i < selected.size(); i++) {
+            FastPathListItem item = selected.get(i);
+            builder.append(i + 1)
+                    .append(". ")
+                    .append(item.policyName())
+                    .append("：")
+                    .append(buildHousingListItemSummary(item.policyName(), item.chunk()))
+                    .append("\n");
+        }
+        builder.append("以下为当前知识库已命中的主要政策/项目，不代表完整官方清单\n");
+        appendCitationsBlock(builder, collectFallbackCitations(selected.stream().map(FastPathListItem::chunk).collect(Collectors.toList()), regionScope));
+        return builder.toString().trim();
+    }
+
+    private List<FastPathListItem> collectXiamenHousingPolicyItems(Long baseId,
+                                                                   String question,
+                                                                   String regionScope,
+                                                                   String sourceScene,
+                                                                   List<KnowledgeSearchResultVO> chunks) {
+        List<FastPathListItem> selected = new ArrayList<>();
+        int order = 0;
+        for (String policyName : resolveXiamenHousingWhitelist(question)) {
+            List<KnowledgeSearchResultVO> matchedChunks = searchExactPolicyChunks(baseId, policyName, regionScope, sourceScene);
+            if (matchedChunks.isEmpty()) {
+                continue;
+            }
+            KnowledgeSearchResultVO exactChunk = resolveExactPolicySummaryChunk(policyName, matchedChunks, chunks, List.of());
+            if (exactChunk == null || !isHousingTopicChunk(exactChunk)) {
+                continue;
+            }
+            selected.add(new FastPathListItem(
+                    exactChunk,
+                    policyName,
+                    ListPolicyGroup.PUBLIC,
+                    4000 - order++
+            ));
+        }
+        return selected;
+    }
+
+    private List<String> resolveXiamenHousingWhitelist(String question) {
+        LinkedHashSet<String> whitelist = new LinkedHashSet<>();
+        whitelist.add("厦门市引进高层次人才住房补贴实施意见");
+        if (containsAny(normalizeText(question), List.of("安居", "住房"))) {
+            whitelist.add("厦门市高层次人才安居政策");
+        }
+        if (containsAny(normalizeText(question), List.of("租房", "住房"))) {
+            whitelist.add("厦门市高层次人才租房支持政策");
+        }
+        if (containsAny(normalizeText(question), List.of("购房", "住房"))) {
+            whitelist.add("厦门市高层次人才购房支持政策");
+        }
+        return new ArrayList<>(whitelist);
+    }
+
+    private boolean isHousingTopicChunk(KnowledgeSearchResultVO item) {
+        if (!isFastPathListUsableChunk(item)) {
+            return false;
+        }
+        String text = buildChunkSearchText(item);
+        return containsAny(text, List.of("住房", "住房补贴", "安居", "租房", "购房"));
+    }
+
+    private String resolveHousingPolicyName(KnowledgeSearchResultVO item) {
+        LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        String directPolicyName = canonicalizePolicyListName(resolveFastPathListPolicyName(item));
+        if (normalizeText(directPolicyName) != null) {
+            candidates.add(directPolicyName);
+        }
+        candidates.addAll(extractWeakPolicyNames(valueOrBlank(item == null ? null : item.getPolicyName())));
+        candidates.addAll(extractWeakPolicyNames(valueOrBlank(item == null ? null : item.getDocTitle())));
+        candidates.addAll(extractWeakPolicyNames(valueOrBlank(item == null ? null : item.getChapterTitle())));
+        candidates.addAll(extractWeakPolicyNames(valueOrBlank(item == null ? null : item.getSectionTitle())));
+        candidates.addAll(extractWeakPolicyNames(valueOrBlank(item == null ? null : item.getHeadingPath())));
+        candidates.addAll(extractWeakPolicyNames(valueOrBlank(item == null ? null : item.getSnippet())));
+        candidates.addAll(extractWeakPolicyNames(buildChunkSearchText(item)));
+        for (String candidate : candidates) {
+            String normalized = canonicalizePolicyListName(candidate);
+            if (isValidHousingPolicyListItem(normalized)) {
+                return normalized;
+            }
+        }
+        String text = buildChunkSearchText(item);
+        if (containsAny(text, List.of("住房", "住房补贴", "安居", "租房", "购房"))) {
+            return "厦门市引进高层次人才住房补贴实施意见";
+        }
+        return null;
+    }
+
+    private boolean isValidHousingPolicyListItem(String text) {
+        String candidate = canonicalizePolicyListName(text);
+        if (candidate == null || isInvalidPolicyListItem(candidate)) {
+            return false;
+        }
+        if (containsAny(candidate, List.of("2025年厦门市人才", "问答增强版", "使用边界", "检索建议", "导入说明"))) {
+            return false;
+        }
+        if (!containsAny(candidate, List.of("住房", "住房补贴", "安居", "租房", "购房"))) {
+            return false;
+        }
+        return candidate.endsWith("实施意见")
+                || candidate.endsWith("实施方案")
+                || candidate.endsWith("管理办法")
+                || candidate.endsWith("若干措施")
+                || candidate.endsWith("通知")
+                || candidate.endsWith("工作方案")
+                || candidate.endsWith("项目实施办法")
+                || candidate.endsWith("意见")
+                || "厦门市引进高层次人才住房补贴实施意见".equals(candidate);
+    }
+
+    private boolean isCatalogOverviewListQuestion(String question, String sourceScene) {
+        String normalized = normalizeText(question);
+        if (!SOURCE_SCENE_MOBILE_POLICY_CONSULTANT.equals(sourceScene) || normalized == null) {
+            return false;
+        }
+        boolean regionMatched = containsAny(normalized, List.of("厦门", "厦门市", "福建", "福建省"));
+        boolean listMatched = containsAny(normalized, LIST_QUESTION_KEYWORDS);
+        boolean topicSpecific = !extractFormalPolicyNames(question).isEmpty() || !extractMatchedSpecialTopicTerms(question).isEmpty();
+        return regionMatched && listMatched && !topicSpecific;
+    }
+
+    private String buildCatalogListAnswer(Long baseId,
+                                          String question,
+                                          String regionScope,
+                                          String sourceScene,
+                                          List<KnowledgeSearchResultVO> chunks) {
+        List<KnowledgeSearchResultVO> catalogChunks = searchCatalogOverviewChunks(baseId, question, regionScope, sourceScene);
+        if (catalogChunks.isEmpty()) {
+            return null;
+        }
+        List<FastPathListItem> selected = isXiamenOverviewListQuestion(question, regionScope, sourceScene)
+                ? collectXiamenOverviewPolicyItems(baseId, regionScope, sourceScene, chunks, catalogChunks)
+                : collectCatalogPolicyItems(catalogChunks, chunks);
+        if (selected.isEmpty()) {
+            return null;
+        }
+        LinkedHashMap<ListPolicyGroup, List<FastPathListItem>> grouped = groupFastPathListItems(selected, 5);
+        if (grouped.isEmpty()) {
+            return null;
+        }
+        String regionLabel = resolveRegionLabel(regionScope);
+        StringBuilder builder = new StringBuilder();
+        builder.append("结论：");
+        builder.append(regionLabel == null ? "当前知识库已命中的主要人才政策/项目如下。" : regionLabel + "当前已命中的主要人才政策/项目如下。");
+        for (Map.Entry<ListPolicyGroup, List<FastPathListItem>> entry : grouped.entrySet()) {
+            List<FastPathListItem> items = entry.getValue();
+            if (items == null || items.isEmpty()) {
+                continue;
+            }
+            builder.append("\n").append(entry.getKey().label()).append("：\n");
+            for (int i = 0; i < items.size(); i++) {
+                FastPathListItem item = items.get(i);
+                builder.append(i + 1)
+                        .append(". ")
+                        .append(item.policyName())
+                        .append("：")
+                        .append(buildListItemSummary(item.policyName(), item.chunk()))
+                        .append("\n");
+            }
+        }
+        builder.append("以下为当前知识库已命中的主要政策/项目，不代表完整官方清单\n");
+        appendCitationsBlock(builder, collectFallbackCitations(selected.stream().map(FastPathListItem::chunk).collect(Collectors.toList()), regionScope));
+        return builder.toString().trim();
+    }
+
+    private boolean isXiamenOverviewListQuestion(String question, String regionScope, String sourceScene) {
+        if (!isCatalogOverviewListQuestion(question, sourceScene)) {
+            return false;
+        }
+        String normalizedQuestion = normalizeText(question);
+        String normalizedRegion = normalizeText(regionScope);
+        return containsAny(normalizedQuestion, List.of("厦门", "厦门市"))
+                || containsKeyword(normalizedRegion, "厦门")
+                || "xiamen".equalsIgnoreCase(normalizedRegion)
+                || "xm".equalsIgnoreCase(normalizedRegion);
+    }
+
+    private List<KnowledgeSearchResultVO> searchCatalogOverviewChunks(Long baseId,
+                                                                      String question,
+                                                                      String regionScope,
+                                                                      String sourceScene) {
+        if (baseId == null) {
+            return List.of();
+        }
+        LinkedHashMap<Long, KnowledgeSearchResultVO> collected = new LinkedHashMap<>();
+        for (String keyword : resolveCatalogOverviewKeywords(question, regionScope)) {
+            KnowledgeSearchRequest request = new KnowledgeSearchRequest();
+            request.setBaseId(baseId);
+            request.setKeywords(keyword);
+            request.setQuestionType("list");
+            request.setRegionScope(regionScope);
+            request.setDocType("main");
+            request.setScenePriority(normalizeSourceScene(sourceScene, sourceScene));
+            request.setSearchable(Boolean.TRUE);
+            request.setEffectiveOnly(Boolean.TRUE);
+            request.setTopN(8);
+            List<KnowledgeSearchResultVO> list = knowledgeChunkMapper.search(request);
+            if (list == null || list.isEmpty()) {
+                continue;
+            }
+            for (KnowledgeSearchResultVO item : list) {
+                if (!isCatalogOverviewChunk(item, question, regionScope)) {
+                    continue;
+                }
+                Long chunkId = item.getChunkId();
+                if (chunkId != null) {
+                    collected.putIfAbsent(chunkId, item);
+                }
+            }
+        }
+        List<KnowledgeSearchResultVO> result = new ArrayList<>(collected.values());
+        result.sort(Comparator.comparing(item -> item.getChunkNo() == null ? Integer.MAX_VALUE : item.getChunkNo()));
+        return result;
+    }
+
+    private List<String> resolveCatalogOverviewKeywords(String question, String regionScope) {
+        LinkedHashSet<String> keywords = new LinkedHashSet<>();
+        boolean fj = isFujianListQuestion(question, regionScope);
+        if (fj) {
+            keywords.add("福建省人才政策总览");
+            keywords.add("省级主干政策");
+            keywords.add("2025年申报政策目录");
+            keywords.add("专项支持");
+            keywords.add("四大经济");
+            keywords.add("博士后");
+            keywords.add("台湾人才");
+            keywords.add("福建省人才政策（清洗导入版 v2）");
+        } else {
+            keywords.add("厦门市人才政策总览");
+            keywords.add("市级统领政策");
+            keywords.add("产业人才项目总览");
+            keywords.add("公共类专项人才项目");
+            keywords.add("厦门市人才政策（清洗导入版 v2）");
+        }
+        return new ArrayList<>(keywords);
+    }
+
+    private boolean isCatalogOverviewChunk(KnowledgeSearchResultVO item, String question, String regionScope) {
+        if (!isFastPathListUsableChunk(item) || !"main".equalsIgnoreCase(normalizeText(item.getDocType()))) {
+            return false;
+        }
+        if (normalizeText(regionScope) != null && !matchesRegionScope(item, regionScope)) {
+            return false;
+        }
+        String headingText = String.join(" ",
+                valueOrBlank(item.getDocTitle()),
+                valueOrBlank(item.getHeadingPath()),
+                valueOrBlank(item.getChapterTitle()),
+                valueOrBlank(item.getSectionTitle()));
+        return containsAny(headingText, resolveCatalogOverviewKeywords(question, regionScope));
+    }
+
+    private List<FastPathListItem> collectCatalogPolicyItems(List<KnowledgeSearchResultVO> catalogChunks,
+                                                             List<KnowledgeSearchResultVO> supplementChunks) {
+        LinkedHashMap<String, FastPathListItem> items = new LinkedHashMap<>();
+        for (KnowledgeSearchResultVO chunk : catalogChunks) {
+            for (String policyName : extractCatalogPolicyNames(chunk)) {
+                String normalized = normalizeText(policyName);
+                if (normalized == null || items.containsKey(normalized)) {
+                    continue;
+                }
+                KnowledgeSearchResultVO summaryChunk = resolveCatalogSummaryChunk(policyName, supplementChunks, chunk);
+                boolean fromPolicyName = summaryChunk != null
+                        && normalizeText(summaryChunk.getPolicyName()) != null
+                        && normalizeText(summaryChunk.getPolicyName()).equalsIgnoreCase(normalized);
+                items.put(normalized, new FastPathListItem(
+                        summaryChunk == null ? chunk : summaryChunk,
+                        policyName,
+                        classifyListPolicyGroup(policyName),
+                        scoreCatalogPolicyItem(summaryChunk == null ? chunk : summaryChunk, fromPolicyName)
+                ));
+            }
+        }
+        return items.values().stream()
+                .sorted(Comparator.comparingInt(FastPathListItem::score).reversed()
+                        .thenComparing(item -> item.chunk().getChunkNo() == null ? Integer.MAX_VALUE : item.chunk().getChunkNo()))
+                .limit(15)
+                .collect(Collectors.toList());
+    }
+
+    private List<FastPathListItem> collectXiamenOverviewPolicyItems(Long baseId,
+                                                                    String regionScope,
+                                                                    String sourceScene,
+                                                                    List<KnowledgeSearchResultVO> supplementChunks,
+                                                                    List<KnowledgeSearchResultVO> catalogChunks) {
+        List<FastPathListItem> selected = new ArrayList<>();
+        int order = 0;
+        for (Map.Entry<ListPolicyGroup, List<String>> entry : resolveXiamenOverviewWhitelist().entrySet()) {
+            for (String policyName : entry.getValue()) {
+                List<KnowledgeSearchResultVO> matchedChunks = searchExactPolicyChunks(baseId, policyName, regionScope, sourceScene);
+                if (matchedChunks.isEmpty()) {
+                    continue;
+                }
+                KnowledgeSearchResultVO exactChunk = resolveExactPolicySummaryChunk(policyName, matchedChunks, supplementChunks, catalogChunks);
+                if (exactChunk == null) {
+                    continue;
+                }
+                selected.add(new FastPathListItem(
+                        exactChunk,
+                        policyName,
+                        entry.getKey(),
+                        5000 - order++
+                ));
+            }
+        }
+        return selected;
+    }
+
+    private LinkedHashMap<ListPolicyGroup, List<String>> resolveXiamenOverviewWhitelist() {
+        LinkedHashMap<ListPolicyGroup, List<String>> groups = new LinkedHashMap<>();
+        groups.put(ListPolicyGroup.LEADING, List.of(
+                "厦门市引进高层次创新创业人才“双百计划”实施意见",
+                "厦门市高层次人才特聘岗位实施方案",
+                "厦门市高层次人才专项资金管理办法",
+                "关于更加精准有效集聚人才加快推进高质量发展的意见"
+        ));
+        groups.put(ListPolicyGroup.INDUSTRY, List.of(
+                "厦门市电子信息产业人才项目实施办法",
+                "厦门市机械装备产业人才项目实施办法",
+                "厦门市商贸物流产业人才项目实施办法",
+                "厦门市金融服务产业人才项目实施办法",
+                "厦门市生物医药产业人才项目实施办法",
+                "厦门市新能源和新材料产业人才项目实施办法",
+                "厦门市文旅创意产业人才项目实施办法",
+                "厦门市海洋经济人才项目实施办法",
+                "厦门市重点产业骨干人才项目实施办法"
+        ));
+        groups.put(ListPolicyGroup.PUBLIC, List.of(
+                "厦门市教育人才项目实施办法",
+                "厦门市卫生健康人才项目实施办法",
+                "厦门市社会工作人才项目实施办法",
+                "厦门市台湾特聘专家（专才）项目实施办法"
+        ));
+        return groups;
+    }
+
+    private List<KnowledgeSearchResultVO> searchExactPolicyChunks(Long baseId,
+                                                                  String policyName,
+                                                                  String regionScope,
+                                                                  String sourceScene) {
+        if (baseId == null || normalizeText(policyName) == null) {
+            return List.of();
+        }
+        LinkedHashMap<Long, KnowledgeSearchResultVO> collected = new LinkedHashMap<>();
+        List<String> searchTerms = resolvePolicySearchTerms(policyName);
+        for (String searchTerm : searchTerms) {
+            KnowledgeSearchRequest request = new KnowledgeSearchRequest();
+            request.setBaseId(baseId);
+            request.setKeywords(searchTerm);
+            request.setQuestionType("list");
+            request.setRegionScope(regionScope);
+            request.setScenePriority(normalizeSourceScene(sourceScene, sourceScene));
+            request.setSearchable(Boolean.TRUE);
+            request.setEffectiveOnly(Boolean.TRUE);
+            request.setTopN(8);
+            List<KnowledgeSearchResultVO> list = knowledgeChunkMapper.search(request);
+            if (list == null || list.isEmpty()) {
+                continue;
+            }
+            for (KnowledgeSearchResultVO item : list) {
+                if (!isFastPathListUsableChunk(item)) {
+                    continue;
+                }
+                Long chunkId = item.getChunkId();
+                if (chunkId != null) {
+                    collected.putIfAbsent(chunkId, item);
+                }
+            }
+        }
+        if (collected.isEmpty()) {
+            return List.of();
+        }
+        List<KnowledgeSearchResultVO> matched = new ArrayList<>();
+        String canonical = canonicalizePolicyListName(policyName);
+        for (KnowledgeSearchResultVO item : collected.values()) {
+            if (matchesExactPolicyCandidate(item, canonical, searchTerms)) {
+                matched.add(item);
+            }
+        }
+        return matched;
+    }
+
+    private List<String> resolvePolicySearchTerms(String policyName) {
+        LinkedHashSet<String> terms = new LinkedHashSet<>();
+        String canonical = canonicalizePolicyListName(policyName);
+        if (normalizeText(canonical) != null) {
+            terms.add(canonical);
+        }
+        if (normalizeText(policyName) != null) {
+            terms.add(policyName);
+        }
+        for (PolicyAliasMapping mapping : POLICY_ALIAS_MAPPINGS) {
+            if (!normalizeText(mapping.canonicalName()).equalsIgnoreCase(normalizeText(canonical))) {
+                continue;
+            }
+            terms.addAll(mapping.aliases());
+            String compactName = mapping.canonicalName().replace("厦门市", "").replace("福建省", "").trim();
+            if (normalizeText(compactName) != null) {
+                terms.add(compactName);
+            }
+            break;
+        }
+        return new ArrayList<>(terms);
+    }
+
+    private KnowledgeSearchResultVO resolveExactPolicySummaryChunk(String policyName,
+                                                                   List<KnowledgeSearchResultVO> primaryChunks,
+                                                                   List<KnowledgeSearchResultVO> supplementChunks,
+                                                                   List<KnowledgeSearchResultVO> catalogChunks) {
+        KnowledgeSearchResultVO exact = resolveExactPolicyChunk(policyName, primaryChunks);
+        if (exact != null) {
+            return exact;
+        }
+        exact = resolveExactPolicyChunk(policyName, supplementChunks);
+        if (exact != null) {
+            return exact;
+        }
+        return resolveExactPolicyChunk(policyName, catalogChunks);
+    }
+
+    private KnowledgeSearchResultVO resolveExactPolicyChunk(String policyName, List<KnowledgeSearchResultVO> chunks) {
+        if (chunks == null || chunks.isEmpty()) {
+            return null;
+        }
+        String canonical = canonicalizePolicyListName(policyName);
+        List<String> searchTerms = resolvePolicySearchTerms(policyName);
+        for (KnowledgeSearchResultVO item : chunks) {
+            if (!isFastPathListUsableChunk(item)) {
+                continue;
+            }
+            String itemPolicyName = canonicalizePolicyListName(item.getPolicyName());
+            if (normalizeText(itemPolicyName) != null && normalizeText(itemPolicyName).equalsIgnoreCase(normalizeText(canonical))) {
+                return item;
+            }
+        }
+        for (KnowledgeSearchResultVO item : chunks) {
+            if (!isFastPathListUsableChunk(item)) {
+                continue;
+            }
+            if (matchesExactPolicyCandidate(item, canonical, searchTerms)) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    private boolean matchesExactPolicyCandidate(KnowledgeSearchResultVO item, String canonicalPolicyName, List<String> searchTerms) {
+        if (!isFastPathListUsableChunk(item)) {
+            return false;
+        }
+        String itemPolicyName = canonicalizePolicyListName(item.getPolicyName());
+        if (normalizeText(itemPolicyName) != null
+                && normalizeText(itemPolicyName).equalsIgnoreCase(normalizeText(canonicalPolicyName))) {
+            return true;
+        }
+        String text = buildChunkSearchText(item);
+        for (String term : searchTerms) {
+            if (containsKeyword(text, term)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<String> extractCatalogPolicyNames(KnowledgeSearchResultVO item) {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        if (item == null) {
+            return List.of();
+        }
+        names.addAll(extractWeakPolicyNames(valueOrBlank(item.getPolicyName())));
+        names.addAll(extractWeakPolicyNames(valueOrBlank(item.getSnippet())));
+        names.addAll(extractWeakPolicyNames(valueOrBlank(item.getHeadingPath())));
+        names.addAll(extractWeakPolicyNames(valueOrBlank(item.getSectionTitle())));
+        names.addAll(extractWeakPolicyNames(valueOrBlank(item.getChapterTitle())));
+        List<String> resolved = new ArrayList<>();
+        for (String name : names) {
+            String canonical = canonicalizePolicyListName(name);
+            if (isValidFormalPolicyListItem(canonical)) {
+                resolved.add(canonical);
+            }
+        }
+        return resolved;
+    }
+
+    private KnowledgeSearchResultVO resolveCatalogSummaryChunk(String policyName,
+                                                               List<KnowledgeSearchResultVO> supplementChunks,
+                                                               KnowledgeSearchResultVO fallbackChunk) {
+        String canonical = canonicalizePolicyListName(policyName);
+        for (KnowledgeSearchResultVO item : supplementChunks) {
+            if (!isFastPathListUsableChunk(item)) {
+                continue;
+            }
+            String itemName = canonicalizePolicyListName(resolveFastPathListPolicyName(item));
+            if (normalizeText(itemName) != null && normalizeText(itemName).equalsIgnoreCase(normalizeText(canonical))) {
+                return item;
+            }
+            if (containsKeyword(buildChunkSearchText(item), policyName) || containsKeyword(buildChunkSearchText(item), canonical)) {
+                return item;
+            }
+        }
+        return fallbackChunk;
+    }
+
+    private int scoreCatalogPolicyItem(KnowledgeSearchResultVO item, boolean fromPolicyName) {
+        int score = scoreFastPathListItem(item, fromPolicyName);
+        if ("main".equalsIgnoreCase(normalizeText(item.getDocType()))) {
+            score += 400;
+        }
+        String headingText = String.join(" ",
+                valueOrBlank(item.getHeadingPath()),
+                valueOrBlank(item.getChapterTitle()),
+                valueOrBlank(item.getSectionTitle()));
+        if (containsAny(headingText, List.of("总览", "统领", "目录", "专项", "项目总览"))) {
+            score += 120;
+        }
+        return score;
+    }
+
+    private boolean isFujianListQuestion(String question, String regionScope) {
+        String normalizedQuestion = normalizeText(question);
+        String normalizedRegion = normalizeText(regionScope);
+        return containsAny(normalizedQuestion, List.of("福建", "福建省"))
+                || "fujian".equalsIgnoreCase(normalizedRegion)
+                || "fj".equalsIgnoreCase(normalizedRegion)
+                || containsKeyword(normalizedRegion, "福建");
+    }
+
+    private List<FastPathListItem> selectFastPathListItems(List<KnowledgeSearchResultVO> chunks) {
+        List<FastPathListItem> ranked = new ArrayList<>();
+        for (KnowledgeSearchResultVO item : chunks) {
+            if (!isFastPathListUsableChunk(item)) {
+                continue;
+            }
+            String policyName = resolveFastPathListPolicyName(item);
+            if (policyName == null) {
+                continue;
+            }
+            boolean fromPolicyName = normalizeText(item.getPolicyName()) != null
+                    && policyName.equals(item.getPolicyName().trim());
+            ranked.add(new FastPathListItem(
+                    item,
+                    policyName,
+                    classifyListPolicyGroup(policyName),
+                    scoreFastPathListItem(item, fromPolicyName)
+            ));
+        }
+        ranked.sort(Comparator
+                .comparingInt(FastPathListItem::score).reversed()
+                .thenComparing(item -> item.chunk().getChunkNo() == null ? Integer.MAX_VALUE : item.chunk().getChunkNo()));
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        List<FastPathListItem> selected = new ArrayList<>();
+        for (FastPathListItem item : ranked) {
+            String key = normalizeText(item.policyName());
+            if (key == null || seen.contains(key)) {
+                continue;
+            }
+            seen.add(key);
+            selected.add(item);
+            if (selected.size() >= 12) {
+                break;
+            }
+        }
+        return selected;
+    }
+
+    private LinkedHashMap<ListPolicyGroup, List<FastPathListItem>> groupFastPathListItems(List<FastPathListItem> items, int maxPerGroup) {
+        LinkedHashMap<ListPolicyGroup, List<FastPathListItem>> grouped = new LinkedHashMap<>();
+        grouped.put(ListPolicyGroup.LEADING, new ArrayList<>());
+        grouped.put(ListPolicyGroup.INDUSTRY, new ArrayList<>());
+        grouped.put(ListPolicyGroup.PUBLIC, new ArrayList<>());
+        if (items == null || items.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        for (FastPathListItem item : items) {
+            List<FastPathListItem> bucket = grouped.get(item.group());
+            if (bucket == null) {
+                bucket = grouped.get(ListPolicyGroup.INDUSTRY);
+            }
+            if (bucket.size() >= maxPerGroup) {
+                continue;
+            }
+            bucket.add(item);
+        }
+        grouped.entrySet().removeIf(entry -> entry.getValue() == null || entry.getValue().isEmpty());
+        return grouped;
+    }
+
+    private boolean isFastPathListUsableChunk(KnowledgeSearchResultVO item) {
+        if (!isFallbackUsableChunk(item)) {
+            return false;
+        }
+        if ("routing".equalsIgnoreCase(normalizeText(item.getTopicType()))) {
+            return false;
+        }
+        String metadataText = String.join(" ",
+                valueOrBlank(item.getDocType()),
+                valueOrBlank(item.getTopicType()),
+                valueOrBlank(item.getDocTitle()),
+                valueOrBlank(item.getHeadingPath()),
+                valueOrBlank(item.getChapterTitle()),
+                valueOrBlank(item.getSectionTitle()));
+        return !containsAny(metadataText, List.of(
+                "问答增强版", "适合作为知识库专题补充文档", "使用边界", "检索建议", "导入说明", "导入目录",
+                "文档定位", "高频问答", "路由建议"
+        ));
+    }
+
+    private String resolveFastPathListPolicyName(KnowledgeSearchResultVO item) {
+        if (item == null) {
+            return null;
+        }
+        String policyName = canonicalizePolicyListName(item.getPolicyName());
+        if (isValidFormalPolicyListItem(policyName)) {
+            return policyName;
+        }
+        LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        candidates.addAll(extractWeakPolicyNames(valueOrBlank(item.getPolicyName())));
+        candidates.addAll(extractWeakPolicyNames(valueOrBlank(item.getDocTitle())));
+        candidates.addAll(extractWeakPolicyNames(valueOrBlank(item.getChapterTitle())));
+        candidates.addAll(extractWeakPolicyNames(valueOrBlank(item.getSectionTitle())));
+        candidates.addAll(extractWeakPolicyNames(valueOrBlank(item.getHeadingPath())));
+        candidates.addAll(extractWeakPolicyNames(valueOrBlank(item.getSnippet())));
+        candidates.addAll(extractWeakPolicyNames(buildChunkSearchText(item)));
+        for (String candidate : candidates) {
+            String normalized = canonicalizePolicyListName(candidate);
+            if (isValidFormalPolicyListItem(normalized)) {
+                return normalized;
+            }
+        }
+        return null;
+    }
+
+    private String canonicalizePolicyListName(String text) {
+        String candidate = normalizePolicyListCandidate(text);
+        if (candidate == null) {
+            return null;
+        }
+        for (PolicyAliasMapping mapping : POLICY_ALIAS_MAPPINGS) {
+            if (containsKeyword(candidate, mapping.canonicalName()) || containsKeyword(mapping.canonicalName(), candidate)) {
+                return mapping.canonicalName();
+            }
+            for (String alias : mapping.aliases()) {
+                if (containsKeyword(candidate, alias) || containsKeyword(alias, candidate)) {
+                    return mapping.canonicalName();
+                }
+            }
+        }
+        return candidate;
+    }
+
+    private List<String> extractWeakPolicyNames(String text) {
+        LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        String normalized = normalizeText(text);
+        if (normalized == null) {
+            return List.of();
+        }
+        candidates.addAll(PolicyKnowledgeSupport.extractFormalPolicyNames(normalized));
+        Matcher quotedMatcher = Pattern.compile("《[^》]{2,60}》").matcher(normalized);
+        while (quotedMatcher.find()) {
+            candidates.add(quotedMatcher.group());
+        }
+        Matcher projectMatcher = Pattern.compile("[\\u4e00-\\u9fa5A-Za-z0-9（）()]{2,40}(人才项目|骨干人才项目|特聘专家（专才）项目|特聘专家\\(专才\\)项目)").matcher(normalized);
+        while (projectMatcher.find()) {
+            candidates.add(projectMatcher.group());
+        }
+        for (String segment : normalized.split("[\\r\\n|｜/>→；;。！？]")) {
+            String candidate = normalizePolicyListCandidate(segment);
+            if (candidate != null) {
+                candidates.add(candidate);
+            }
+        }
+        return new ArrayList<>(candidates);
+    }
+
+    private String normalizePolicyListCandidate(String text) {
+        String normalized = normalizeText(text);
+        if (normalized == null) {
+            return null;
+        }
+        String candidate = normalized
+                .replace('\u3000', ' ')
+                .replace("“", "")
+                .replace("”", "")
+                .trim();
+        candidate = candidate.replaceAll("^[0-9一二三四五六七八九十]+[.、]\\s*", "");
+        candidate = candidate.replaceAll("^(正文|资料|Chunk|文档定位|导入说明|导入目录|使用边界|检索建议|高频问答|路由建议|政策依据)[:：]\\s*", "");
+        candidate = candidate.replaceAll("[,，;；。！？!?.]+$", "").trim();
+        return normalizeText(candidate);
+    }
+
+    private boolean isValidFormalPolicyListItem(String text) {
+        String candidate = normalizePolicyListCandidate(text);
+        if (candidate == null || candidate.length() < 4 || candidate.length() > 60) {
+            return false;
+        }
+        if (isInvalidPolicyListItem(candidate)) {
+            return false;
+        }
+        if (candidate.startsWith("《") && candidate.endsWith("》")) {
+            return true;
+        }
+        for (String suffix : List.of("实施意见", "实施方案", "管理办法", "若干措施", "通知", "工作方案", "项目实施办法", "意见")) {
+            if (candidate.endsWith(suffix)) {
+                return true;
+            }
+        }
+        return looksLikeTalentProjectName(candidate);
+    }
+
+    private boolean isInvalidPolicyListItem(String text) {
+        String normalized = normalizePolicyListCandidate(text);
+        if (normalized == null) {
+            return true;
+        }
+        if (containsAny(normalized, List.of(
+                "A类人才项目", "B类人才项目", "C类人才项目", "创新个人", "创新团队", "创业人才",
+                "制造业与软件信息（人工智能）产业人才项目", "制造业与软件信息(人工智能)产业人才项目"
+        )) || normalized.endsWith("类人才项目")) {
+            return true;
+        }
+        if (containsAny(normalized, List.of(
+                "问答增强版", "适合作为知识库专题补充文档", "使用边界", "检索建议", "导入说明", "导入目录",
+                "文档定位", "正文", "高频问答", "路由建议", "政策依据", "资料", "Chunk",
+                "如需回答", "应继续命中", "适合作为", "建议作为"
+        ))) {
+            return true;
+        }
+        return normalized.contains("：")
+                || normalized.contains(":")
+                || normalized.contains("，")
+                || normalized.contains(",")
+                || normalized.contains("。");
+    }
+
+    private boolean looksLikeTalentProjectName(String text) {
+        String normalized = normalizePolicyListCandidate(text);
+        if (normalized == null || normalized.length() > 40) {
+            return false;
+        }
+        if (normalized.endsWith("项目") && normalized.contains("人才")) {
+            return true;
+        }
+        return normalized.contains("人才项目")
+                || normalized.contains("骨干人才项目")
+                || normalized.contains("特聘专家（专才）项目")
+                || normalized.contains("特聘专家(专才)项目");
+    }
+
+    private int scoreFastPathListItem(KnowledgeSearchResultVO item, boolean fromPolicyName) {
+        int score = 0;
+        String docType = normalizeText(item.getDocType());
+        if ("main".equalsIgnoreCase(docType) && fromPolicyName) {
+            score += 1000;
+        } else if ("topic".equalsIgnoreCase(docType) && fromPolicyName) {
+            score += 800;
+        } else if (fromPolicyName) {
+            score += 600;
+        } else {
+            score += 300;
+        }
+        if (Boolean.TRUE.equals(item.getSearchable())) {
+            score += 20;
+        }
+        return score;
+    }
+
+    private ListPolicyGroup classifyListPolicyGroup(String policyName) {
+        if (containsAny(policyName, List.of("教育人才", "卫生健康人才", "社会工作人才", "台湾特聘专家", "住房", "博士后", "子女教育", "医疗保障", "服务保障"))) {
+            return ListPolicyGroup.PUBLIC;
+        }
+        if (containsAny(policyName, List.of("双百计划", "特聘岗位", "专项资金", "百人计划"))
+                || (policyName.contains("意见") && !policyName.contains("项目"))) {
+            return ListPolicyGroup.LEADING;
+        }
+        return ListPolicyGroup.INDUSTRY;
     }
 
     private String buildFastPathFaqAnswer(String regionScope, List<KnowledgeSearchResultVO> chunks) {
@@ -2265,7 +3190,8 @@ public class AgentServiceImpl implements AgentService {
         return trimmed.length() > 24 ? trimmed.substring(0, 24) : trimmed;
     }
 
-    private String buildFallbackAnswer(String question,
+    private String buildFallbackAnswer(Long baseId,
+                                       String question,
                                        KnowledgeCitationContext context,
                                        AgentUserPreferenceEntity preference,
                                        String sourceScene,
@@ -2281,6 +3207,34 @@ public class AgentServiceImpl implements AgentService {
             builder.append("\n");
         }
 
+        PolicyRouteIntent routeIntent = policyRouteService.route(question);
+        PolicyQuestionType questionType = resolvePolicyQuestionType(routeIntent, question);
+        String regionScope = normalizeText(routeIntent.getRegionScope()) != null
+                ? routeIntent.getRegionScope()
+                : detectPreferredRegionScope(question, questionType);
+        if (routeIntent.getRouteSkills().contains("XM_FJ_BOUNDARY_COMPARE")) {
+            logCenterService.recordAiChainSuccess(
+                    LOG_EVENT_POLICY_ROUTE_COMPARE,
+                    null,
+                    null,
+                    sourceScene,
+                    "question=" + valueOrBlank(normalizeText(question)) + ", routeSkills=" + String.join("|", routeIntent.getRouteSkills())
+            );
+        }
+        PolicyCatalogService.CatalogAnswer catalogAnswer = policyCatalogService.buildCatalogAnswer(baseId, routeIntent, sourceScene);
+        if (catalogAnswer.hasAnswer() && (questionType == PolicyQuestionType.LIST || questionType == PolicyQuestionType.BOUNDARY)) {
+            if (routeIntent.getRouteSkills().contains("XM_FJ_BOUNDARY_COMPARE")) {
+                logCenterService.recordAiChainSuccess(
+                        LOG_EVENT_POLICY_BOUNDARY_CATALOG,
+                        null,
+                        null,
+                        sourceScene,
+                        "answerSource=FALLBACK_CATALOG_COMPARE"
+                );
+            }
+            builder.append(catalogAnswer.answer());
+            return builder.toString();
+        }
         if (context == null || context.getChunks().isEmpty()) {
             builder.append("暂未在知识库中检索到与该问题直接对应的政策依据。\n")
                     .append("建议补充以下信息后再提问：\n")
@@ -2292,9 +3246,7 @@ public class AgentServiceImpl implements AgentService {
             }
             return builder.toString();
         }
-        PolicyQuestionType questionType = detectPolicyQuestionType(question);
-        String regionScope = detectPreferredRegionScope(question, questionType);
-        builder.append(buildStructuredFallbackAnswer(question, questionType, regionScope, sourceScene, context.getChunks()));
+        builder.append(buildStructuredFallbackAnswer(baseId, question, questionType, regionScope, sourceScene, context.getChunks()));
         LinkedHashSet<String> citations = collectFallbackCitations(context.getChunks(), regionScope);
         if (!citations.isEmpty()) {
             builder.append("\n\n政策依据：\n");
@@ -2303,11 +3255,35 @@ public class AgentServiceImpl implements AgentService {
         return builder.toString();
     }
 
-    private String buildStructuredFallbackAnswer(String question,
+    private String buildStructuredFallbackAnswer(Long baseId,
+                                                 String question,
                                                  PolicyQuestionType questionType,
                                                  String regionScope,
                                                  String sourceScene,
                                                  List<KnowledgeSearchResultVO> chunks) {
+        PolicyRouteIntent routeIntent = policyRouteService.route(question);
+        if (routeIntent.getRouteSkills().contains("XM_FJ_BOUNDARY_COMPARE")) {
+            logCenterService.recordAiChainSuccess(
+                    LOG_EVENT_POLICY_ROUTE_COMPARE,
+                    null,
+                    null,
+                    sourceScene,
+                    "question=" + valueOrBlank(normalizeText(question)) + ", routeSkills=" + String.join("|", routeIntent.getRouteSkills())
+            );
+        }
+        PolicyCatalogService.CatalogAnswer catalogAnswer = policyCatalogService.buildCatalogAnswer(baseId, routeIntent, sourceScene);
+        if (catalogAnswer.hasAnswer() && (questionType == PolicyQuestionType.LIST || questionType == PolicyQuestionType.BOUNDARY)) {
+            if (routeIntent.getRouteSkills().contains("XM_FJ_BOUNDARY_COMPARE")) {
+                logCenterService.recordAiChainSuccess(
+                        LOG_EVENT_POLICY_BOUNDARY_CATALOG,
+                        null,
+                        null,
+                        sourceScene,
+                        "answerSource=STRUCTURED_FALLBACK_CATALOG_COMPARE"
+                );
+            }
+            return catalogAnswer.answer();
+        }
         List<KnowledgeSearchResultVO> rankedChunks = selectFallbackChunks(question, questionType, regionScope, chunks);
         if (rankedChunks.isEmpty()) {
             return "当前知识库已命中结果不足，建议补充地区、政策名称、申报对象或补贴主题后再继续提问。";
@@ -2727,6 +3703,107 @@ public class AgentServiceImpl implements AgentService {
         return "属于当前知识库已命中的重点政策/项目。";
     }
 
+    /*
+    private String buildListItemSummary(String policyName, KnowledgeSearchResultVO item) {
+        String canonicalName = canonicalizePolicyListName(policyName);
+        if (normalizeText(canonicalName) == null) {
+            canonicalName = policyName;
+        }
+        if (containsKeyword(canonicalName, "鍙岀櫨璁″垝")) {
+            return "鑱氱劍楂樺眰娆″垱鏂板垱涓氫汉鎵嶅紩杩涖€佽瘎瀹″拰鏀寔瀹夋帓銆?;
+        }
+        if (containsKeyword(canonicalName, "鐗硅仒宀椾綅")) {
+            return "鑱氱劍楂樺眰娆′汉鎵嶇壒鑱樺矖浣嶈缃€佸紩杩涖€佺鐞嗗拰鏀寔瑙勫垯銆?;
+        }
+        if (containsKeyword(canonicalName, "涓撻」璧勯噾")) {
+            return "鑱氱劍楂樺眰娆′汉鎵嶄笓椤硅祫閲戠殑鎷ㄤ粯銆佷娇鐢ㄥ拰绠＄悊瑙勫垯銆?;
+        }
+        if (containsKeyword(canonicalName, "鍏充簬鏇村姞绮惧噯鏈夋晥闆嗚仛浜烘墠鍔犲揩鎺ㄨ繘楂樿川閲忓彂灞曠殑鎰忚")) {
+            return "灞炰簬浜烘墠宸ヤ綔鎬荤翰锛岀粺绛逛汉鎵嶅紩杩涖€佸煿鍏汇€佹敮鎸佸拰鏈嶅姟淇濋殰銆?;
+        }
+        if (containsKeyword(canonicalName, "浜т笟浜烘墠椤圭洰瀹炴柦鍔炴硶")) {
+            return "鑱氱劍瀵瑰簲閲嶇偣浜т笟浜烘墠椤圭洰鐨勭敵鎶ャ€佽瘎瀹″拰璧勯噾鏀寔銆?;
+        }
+        if (containsAny(canonicalName, List.of(
+                "鏁欒偛浜烘墠椤圭洰瀹炴柦鍔炴硶",
+                "鍗敓鍋ュ悍浜烘墠椤圭洰瀹炴柦鍔炴硶",
+                "绀句細宸ヤ綔浜烘墠椤圭洰瀹炴柦鍔炴硶",
+                "鍙版咕鐗硅仒涓撳锛堜笓鎵嶏級椤圭洰瀹炴柦鍔炴硶"
+        ))) {
+            return "鑱氱劍鍏叡棰嗗煙浜烘墠椤圭洰鐨勫紩杩涖€佹敮鎸佸拰绠＄悊瀹夋帓銆?;
+        }
+        String itemPolicyName = canonicalizePolicyListName(item == null ? null : item.getPolicyName());
+        if (normalizeText(itemPolicyName) != null && normalizeText(itemPolicyName).equalsIgnoreCase(normalizeText(canonicalName))) {
+            String clause = fallbackFirstClause(item.getSnippet());
+            if (normalizeText(clause) != null && !isInvalidPolicyListItem(clause)) {
+                return abbreviate(clause, 36) + "銆?;
+            }
+        }
+        return buildListItemSummary(item);
+    }
+    */
+
+    private String buildListItemSummary(String policyName, KnowledgeSearchResultVO item) {
+        String canonicalName = canonicalizePolicyListName(policyName);
+        if (normalizeText(canonicalName) == null) {
+            canonicalName = policyName;
+        }
+        if (containsKeyword(canonicalName, "双百计划")) {
+            return "聚焦高层次创新创业人才引进、评审和支持安排。";
+        }
+        if (containsKeyword(canonicalName, "特聘岗位")) {
+            return "聚焦高层次人才特聘岗位设置、引进、管理和支持规则。";
+        }
+        if (containsKeyword(canonicalName, "专项资金")) {
+            return "聚焦高层次人才专项资金的拨付、使用和管理规则。";
+        }
+        if (containsKeyword(canonicalName, "关于更加精准有效集聚人才加快推进高质量发展的意见")) {
+            return "属于人才工作总纲，统筹人才引进、培养、支持和服务保障。";
+        }
+        if (containsAny(canonicalName, List.of("住房", "住房补贴", "安居", "租房", "购房"))) {
+            return buildHousingListItemSummary(canonicalName, item);
+        }
+        if (containsKeyword(canonicalName, "产业人才项目实施办法")) {
+            return "聚焦对应重点产业人才项目的申报、评审和资金支持。";
+        }
+        if (containsAny(canonicalName, List.of(
+                "教育人才项目实施办法",
+                "卫生健康人才项目实施办法",
+                "社会工作人才项目实施办法",
+                "台湾特聘专家（专才）项目实施办法"
+        ))) {
+            return "聚焦对应公共领域人才项目的引进、支持和管理安排。";
+        }
+        String itemPolicyName = canonicalizePolicyListName(item == null ? null : item.getPolicyName());
+        if (normalizeText(itemPolicyName) != null && normalizeText(itemPolicyName).equalsIgnoreCase(normalizeText(canonicalName))) {
+            String clause = fallbackFirstClause(item.getSnippet());
+            if (normalizeText(clause) != null && !isInvalidPolicyListItem(clause)) {
+                return abbreviate(clause, 36) + "。";
+            }
+        }
+        return buildListItemSummary(item);
+    }
+
+    private String buildHousingListItemSummary(String policyName, KnowledgeSearchResultVO item) {
+        String canonicalName = canonicalizePolicyListName(policyName);
+        if (normalizeText(canonicalName) == null) {
+            canonicalName = policyName;
+        }
+        if (containsAny(canonicalName, List.of("住房补贴", "住房"))) {
+            return "聚焦高层次人才住房补贴的申请对象、标准和发放安排。";
+        }
+        if (containsKeyword(canonicalName, "安居")) {
+            return "聚焦安居支持对象、申请条件和保障方式。";
+        }
+        if (containsKeyword(canonicalName, "租房")) {
+            return "聚焦租房支持对象、补贴标准和兑现安排。";
+        }
+        if (containsKeyword(canonicalName, "购房")) {
+            return "聚焦购房支持对象、补贴标准和兑现安排。";
+        }
+        return "聚焦住房保障相关支持对象、条件和兑现安排。";
+    }
+
     private List<String> extractFallbackProcessSteps(List<KnowledgeSearchResultVO> processChunks) {
         List<String> orderedSteps = List.of("组织申报", "资格核查", "部门联审", "综合评审", "公示确定", "研究确认", "拨付", "兑现");
         LinkedHashSet<String> steps = new LinkedHashSet<>();
@@ -2996,6 +4073,22 @@ public class AgentServiceImpl implements AgentService {
 
     private PolicyQuestionType detectPolicyQuestionType(String question) {
         return switch (PolicyKnowledgeSupport.detectQuestionType(question)) {
+            case LIST -> PolicyQuestionType.LIST;
+            case PROCESS -> PolicyQuestionType.PROCESS;
+            case CONDITION -> PolicyQuestionType.CONDITION;
+            case BENEFIT -> PolicyQuestionType.BENEFIT;
+            case SPECIAL_TOPIC -> PolicyQuestionType.SPECIAL_TOPIC;
+            case FAQ -> PolicyQuestionType.FAQ;
+            case BOUNDARY -> PolicyQuestionType.BOUNDARY;
+            default -> PolicyQuestionType.GENERAL;
+        };
+    }
+
+    private PolicyQuestionType resolvePolicyQuestionType(PolicyRouteIntent routeIntent, String question) {
+        if (routeIntent == null || routeIntent.getQuestionType() == null) {
+            return detectPolicyQuestionType(question);
+        }
+        return switch (routeIntent.getQuestionType()) {
             case LIST -> PolicyQuestionType.LIST;
             case PROCESS -> PolicyQuestionType.PROCESS;
             case CONDITION -> PolicyQuestionType.CONDITION;
@@ -3625,6 +4718,28 @@ public class AgentServiceImpl implements AgentService {
     }
 
     private record PolicyAliasMapping(String canonicalName, List<String> aliases) {
+    }
+
+    private enum ListPolicyGroup {
+        LEADING("统领政策"),
+        INDUSTRY("重点产业/专项项目"),
+        PUBLIC("公共类专项");
+
+        private final String label;
+
+        ListPolicyGroup(String label) {
+            this.label = label;
+        }
+
+        private String label() {
+            return label;
+        }
+    }
+
+    private record FastPathListItem(KnowledgeSearchResultVO chunk,
+                                    String policyName,
+                                    ListPolicyGroup group,
+                                    int score) {
     }
 
     private record ProviderResolution(ProviderConfigEntity provider, String modelCode) {

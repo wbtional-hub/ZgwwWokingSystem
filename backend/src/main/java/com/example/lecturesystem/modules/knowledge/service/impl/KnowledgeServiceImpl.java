@@ -20,6 +20,7 @@ import com.example.lecturesystem.modules.knowledge.mapper.DocumentImportJobMappe
 import com.example.lecturesystem.modules.knowledge.mapper.KnowledgeBaseMapper;
 import com.example.lecturesystem.modules.knowledge.mapper.KnowledgeChunkMapper;
 import com.example.lecturesystem.modules.knowledge.mapper.KnowledgeDocumentMapper;
+import com.example.lecturesystem.modules.knowledge.service.PolicyCatalogService;
 import com.example.lecturesystem.modules.knowledge.service.KnowledgeService;
 import com.example.lecturesystem.modules.knowledge.support.DocxPolicyParser;
 import com.example.lecturesystem.modules.knowledge.support.KnowledgeChunkBuilder;
@@ -144,6 +145,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     private final ParamMapper paramMapper;
     private final DocxPolicyParser docxPolicyParser;
     private final KnowledgeChunkBuilder knowledgeChunkBuilder;
+    private final PolicyCatalogService policyCatalogService;
     private final HttpClient httpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
 
     public KnowledgeServiceImpl(KnowledgeBaseMapper knowledgeBaseMapper,
@@ -156,7 +158,8 @@ public class KnowledgeServiceImpl implements KnowledgeService {
                                 OperationLogService operationLogService,
                                 ParamMapper paramMapper,
                                 DocxPolicyParser docxPolicyParser,
-                                KnowledgeChunkBuilder knowledgeChunkBuilder) {
+                                KnowledgeChunkBuilder knowledgeChunkBuilder,
+                                PolicyCatalogService policyCatalogService) {
         this.knowledgeBaseMapper = knowledgeBaseMapper;
         this.knowledgeDocumentMapper = knowledgeDocumentMapper;
         this.knowledgeChunkMapper = knowledgeChunkMapper;
@@ -168,6 +171,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         this.paramMapper = paramMapper;
         this.docxPolicyParser = docxPolicyParser;
         this.knowledgeChunkBuilder = knowledgeChunkBuilder;
+        this.policyCatalogService = policyCatalogService;
     }
 
     @Override
@@ -378,6 +382,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
                 knowledgeChunkMapper.batchInsert(chunks);
             }
         }
+        policyCatalogService.rebuildBaseCatalog(documentEntity.getBaseId());
 
         String feedbackText = buildImportFeedbackText(now, sourceUrl, base.getBaseName(), title, content.length(), documentEntity.getId(), null);
         operationLogService.log("KNOWLEDGE_DOCUMENT", "IMPORT_WEB", documentEntity.getId(), "网页导入知识文档：" + title);
@@ -473,6 +478,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         if (!chunks.isEmpty()) {
             knowledgeChunkMapper.batchInsert(chunks);
         }
+        policyCatalogService.rebuildBaseCatalog(documentEntity.getBaseId());
 
         String feedbackText = buildSnapshotImportFeedbackText(
                 now,
@@ -609,7 +615,10 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             if (Boolean.TRUE.equals(parsedDocResult.getSearchable()) && chunks.isEmpty()) {
                 throw new IllegalArgumentException("文档未解析出可入库内容");
             }
-            knowledgeChunkMapper.batchInsert(chunks);
+            if (!chunks.isEmpty()) {
+                knowledgeChunkMapper.batchInsert(chunks);
+            }
+            policyCatalogService.rebuildBaseCatalog(documentEntity.getBaseId());
 
             jobEntity.setJobStatus("SUCCESS");
             jobEntity.setTotalChunks(chunks.size());

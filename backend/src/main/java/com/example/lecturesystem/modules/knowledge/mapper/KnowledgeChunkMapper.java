@@ -14,4 +14,5 @@ public interface KnowledgeChunkMapper {
     List<KnowledgeChunkListItemVO> queryByDocumentId(@Param("documentId") Long documentId);
     int batchInsert(@Param("list") List<KnowledgeChunkEntity> list);
     List<KnowledgeSearchResultVO> search(@Param("request") KnowledgeSearchRequest request);
+    List<KnowledgeSearchResultVO> queryCatalogSourceByBaseId(@Param("baseId") Long baseId);
 }

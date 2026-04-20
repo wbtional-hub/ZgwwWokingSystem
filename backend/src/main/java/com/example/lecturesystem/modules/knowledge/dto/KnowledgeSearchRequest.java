@@ -17,6 +17,10 @@ public class KnowledgeSearchRequest {
     private Boolean searchable;
     private Boolean effectiveOnly;
     private Integer topN;
+    private Boolean hasRegionScope;
+private Boolean hasKeywords;
+private Boolean hasQuestionType;
+private Boolean hasRegionPriority;
 
     public Long getBaseId() {
         return baseId;
@@ -121,4 +125,35 @@ public class KnowledgeSearchRequest {
     public void setTopN(Integer topN) {
         this.topN = topN;
     }
+    public Boolean getHasRegionScope() {
+    return hasRegionScope;
+}
+
+public void setHasRegionScope(Boolean hasRegionScope) {
+    this.hasRegionScope = hasRegionScope;
+}
+
+public Boolean getHasKeywords() {
+    return hasKeywords;
+}
+
+public void setHasKeywords(Boolean hasKeywords) {
+    this.hasKeywords = hasKeywords;
+}
+
+public Boolean getHasQuestionType() {
+    return hasQuestionType;
+}
+
+public void setHasQuestionType(Boolean hasQuestionType) {
+    this.hasQuestionType = hasQuestionType;
+}
+
+public Boolean getHasRegionPriority() {
+    return hasRegionPriority;
+}
+
+public void setHasRegionPriority(Boolean hasRegionPriority) {
+    this.hasRegionPriority = hasRegionPriority;
+}
 }

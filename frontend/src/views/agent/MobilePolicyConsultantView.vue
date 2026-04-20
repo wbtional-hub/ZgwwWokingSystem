@@ -109,6 +109,7 @@
               :key="item.id"
               type="button"
               class="session-item"
+              :disabled="state.asking"
               :class="{ 'session-item--active': state.sessionInfo?.id === item.id && state.sessionPinned }"
               @click="selectSession(item)"
             >
@@ -126,7 +127,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { showToast } from 'vant'
 import { useRouter } from 'vue-router'
 import AIPageGuideCard from '@/components/ai/AIPageGuideCard.vue'
@@ -148,6 +149,9 @@ import { isMobileClient } from '@/utils/device'
 const router = useRouter()
 const userStore = useUserStore()
 const messageListRef = ref(null)
+const activeStreamContext = ref(null)
+const sendRunId = ref(0)
+const isComponentUnmounted = ref(false)
 const SOURCE_SCENE = 'MOBILE_POLICY_CONSULTANT'
 
 const state = reactive({
@@ -238,6 +242,76 @@ const helperText = computed(() => {
   return '当前链路已准备好，可直接发问；来源场景会自动标记为“手机端政策咨询”。'
 })
 const canSend = computed(() => permissionFlags.value.canUseAgent && Boolean(state.question.trim()) && !state.asking)
+
+function createIntentionalAbortReason(code) {
+  const error = new Error(code || 'STREAM_ABORTED')
+  error.name = 'AbortError'
+  error.intentionalAbort = true
+  return error
+}
+
+function isExpectedStreamAbort(error) {
+  const message = String(error?.message || '')
+  return error?.intentionalAbort === true
+    || error?.name === 'AbortError'
+    || message.includes('BodyStreamBuffer was aborted')
+    || message.includes('The operation was aborted')
+}
+
+function createStreamContext(runId) {
+  return {
+    runId,
+    controller: new AbortController(),
+    receivedStart: false,
+    receivedDelta: false,
+    doneReceived: false,
+    intentionalAbort: false,
+    watchdogTimer: null,
+    watchdogTriggered: false
+  }
+}
+
+function clearActiveStream(streamContext) {
+  if (!streamContext || activeStreamContext.value !== streamContext) {
+    return
+  }
+  clearStreamWatchdog(streamContext)
+  activeStreamContext.value = null
+}
+
+function abortActiveStream(reasonCode = 'STREAM_REPLACED') {
+  const streamContext = activeStreamContext.value
+  if (!streamContext || streamContext.doneReceived || streamContext.controller.signal.aborted) {
+    return false
+  }
+  streamContext.intentionalAbort = true
+  streamContext.controller.abort(createIntentionalAbortReason(reasonCode))
+  return true
+}
+
+function clearStreamWatchdog(streamContext) {
+  if (!streamContext?.watchdogTimer) {
+    return
+  }
+  window.clearTimeout(streamContext.watchdogTimer)
+  streamContext.watchdogTimer = null
+}
+
+function startStreamWatchdog(streamContext, assistantId) {
+  clearStreamWatchdog(streamContext)
+  streamContext.watchdogTimer = window.setTimeout(() => {
+    if (!streamContext || activeStreamContext.value !== streamContext || streamContext.receivedDelta || streamContext.doneReceived) {
+      return
+    }
+    streamContext.watchdogTriggered = true
+    const message = findMessageById(assistantId)
+    if (message) {
+      message.messageText = '当前未获取到可展示内容，请稍后重试或补充更具体条件'
+      message.isStreaming = false
+    }
+    abortActiveStream('NO_DELTA_TIMEOUT')
+  }, 7000)
+}
 const hasStreamingMessage = computed(() => state.messageList.some((item) => item.isStreaming))
 
 function ensureSuccess(response, fallback = '请求失败') {
@@ -470,6 +544,9 @@ async function createOrReuseSession(payload) {
 }
 
 async function selectSession(item) {
+  if (state.asking) {
+    return
+  }
   state.sessionInfo = item
   state.sessionPinned = true
   state.lastChatMeta = {
@@ -480,6 +557,7 @@ async function selectSession(item) {
 }
 
 async function handleResetSession() {
+  abortActiveStream('RESET_SESSION')
   state.sessionInfo = null
   state.sessionPinned = false
   state.lastChatMeta = null
@@ -488,6 +566,12 @@ async function handleResetSession() {
 }
 
 async function handleSend() {
+  if (activeStreamContext.value) {
+    abortActiveStream('USER_NEXT_QUESTION')
+  }
+  if (state.asking) {
+    return
+  }
   const rawQuestion = state.question.trim()
   if (!rawQuestion) {
     showToast('请输入问题')
@@ -500,14 +584,15 @@ async function handleSend() {
 
   const skillHint = extractSkillHint(rawQuestion)
   const cleanQuestion = normalizeQuestion(rawQuestion)
+  const runId = ++sendRunId.value
+  const streamContext = createStreamContext(runId)
+  state.question = ''
+  state.mentionKeyword = ''
 
   state.asking = true
   state.errorMessage = ''
   let localIds = null
-  const streamProgress = {
-    receivedStart: false,
-    receivedDelta: false
-  }
+  activeStreamContext.value = streamContext
 
   try {
     await createOrReuseSession({ question: cleanQuestion, skillHint })
@@ -519,15 +604,18 @@ async function handleSend() {
       sourceScene: SOURCE_SCENE,
       skillHint: skillHint || undefined
     }, {
+      signal: streamContext.controller.signal,
       onStart(payload) {
-        streamProgress.receivedStart = true
+        streamContext.receivedStart = true
+        startStreamWatchdog(streamContext, localIds.assistantId)
         state.lastChatMeta = {
           ...(state.lastChatMeta || {}),
           answerSource: payload?.answerSource || ''
         }
       },
       onDelta(payload) {
-        streamProgress.receivedDelta = true
+        streamContext.receivedDelta = true
+        clearStreamWatchdog(streamContext)
         appendAssistantDelta(localIds.assistantId, payload?.text || '')
         scrollToBottom()
       },
@@ -535,14 +623,33 @@ async function handleSend() {
         applyDoneMeta(localIds.assistantId, payload)
       },
       onDone() {
+        streamContext.doneReceived = true
+        clearStreamWatchdog(streamContext)
         finishStreamingAssistant(localIds.assistantId)
       }
     })
+    clearActiveStream(streamContext)
+    if (isComponentUnmounted.value) {
+      return
+    }
     state.question = ''
     state.mentionKeyword = ''
     await Promise.all([fetchMessages(), loadSessions()])
   } catch (error) {
-    if (!streamProgress.receivedStart && !streamProgress.receivedDelta && localIds) {
+    clearActiveStream(streamContext)
+    if (isExpectedStreamAbort(error)) {
+      clearStreamWatchdog(streamContext)
+      finishStreamingAssistant(localIds?.assistantId)
+      if (!streamContext.receivedStart && !streamContext.receivedDelta && !streamContext.watchdogTriggered) {
+        removeLocalConversation(localIds)
+        return
+      }
+      if (!isComponentUnmounted.value && state.sessionInfo?.id) {
+        await fetchMessages()
+      }
+      return
+    }
+    if (!streamContext.receivedStart && !streamContext.receivedDelta && localIds) {
       try {
         const result = ensureSuccess(await sendAgentQuestion({
           sessionId: state.sessionInfo.id,
@@ -572,19 +679,34 @@ async function handleSend() {
         return
       } catch (fallbackError) {
         removeLocalConversation(localIds)
+        if (isExpectedStreamAbort(fallbackError) || isComponentUnmounted.value) {
+          return
+        }
         showToast(fallbackError.message || '发送问题失败')
         state.errorMessage = fallbackError.message || '发送问题失败'
         return
       }
     }
     finishStreamingAssistant(localIds?.assistantId)
+    if (isComponentUnmounted.value) {
+      return
+    }
     showToast(error.message || '发送问题失败')
     state.errorMessage = error.message || '发送问题失败'
     await fetchMessages()
   } finally {
-    state.asking = false
+    clearStreamWatchdog(streamContext)
+    clearActiveStream(streamContext)
+    if (sendRunId.value === runId) {
+      state.asking = false
+    }
   }
 }
+
+onBeforeUnmount(() => {
+  isComponentUnmounted.value = true
+  abortActiveStream('COMPONENT_UNMOUNT')
+})
 
 onMounted(async () => {
   if (!hasToken.value) {
@@ -813,7 +935,8 @@ onMounted(async () => {
 }
 
 .primary-button:disabled,
-.ghost-button:disabled {
+.ghost-button:disabled,
+.session-item:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

@@ -141,7 +141,30 @@ public class SchemaUpgradeRunner implements ApplicationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunk_doc_topic ON ai_knowledge_chunk(doc_type, topic_type)",
                 "CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunk_policy_name ON ai_knowledge_chunk(policy_name)",
                 "CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunk_policy_no ON ai_knowledge_chunk(policy_no)",
-                "CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunk_scene_priority ON ai_knowledge_chunk(scene_priority)"
+                "CREATE INDEX IF NOT EXISTS idx_ai_knowledge_chunk_scene_priority ON ai_knowledge_chunk(scene_priority)",
+                "CREATE TABLE IF NOT EXISTS ai_policy_catalog ("
+                        + "id BIGSERIAL PRIMARY KEY,"
+                        + "base_id BIGINT NOT NULL,"
+                        + "region_scope VARCHAR(16) NOT NULL,"
+                        + "policy_group VARCHAR(64),"
+                        + "policy_name VARCHAR(255) NOT NULL,"
+                        + "policy_aliases TEXT,"
+                        + "policy_no VARCHAR(128),"
+                        + "policy_type VARCHAR(32),"
+                        + "topic_tags TEXT,"
+                        + "short_summary TEXT,"
+                        + "source_doc_type VARCHAR(32),"
+                        + "source_doc_name VARCHAR(255),"
+                        + "source_chunk_ids TEXT,"
+                        + "searchable BOOLEAN NOT NULL DEFAULT TRUE,"
+                        + "sort_order INT NOT NULL DEFAULT 0,"
+                        + "create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                        + "update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"
+                        + ")",
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_policy_catalog_base_region_name ON ai_policy_catalog(base_id, region_scope, policy_name)",
+                "CREATE INDEX IF NOT EXISTS idx_ai_policy_catalog_region_group ON ai_policy_catalog(base_id, region_scope, policy_group, sort_order)",
+                "CREATE INDEX IF NOT EXISTS idx_ai_policy_catalog_policy_type ON ai_policy_catalog(base_id, policy_type, sort_order)",
+                "CREATE INDEX IF NOT EXISTS idx_ai_policy_catalog_searchable ON ai_policy_catalog(base_id, searchable, sort_order)"
         );
 
         for (String statement : statements) {

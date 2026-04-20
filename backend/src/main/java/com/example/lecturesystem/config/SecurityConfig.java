@@ -3,6 +3,7 @@ package com.example.lecturesystem.config;
 import com.example.lecturesystem.modules.auth.config.AuthProperties;
 import com.example.lecturesystem.modules.auth.config.WechatProperties;
 import com.example.lecturesystem.modules.auth.security.JwtAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -63,7 +64,9 @@ public class SecurityConfig {
                 .httpBasic(basic -> basic.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.POST, LOGIN_PATH).permitAll()
                         .requestMatchers(HttpMethod.GET, MOBILE_LOGIN_OPTIONS_PATH).permitAll()
                         .requestMatchers(HttpMethod.POST, WECHAT_MINI_LOGIN_PATH).permitAll()

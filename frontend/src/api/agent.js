@@ -75,7 +75,11 @@ export async function streamAgentQuestion(data, handlers = {}) {
   const controller = new AbortController()
   const timer = window.setTimeout(() => controller.abort(new Error('AI_STREAM_TIMEOUT')), AI_STREAM_TIMEOUT)
   if (handlers.signal) {
-    handlers.signal.addEventListener('abort', () => controller.abort(handlers.signal.reason), { once: true })
+    if (handlers.signal.aborted) {
+      controller.abort(handlers.signal.reason)
+    } else {
+      handlers.signal.addEventListener('abort', () => controller.abort(handlers.signal.reason), { once: true })
+    }
   }
   const headers = {
     'Content-Type': 'application/json',
@@ -96,6 +100,11 @@ export async function streamAgentQuestion(data, handlers = {}) {
   }
 
   try {
+    console.debug('STREAM_CLIENT_START', {
+      sessionId: data?.sessionId,
+      sourceScene: data?.sourceScene || '',
+      hasSkillHint: Boolean(data?.skillHint)
+    })
     const response = await fetch(`${AI_API_BASE_URL}/agent/chat-stream`, {
       method: 'POST',
       headers,
@@ -122,7 +131,25 @@ export async function streamAgentQuestion(data, handlers = {}) {
     if (!streamState.done) {
       throw new Error('流式响应中断')
     }
+    console.debug('STREAM_CLIENT_DONE', {
+      sessionId: data?.sessionId,
+      started: streamState.started,
+      receivedDelta: streamState.receivedDelta,
+      hasDoneMeta: Boolean(streamState.doneMeta)
+    })
     return streamState
+  } catch (error) {
+    const normalizedError = normalizeStreamClientError(error, controller.signal, handlers.signal, streamState)
+    if (isStreamAbortLikeError(normalizedError)) {
+      console.debug(normalizedError.intentionalAbort ? 'STREAM_CLIENT_ABORT_INTENTIONAL' : 'STREAM_CLIENT_ABORT_UNEXPECTED', {
+        sessionId: data?.sessionId,
+        started: streamState.started,
+        receivedDelta: streamState.receivedDelta,
+        done: streamState.done,
+        message: normalizedError.message || ''
+      })
+    }
+    throw normalizedError
   } finally {
     window.clearTimeout(timer)
   }
@@ -207,4 +234,28 @@ async function resolveStreamErrorMessage(response) {
   } catch (error) {
     return text || '流式请求失败'
   }
+}
+
+function normalizeStreamClientError(error, ...context) {
+  const normalizedError = error instanceof Error ? error : new Error(String(error || '流式请求失败'))
+  const signals = context.filter((item) => item && typeof item === 'object' && 'aborted' in item)
+  const streamState = context.find((item) => item && typeof item === 'object' && 'started' in item)
+  const abortReason = signals.map((signal) => signal.reason).find(Boolean)
+  if (abortReason?.intentionalAbort) {
+    normalizedError.intentionalAbort = true
+  }
+  if (streamState) {
+    normalizedError.streamStarted = Boolean(streamState.started)
+    normalizedError.receivedDelta = Boolean(streamState.receivedDelta)
+    normalizedError.receivedDone = Boolean(streamState.done)
+  }
+  return normalizedError
+}
+
+function isStreamAbortLikeError(error) {
+  const message = String(error?.message || '')
+  return error?.name === 'AbortError'
+    || message.includes('BodyStreamBuffer was aborted')
+    || message.includes('The operation was aborted')
+    || error?.intentionalAbort === true
 }

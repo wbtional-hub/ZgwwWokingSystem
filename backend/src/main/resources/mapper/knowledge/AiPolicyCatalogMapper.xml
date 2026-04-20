@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.knowledge.mapper.AiPolicyCatalogMapper">
+
+    <resultMap id="AiPolicyCatalogMap" type="com.example.lecturesystem.modules.knowledge.entity.AiPolicyCatalogEntity">
+        <id property="id" column="id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="regionScope" column="region_scope"/>
+        <result property="policyGroup" column="policy_group"/>
+        <result property="policyName" column="policy_name"/>
+        <result property="policyAliases" column="policy_aliases"/>
+        <result property="policyNo" column="policy_no"/>
+        <result property="policyType" column="policy_type"/>
+        <result property="topicTags" column="topic_tags"/>
+        <result property="shortSummary" column="short_summary"/>
+        <result property="sourceDocType" column="source_doc_type"/>
+        <result property="sourceDocName" column="source_doc_name"/>
+        <result property="sourceChunkIds" column="source_chunk_ids"/>
+        <result property="searchable" column="searchable"/>
+        <result property="sortOrder" column="sort_order"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <delete id="deleteByBaseId">
+        DELETE FROM ai_policy_catalog WHERE base_id = #{baseId}
+    </delete>
+
+    <insert id="batchInsert">
+        INSERT INTO ai_policy_catalog (
+            base_id, region_scope, policy_group, policy_name, policy_aliases, policy_no,
+            policy_type, topic_tags, short_summary, source_doc_type, source_doc_name,
+            source_chunk_ids, searchable, sort_order, create_time, update_time
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+                #{item.baseId}, #{item.regionScope}, #{item.policyGroup}, #{item.policyName}, #{item.policyAliases}, #{item.policyNo},
+                #{item.policyType}, #{item.topicTags}, #{item.shortSummary}, #{item.sourceDocType}, #{item.sourceDocName},
+                #{item.sourceChunkIds}, #{item.searchable}, #{item.sortOrder}, #{item.createTime}, #{item.updateTime}
+            )
+        </foreach>
+    </insert>
+
+    <select id="queryByBaseId" resultMap="AiPolicyCatalogMap">
+        SELECT id, base_id, region_scope, policy_group, policy_name, policy_aliases, policy_no,
+               policy_type, topic_tags, short_summary, source_doc_type, source_doc_name,
+               source_chunk_ids, searchable, sort_order, create_time, update_time
+        FROM ai_policy_catalog
+        WHERE base_id = #{baseId}
+        <if test="regionScope != null and regionScope != ''">
+            AND region_scope = #{regionScope}
+        </if>
+        <if test="searchable != null">
+            AND searchable = #{searchable}
+        </if>
+        ORDER BY sort_order ASC, policy_name ASC
+    </select>
+</mapper>

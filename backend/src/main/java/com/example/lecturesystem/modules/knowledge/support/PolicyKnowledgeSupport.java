@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 
 public final class PolicyKnowledgeSupport {
     private static final Pattern POLICY_NO_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5A-Za-z]{1,20}[〔\\(（]?\\d{4}[〕\\)）]?\\d{0,4}号)");
+    private static final Pattern CATALOG_SERIAL_PREFIX_PATTERN = Pattern.compile("^(?:第[一二三四五六七八九十百]+[章节部分]\\s*|[（(]?[一二三四五六七八九十]+[)）]?[、.．]\\s*|\\d+[、.．]\\s*)");
     private static final List<String> LIST_KEYWORDS = List.of("有哪些", "包括哪些", "包含哪些", "列举", "清单", "名单");
     private static final List<String> PROCESS_KEYWORDS = List.of("怎么申请", "如何申请", "如何申报", "怎么申报", "流程", "材料", "审核", "公示", "兑现", "拨付");
     private static final List<String> CONDITION_KEYWORDS = List.of("条件", "要求", "资格", "适用对象", "能不能申请");
@@ -21,6 +22,98 @@ public final class PolicyKnowledgeSupport {
     private static final List<String> FAQ_SECTION_KEYWORDS = List.of("高频问答", "常见问题", "问答");
     private static final List<String> ROUTING_SECTION_KEYWORDS = List.of("检索建议", "导入目录");
     private static final List<String> LIST_SECTION_KEYWORDS = List.of("总览", "目录", "政策正文", "政策清单", "概览");
+    private static final List<String> INVALID_CATALOG_PREFIXES = List.of(
+            "以下为当前知识库已整理",
+            "当前知识库已命中的主要政策",
+            "以下为",
+            "如问到具体材料清单",
+            "若问到具体材料清单",
+            "本章用于回答",
+            "本专题优先服务",
+            "建议继续命中年度公告"
+    );
+    private static final List<String> INVALID_CATALOG_PHRASES = List.of(
+            "不代表所有历史政策全文清单",
+            "建议继续命中年度公告",
+            "如问到具体材料清单/申报入口",
+            "若问到具体材料清单/申报入口",
+            "专题问法路由建议",
+            "专题补充文档",
+            "政策依据",
+            "引用：",
+            "引用:",
+            "当前知识库已命中的主要政策/项目",
+            "知识库专题补充文档",
+            "路由建议",
+            "问答增强版",
+            "清洗导入版",
+            "目录说明",
+            "清单说明",
+            "本章用于回答",
+            "如用户继续追问",
+            "应跳转对应专题",
+            "优先服务省级上位政策问答",
+            "只作补充说明",
+            "专题类政策导航",
+            "政策导航"
+    );
+    private static final List<String> META_CATALOG_TITLE_KEYWORDS = List.of(
+            "专题补充文档",
+            "知识库专题补充文档",
+            "路由建议",
+            "问答增强版",
+            "清洗导入版",
+            "专题说明",
+            "目录说明",
+            "清单说明",
+            "章节标题",
+            "导语",
+            "政策导航",
+            "专题类政策导航"
+    );
+    private static final List<String> SECTION_HEADING_KEYWORDS = List.of(
+            "专题定位与适用范围",
+            "专题定位与适用问题",
+            "适用范围",
+            "适用问题",
+            "申报条件",
+            "申请条件",
+            "支持标准",
+            "申报流程",
+            "办理流程",
+            "申请材料",
+            "材料清单",
+            "政策依据"
+    );
+    private static final List<String> FORMAL_POLICY_TITLE_KEYWORDS = List.of(
+            "实施意见",
+            "实施方案",
+            "管理办法",
+            "若干措施",
+            "申报通知",
+            "通知",
+            "公告",
+            "通告",
+            "细则",
+            "意见"
+    );
+    private static final List<String> TOPIC_TITLE_HINT_KEYWORDS = List.of(
+            "人才",
+            "申报",
+            "支持",
+            "认定",
+            "引才",
+            "专项",
+            "产业",
+            "住房",
+            "博士后",
+            "台湾",
+            "人工智能",
+            "项目",
+            "计划",
+            "工程师"
+    );
+    private static final List<String> AI_SUMMARY_KEYWORDS = List.of("人工智能", "AI", "ai");
     private static final List<String> XM_SPECIAL_TOPICS = List.of("双百计划", "特聘岗位", "专项资金", "群鹭兴厦", "博士后", "人工智能", "住房", "台湾人才", "台湾特聘专家", "服务保障", "子女教育", "医疗保障");
     private static final List<String> FJ_SPECIAL_TOPICS = List.of("福建省高层次人才认定", "省引才百人计划", "百人计划", "四大经济", "四大经济专项认定", "博士后", "工程师队伍建设", "台湾人才", "国际化引才");
     private static final List<PolicyAliasMapping> POLICY_ALIAS_MAPPINGS = List.of(
@@ -257,6 +350,216 @@ public final class PolicyKnowledgeSupport {
         return null;
     }
 
+    public static String canonicalizePolicyName(String text) {
+        String candidate = normalizeCatalogText(text);
+        if (candidate == null) {
+            return null;
+        }
+        for (PolicyAliasMapping mapping : POLICY_ALIAS_MAPPINGS) {
+            if (containsKeyword(candidate, mapping.canonicalName())) {
+                return mapping.canonicalName();
+            }
+            for (String alias : mapping.aliases()) {
+                if (containsKeyword(candidate, alias) || containsKeyword(alias, candidate)) {
+                    return mapping.canonicalName();
+                }
+            }
+        }
+        return candidate;
+    }
+
+    public static List<String> resolvePolicySearchTerms(String policyName) {
+        LinkedHashSet<String> terms = new LinkedHashSet<>();
+        String canonical = canonicalizePolicyName(policyName);
+        if (canonical != null) {
+            terms.add(canonical);
+            String compact = canonical.replace("厦门市", "").replace("福建省", "").trim();
+            if (!compact.isBlank()) {
+                terms.add(compact);
+            }
+        }
+        String normalized = normalize(policyName);
+        if (normalized != null) {
+            terms.add(normalized);
+        }
+        for (PolicyAliasMapping mapping : POLICY_ALIAS_MAPPINGS) {
+            if (canonical == null || !mapping.canonicalName().equalsIgnoreCase(canonical)) {
+                continue;
+            }
+            terms.addAll(mapping.aliases());
+            break;
+        }
+        return new ArrayList<>(terms);
+    }
+
+    public static List<String> detectTopicTags(String... texts) {
+        LinkedHashSet<String> tags = new LinkedHashSet<>();
+        String merged = mergeText(texts);
+        if (merged == null) {
+            return List.of();
+        }
+        if (containsAny(merged, List.of("住房", "住房补贴", "安居", "租房", "购房"))) {
+            tags.add("housing");
+        }
+        if (containsAny(merged, List.of("博士后"))) {
+            tags.add("postdoc");
+        }
+        if (containsAny(merged, List.of("人工智能", "AI人才", "ai人才"))) {
+            tags.add("ai");
+        }
+        if (containsAny(merged, List.of("台湾人才", "台湾特聘专家", "台湾专才"))) {
+            tags.add("taiwan");
+        }
+        if (containsAny(merged, List.of("专项资金", "资金"))) {
+            tags.add("funding");
+        }
+        if (containsAny(merged, List.of("双百计划"))) {
+            tags.add("double-hundred");
+        }
+        if (containsAny(merged, List.of("百人计划"))) {
+            tags.add("bai-ren");
+        }
+        if (containsAny(merged, List.of("四大经济"))) {
+            tags.add("four-economies");
+        }
+        if (containsAny(merged, List.of("服务保障", "子女教育", "医疗保障"))) {
+            tags.add("service");
+        }
+        if (containsAny(merged, List.of("产业人才项目", "骨干人才项目", "产业"))) {
+            tags.add("industry");
+        }
+        return new ArrayList<>(tags);
+    }
+
+    public static boolean isInvalidCatalogName(String text) {
+        String normalized = normalizeCatalogText(text);
+        if (normalized == null) {
+            return true;
+        }
+        if (isObviousNoiseCatalogTitle(normalized)) {
+            return true;
+        }
+        return !looksLikeValidPolicyOrTopicTitle(normalized);
+    }
+
+    public static List<String> extractCatalogPolicyNames(String... texts) {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        for (String text : texts) {
+            names.addAll(extractFormalPolicyNames(text));
+            String candidate = canonicalizePolicyName(extractPolicyName(text));
+            if (candidate != null && !isInvalidCatalogName(candidate)) {
+                names.add(candidate);
+            }
+        }
+        return new ArrayList<>(names);
+    }
+
+    public static String detectCatalogPolicyGroup(String regionScope, String policyName, String headingText, String topicTags) {
+        String canonical = canonicalizePolicyName(policyName);
+        String merged = mergeText(canonical, headingText, topicTags);
+        String region = normalize(regionScope);
+        if (containsAny(canonical, List.of("住房"))) {
+            return "住房";
+        }
+        if (containsAny(canonical, List.of("博士后"))) {
+            return "博士后";
+        }
+        if (containsAny(canonical, List.of("台湾"))) {
+            return "台湾人才";
+        }
+        if (containsAny(canonical, AI_SUMMARY_KEYWORDS)) {
+            return "AI";
+        }
+        if ("FJ".equalsIgnoreCase(region) && containsAny(merged, List.of("百人计划"))) {
+            return "百人计划";
+        }
+        if ("FJ".equalsIgnoreCase(region) && containsAny(merged, List.of("四大经济"))) {
+            return "四大经济";
+        }
+        if ("FJ".equalsIgnoreCase(region) && containsAny(merged, List.of("申报", "通知", "近期"))) {
+            return "近期申报";
+        }
+        if (containsAny(merged, List.of("双百计划", "特聘岗位", "专项资金", "意见", "统领"))) {
+            return "XM".equalsIgnoreCase(region) ? "统领政策" : "省级主干政策";
+        }
+        if (containsAny(merged, List.of("教育人才", "卫生健康人才", "社会工作人才", "公共", "服务保障"))) {
+            return "公共专项";
+        }
+        if (containsAny(merged, List.of("产业人才项目", "骨干人才项目", "产业项目"))) {
+            return "重点产业项目";
+        }
+        return "FJ".equalsIgnoreCase(region) ? "专项支持" : "统领政策";
+    }
+
+    public static String buildCatalogShortSummary(String policyName, String topicTags, String fallbackText) {
+        return buildCatalogShortSummary(policyName, topicTags, fallbackText, (String[]) null);
+    }
+
+    public static String buildCatalogShortSummary(String policyName, String topicTags, String fallbackText, String... contextTexts) {
+        String canonical = canonicalizePolicyName(policyName);
+        String nameDrivenContext = canonical;
+        if (containsAny(nameDrivenContext, List.of("双百计划"))) {
+            return "聚焦高层次创新创业人才引进、评审和支持安排。";
+        }
+        if (containsAny(nameDrivenContext, List.of("特聘岗位"))) {
+            return "聚焦高层次人才特聘岗位设置、引进、管理和支持规则。";
+        }
+        if (containsAny(nameDrivenContext, List.of("专项资金"))) {
+            return "聚焦高层次人才专项资金的拨付、使用和管理规则。";
+        }
+        if (containsAny(nameDrivenContext, List.of("住房", "住房补贴", "安居", "租房", "购房"))) {
+            return "聚焦住房保障相关支持对象、条件和兑现安排。";
+        }
+        if (containsAny(nameDrivenContext, List.of("博士后"))) {
+            return "聚焦博士后招收、培养、资助和平台建设安排。";
+        }
+        if (containsAny(canonical, AI_SUMMARY_KEYWORDS)) {
+            return "聚焦人工智能领域人才引进、培养和专项支持措施。";
+        }
+        if (containsAny(nameDrivenContext, List.of("台湾"))) {
+            return "聚焦台湾人才引进、支持和服务保障安排。";
+        }
+        if (containsAny(nameDrivenContext, List.of("产业人才项目", "骨干人才项目"))) {
+            return "聚焦对应重点产业人才项目的申报、评审和资金支持。";
+        }
+        String normalizedFallback = sanitizeCatalogSummary(fallbackText);
+        if (normalizedFallback != null) {
+            return normalizedFallback;
+        }
+        return "属于当前知识库已沉淀的主要政策/项目目录项。";
+    }
+
+    public static boolean isCatalogRegionConsistent(String regionScope, String policyName, String aliasesCsv) {
+        String normalizedRegion = normalize(regionScope);
+        if (!"XM".equalsIgnoreCase(normalizedRegion) && !"FJ".equalsIgnoreCase(normalizedRegion)) {
+            return true;
+        }
+        String primaryRegion = resolveCatalogPolicyNameRegion(policyName);
+        if (primaryRegion != null && !normalizedRegion.equalsIgnoreCase(primaryRegion)) {
+            return false;
+        }
+        for (String alias : splitCsv(aliasesCsv)) {
+            String aliasRegion = resolveExplicitRegionPrefix(alias);
+            if (aliasRegion != null && !normalizedRegion.equalsIgnoreCase(aliasRegion)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static String sanitizeCatalogSummary(String text) {
+        String normalized = normalizeCatalogText(text);
+        if (normalized == null || isInvalidCatalogName(normalized)) {
+            return null;
+        }
+        String cleaned = normalized.replace('\n', ' ').replace('\r', ' ').replaceAll("\\s+", " ").trim();
+        if (cleaned.length() <= 48) {
+            return cleaned;
+        }
+        String truncated = cleaned.substring(0, 48).trim();
+        return truncated.endsWith("。") ? truncated : truncated + "。";
+    }
+
     public static String extractPolicyNo(String... texts) {
         for (String text : texts) {
             String normalized = normalize(text);
@@ -354,11 +657,160 @@ public final class PolicyKnowledgeSupport {
     }
 
     private static String firstPolicyLikeSentence(String text) {
-        if (containsAny(text, List.of("实施意见", "实施方案", "管理办法", "若干措施", "申报通知", "专题"))) {
-            String compact = text.replace('\n', ' ').trim();
-            return compact.length() <= 120 ? compact : compact.substring(0, 120);
+        String candidate = normalizeCatalogText(text);
+        if (candidate != null && looksLikeValidPolicyOrTopicTitle(candidate) && !isInvalidCatalogName(candidate)) {
+            return candidate.length() <= 120 ? candidate : candidate.substring(0, 120);
         }
         return null;
+    }
+
+    private static boolean startsWithAny(String text, List<String> prefixes) {
+        String normalized = normalize(text);
+        if (normalized == null || prefixes == null || prefixes.isEmpty()) {
+            return false;
+        }
+        for (String prefix : prefixes) {
+            String normalizedPrefix = normalize(prefix);
+            if (normalizedPrefix != null && normalized.startsWith(normalizedPrefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean isObviousNoiseCatalogTitle(String text) {
+        String normalized = normalizeCatalogText(text);
+        if (normalized == null) {
+            return true;
+        }
+        if (containsAny(normalized, List.of(
+                "问答增强版", "使用边界", "检索建议", "导入说明", "导入目录", "文档定位", "正文", "高频问答", "Chunk",
+                "A类人才项目", "B类人才项目", "C类人才项目"
+        ))) {
+            return true;
+        }
+        if (startsWithAny(normalized, INVALID_CATALOG_PREFIXES) || containsAny(normalized, INVALID_CATALOG_PHRASES)) {
+            return true;
+        }
+        if (looksLikeMetaCatalogTitle(normalized) || looksLikeObviousSectionHeading(normalized)) {
+            return true;
+        }
+        return containsAny(normalized, List.of("。", "？", "?", "！", "!", "；", ";"))
+                || normalized.contains("：")
+                || normalized.contains(":")
+                || normalized.contains("如需回答")
+                || normalized.contains("适合作为")
+                || normalized.contains("建议作为");
+    }
+
+    public static boolean looksLikeValidPolicyOrTopicTitle(String text) {
+        String normalized = normalizeCatalogText(text);
+        if (normalized == null) {
+            return false;
+        }
+        if (normalized.length() > 60 || isObviousNoiseCatalogTitle(normalized)) {
+            return false;
+        }
+        if (!extractFormalPolicyNames(normalized).isEmpty()) {
+            return true;
+        }
+        if (containsAny(normalized, FORMAL_POLICY_TITLE_KEYWORDS)
+                && (normalized.startsWith("关于")
+                || normalized.startsWith("厦门市")
+                || normalized.startsWith("福建省")
+                || containsAny(normalized, List.of("人才", "引进", "支持", "集聚")))) {
+            return true;
+        }
+        return normalized.endsWith("专题")
+                && (normalized.startsWith("福建省")
+                || normalized.startsWith("厦门市")
+                || containsAny(normalized, XM_SPECIAL_TOPICS)
+                || containsAny(normalized, FJ_SPECIAL_TOPICS)
+                || containsAny(normalized, TOPIC_TITLE_HINT_KEYWORDS));
+    }
+
+    private static boolean looksLikeMetaCatalogTitle(String text) {
+        String normalized = normalizeCatalogText(text);
+        if (normalized == null) {
+            return false;
+        }
+        return containsAny(normalized, META_CATALOG_TITLE_KEYWORDS)
+                || "政策依据".equals(normalized)
+                || "专题补充".equals(normalized)
+                || "路由建议".equals(normalized)
+                || "引用".equals(normalized);
+    }
+
+    private static boolean looksLikeObviousSectionHeading(String text) {
+        String normalized = normalize(text);
+        if (normalized == null) {
+            return false;
+        }
+        String stripped = stripCatalogSerialPrefix(normalized);
+        boolean numbered = !normalized.equals(stripped);
+        if (!numbered) {
+            return false;
+        }
+        return containsAny(stripped, SECTION_HEADING_KEYWORDS)
+                || (stripped.endsWith("条件") && stripped.length() <= 8)
+                || (stripped.endsWith("标准") && stripped.length() <= 8)
+                || (stripped.endsWith("范围") && stripped.length() <= 8)
+                || (stripped.endsWith("问题") && stripped.length() <= 8)
+                || (stripped.endsWith("流程") && stripped.length() <= 8);
+    }
+
+    private static String resolveCatalogPolicyNameRegion(String text) {
+        String normalized = canonicalizePolicyName(text);
+        if (normalized == null) {
+            return null;
+        }
+        return resolveExplicitRegionPrefix(normalized);
+    }
+
+    private static String resolveExplicitRegionPrefix(String text) {
+        String normalized = normalizeCatalogText(text);
+        if (normalized == null) {
+            return null;
+        }
+        if (normalized.startsWith("厦门市")) {
+            return "XM";
+        }
+        if (normalized.startsWith("福建省")) {
+            return "FJ";
+        }
+        return null;
+    }
+
+    private static String stripCatalogSerialPrefix(String text) {
+        String normalized = normalize(text);
+        if (normalized == null) {
+            return null;
+        }
+        String stripped = normalized;
+        while (true) {
+            Matcher matcher = CATALOG_SERIAL_PREFIX_PATTERN.matcher(stripped);
+            if (!matcher.find()) {
+                return stripped.trim();
+            }
+            String next = stripped.substring(matcher.end()).trim();
+            if (next.equals(stripped) || next.isEmpty()) {
+                return stripped.trim();
+            }
+            stripped = next;
+        }
+    }
+
+    private static String normalizeCatalogText(String text) {
+        String normalized = normalize(text);
+        if (normalized == null) {
+            return null;
+        }
+        return stripCatalogSerialPrefix(normalized.replace('\u3000', ' ')
+                .replace("“", "")
+                .replace("”", "")
+                .replace('\n', ' ')
+                .replace('\r', ' ')
+                .trim()).replaceAll("\\s+", " ").trim();
     }
 
     private static String normalize(String text) {
