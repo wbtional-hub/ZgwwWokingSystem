@@ -1,5 +1,5 @@
 <template>
-  <AppPageShell title="补打卡审批" description="领导或管理员可在 PC 端查看待处理补卡申请，并审批通过或拒绝。" help-key="attendance">
+  <AppPageShell title="考勤审批" description="领导或管理员可在 PC 端查看待处理考勤申请，并审批通过或拒绝。" help-key="attendance">
     <template #actions>
       <van-button plain type="primary" :disabled="pageBusy" @click="fetchList">刷新列表</van-button>
     </template>
@@ -13,6 +13,7 @@
           <span class="field-label">关键词</span>
           <input v-model.trim="filters.keywords" class="field-input" type="text" :disabled="pageBusy" placeholder="姓名或账号">
         </label>
+
         <label class="field">
           <span class="field-label">状态</span>
           <select v-model="filters.status" class="field-input" :disabled="pageBusy">
@@ -22,24 +23,28 @@
             <option value="">全部状态</option>
           </select>
         </label>
+
         <label class="field">
-          <span class="field-label">补卡类型</span>
+          <span class="field-label">考勤节点</span>
           <select v-model="filters.patchType" class="field-input" :disabled="pageBusy">
-            <option value="">全部类型</option>
+            <option value="">全部节点</option>
             <option v-for="option in PATCH_TYPE_OPTIONS" :key="option.value" :value="option.value">
               {{ option.label }}
             </option>
           </select>
         </label>
+
         <label class="field">
           <span class="field-label">开始日期</span>
           <input v-model="filters.dateFrom" class="field-input" type="date" :disabled="pageBusy">
         </label>
+
         <label class="field">
           <span class="field-label">结束日期</span>
           <input v-model="filters.dateTo" class="field-input" type="date" :disabled="pageBusy">
         </label>
       </div>
+
       <div class="panel-actions">
         <van-button plain type="primary" :disabled="pageBusy" @click="handleSearch">查询</van-button>
         <van-button plain :disabled="pageBusy" @click="handleReset">重置</van-button>
@@ -48,22 +53,28 @@
 
     <section class="panel">
       <div class="panel-title">审批列表</div>
+
       <van-loading v-if="loading" class="state-block" vertical size="24px">加载中...</van-loading>
-      <van-empty v-else-if="!list.length" description="当前范围内暂无补卡申请" />
+      <van-empty v-else-if="!list.length" description="当前范围内暂无考勤申请" />
+
       <div v-else class="card-list">
         <article v-for="item in list" :key="item.id" class="record-card">
           <div class="record-card__top">
             <div>
-              <div class="record-card__title">{{ item.realName || item.username || '未命名用户' }} · {{ patchTypeLabel(item.patchType) }}</div>
+              <div class="record-card__title">
+                {{ item.realName || item.username || '未命名用户' }} · {{ applyTypeLabel(item.applyType) }} · {{ patchTypeLabel(item.patchType) }}
+              </div>
               <div class="record-card__meta">账号：{{ item.username || '-' }} / 单位：{{ item.unitName || '-' }}</div>
             </div>
             <van-tag :type="statusTagType(item.status)">{{ statusLabel(item.status) }}</van-tag>
           </div>
-          <div class="record-card__meta">考勤日期：{{ item.attendanceDate }}，补卡时间：{{ formatDateTime(item.patchTime) }}</div>
+
+          <div class="record-card__meta">考勤日期：{{ item.attendanceDate }}，申请时间：{{ formatDateTime(item.patchTime) }}</div>
           <div class="record-card__reason">{{ item.reason || '-' }}</div>
           <div class="record-card__meta">审批人：{{ item.approveRealName || item.approveUsername || '-' }}</div>
           <div class="record-card__meta">审批时间：{{ formatDateTime(item.approveTime) }}</div>
           <div class="record-card__meta">审批意见：{{ item.approveComment || '-' }}</div>
+
           <div v-if="canApproveItem(item)" class="panel-actions">
             <van-button size="small" type="success" :disabled="reviewBusy" @click="openReviewDialog(item, 'approve')">审批通过</van-button>
             <van-button size="small" plain type="danger" :disabled="reviewBusy" @click="openReviewDialog(item, 'reject')">审批拒绝</van-button>
@@ -82,8 +93,11 @@
       <div class="review-sheet">
         <div class="review-sheet__title">{{ reviewDialog.action === 'approve' ? '审批通过' : '审批拒绝' }}</div>
         <div class="review-sheet__desc">
-          {{ reviewDialog.record?.realName || reviewDialog.record?.username || '-' }} · {{ patchTypeLabel(reviewDialog.record?.patchType) }}
+          {{ reviewDialog.record?.realName || reviewDialog.record?.username || '-' }}
+          · {{ applyTypeLabel(reviewDialog.record?.applyType) }}
+          · {{ patchTypeLabel(reviewDialog.record?.patchType) }}
         </div>
+
         <textarea
           v-model.trim="reviewDialog.comment"
           class="field-textarea"
@@ -91,6 +105,7 @@
           maxlength="500"
           :placeholder="reviewDialog.action === 'approve' ? '可选填写审批备注' : '请填写拒绝原因'"
         />
+
         <div class="panel-actions">
           <van-button plain :disabled="reviewBusy" @click="closeReviewDialog">取消</van-button>
           <van-button :type="reviewDialog.action === 'approve' ? 'success' : 'danger'" :loading="reviewBusy" @click="submitReview">
@@ -110,10 +125,10 @@ import AttendanceWorkspaceTabs from '@/components/attendance/AttendanceWorkspace
 import { approveAttendancePatchApplyApi, queryPendingAttendancePatchApplyPageApi, rejectAttendancePatchApplyApi } from '@/api/attendance'
 
 const PATCH_TYPE_OPTIONS = [
-  { value: 'AM_ON', label: '补上午上班卡' },
-  { value: 'AM_OFF', label: '补上午下班卡' },
-  { value: 'PM_ON', label: '补下午上班卡' },
-  { value: 'PM_OFF', label: '补下午下班卡' }
+  { value: 'AM_ON', label: '上午上班' },
+  { value: 'AM_OFF', label: '上午下班' },
+  { value: 'PM_ON', label: '下午上班' },
+  { value: 'PM_OFF', label: '下午下班' }
 ]
 
 const list = ref([])
@@ -222,15 +237,18 @@ async function submitReview() {
   if (!reviewDialog.record?.id) {
     return
   }
+
   if (!canApproveItem(reviewDialog.record)) {
     showToast('当前记录不可审批')
     closeReviewDialog()
     return
   }
+
   if (reviewDialog.action === 'reject' && !reviewDialog.comment) {
     showToast('拒绝时请填写审批意见')
     return
   }
+
   reviewBusy.value = true
   try {
     const api = reviewDialog.action === 'approve' ? approveAttendancePatchApplyApi : rejectAttendancePatchApplyApi
@@ -246,11 +264,17 @@ async function submitReview() {
   }
 }
 
+function applyTypeLabel(value) {
+  if (value === 'MAKEUP') return '补打卡'
+  if (value === 'EVIDENCE') return '取证'
+  return value || '-'
+}
+
 function patchTypeLabel(value) {
-  if (value === 'AM_ON') return '补上午上班卡'
-  if (value === 'AM_OFF') return '补上午下班卡'
-  if (value === 'PM_ON') return '补下午上班卡'
-  if (value === 'PM_OFF') return '补下午下班卡'
+  if (value === 'AM_ON') return '上午上班'
+  if (value === 'AM_OFF') return '上午下班'
+  if (value === 'PM_ON') return '下午上班'
+  if (value === 'PM_OFF') return '下午下班'
   return value || '-'
 }
 
