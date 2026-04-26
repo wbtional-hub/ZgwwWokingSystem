@@ -643,9 +643,14 @@
         </label>
         <div class="panel-actions">
           <van-button plain :disabled="patchDialogSubmitting" @click="closePatchDialog">关闭</van-button>
-          <van-button type="primary" :loading="patchDialogSubmitting" @click="submitPatchDialog">
-            {{ patchDialogMode === 'EVIDENCE' ? '提交取证' : '提交补打卡' }}
-          </van-button>
+          <van-button
+  type="primary"
+  :loading="patchDialogSubmitting"
+  :disabled="patchDialogSubmitting"
+  @click="submitPatchDialog"
+>
+  {{ patchDialogMode === 'EVIDENCE' ? '提交取证' : '提交补打卡' }}
+</van-button>
         </div>
       </div>
     </van-popup>
@@ -3596,13 +3601,19 @@ function openPatchDialog(nodeCode, mode = 'MAKEUP') {
   patchDialogSubmitting.value = false
   patchDialogVisible.value = true
 }
-function closePatchDialog() {
-  if (patchDialogSubmitting.value) {
+function closePatchDialog(force = false) {
+  if (patchDialogSubmitting.value && !force) {
     return
   }
+
   patchDialogVisible.value = false
   patchDialogReason.value = ''
   patchDialogAttachments.value = []
+  patchDialogNodeCode.value = ''
+
+  if (patchFileInputRef.value) {
+    patchFileInputRef.value.value = ''
+  }
 }
 function handlePersonalNodeAction(payload) {
   const node = payload?.node || payload || {}
@@ -3649,6 +3660,10 @@ function handlePatchAttachmentChange(event) {
   }
 }
 async function submitPatchDialog() {
+  if (patchDialogSubmitting.value) {
+    return
+  }
+  
   if (!patchDialogNodeCode.value) {
     showToast('未识别到当前节点')
     return
@@ -3685,8 +3700,8 @@ async function submitPatchDialog() {
     })
 
     showToast(patchDialogMode.value === 'EVIDENCE' ? '取证申请已提交，等待审核' : '补打卡申请已提交，等待审核')
-    closePatchDialog()
-    await Promise.all([fetchCurrentLocation(), fetchList(), fetchLeadershipWorkspace()])
+closePatchDialog(true)
+await Promise.all([fetchCurrentLocation(), fetchList(), fetchLeadershipWorkspace()])
   } catch (error) {
     showToast(error?.message || (patchDialogMode.value === 'EVIDENCE' ? '取证提交失败' : '补打卡提交失败'))
   } finally {

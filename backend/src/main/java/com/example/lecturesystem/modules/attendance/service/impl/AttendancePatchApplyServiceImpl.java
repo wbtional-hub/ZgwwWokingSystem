@@ -47,7 +47,8 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
     private static final String PATCH_STATUS_PENDING = "PENDING";
     private static final String PATCH_STATUS_APPROVED = "APPROVED";
     private static final String PATCH_STATUS_REJECTED = "REJECTED";
-    private static final String PATCH_ADDRESS_TEXT = "补打卡审批";
+    private static final String PATCH_ADDRESS_TEXT_MAKEUP = "补打卡审批";
+private static final String PATCH_ADDRESS_TEXT_EVIDENCE = "取证审批";
     private static final String APPLY_TYPE_TEXT_MAKEUP = "补打卡";
     private static final String APPLY_TYPE_TEXT_EVIDENCE = "取证";
 
@@ -622,7 +623,7 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
         }
 
         applyPatchTimeToRecord(record, applyEntity.getPatchType(), applyEntity.getPatchTime());
-        applyPatchAddressToRecord(record, applyEntity.getPatchType());
+        applyPatchAddressToRecord(record, applyEntity.getPatchType(), resolvePatchAddressText(applyEntity.getApplyType()));
 
         record.setCheckType(resolveLastCheckType(record));
         record.setCheckTime(resolveLastCheckTime(record));
@@ -746,29 +747,33 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
         throw new IllegalArgumentException("补打卡类型不合法");
     }
 
-    private void applyPatchAddressToRecord(AttendanceRecordEntity record, String patchType) {
-        if (PATCH_TYPE_AM_ON.equals(patchType)) {
-            if (normalizeText(record.getCheckInAddress()) == null) {
-                record.setCheckInAddress(PATCH_ADDRESS_TEXT);
-            }
-            return;
+    private void applyPatchAddressToRecord(AttendanceRecordEntity record, String patchType, String patchAddressText) {
+    String addressText = normalizeText(patchAddressText) == null
+            ? PATCH_ADDRESS_TEXT_MAKEUP
+            : patchAddressText;
+
+    if (PATCH_TYPE_AM_ON.equals(patchType)) {
+        if (normalizeText(record.getCheckInAddress()) == null) {
+            record.setCheckInAddress(addressText);
         }
-        if (PATCH_TYPE_AM_OFF.equals(patchType)) {
-            if (normalizeText(record.getAmOffAddress()) == null) {
-                record.setAmOffAddress(PATCH_ADDRESS_TEXT);
-            }
-            return;
-        }
-        if (PATCH_TYPE_PM_ON.equals(patchType)) {
-            if (normalizeText(record.getPmOnAddress()) == null) {
-                record.setPmOnAddress(PATCH_ADDRESS_TEXT);
-            }
-            return;
-        }
-        if (PATCH_TYPE_PM_OFF.equals(patchType) && normalizeText(record.getCheckOutAddress()) == null) {
-            record.setCheckOutAddress(PATCH_ADDRESS_TEXT);
-        }
+        return;
     }
+    if (PATCH_TYPE_AM_OFF.equals(patchType)) {
+        if (normalizeText(record.getAmOffAddress()) == null) {
+            record.setAmOffAddress(addressText);
+        }
+        return;
+    }
+    if (PATCH_TYPE_PM_ON.equals(patchType)) {
+        if (normalizeText(record.getPmOnAddress()) == null) {
+            record.setPmOnAddress(addressText);
+        }
+        return;
+    }
+    if (PATCH_TYPE_PM_OFF.equals(patchType) && normalizeText(record.getCheckOutAddress()) == null) {
+        record.setCheckOutAddress(addressText);
+    }
+}
 
     private String resolveLastCheckType(AttendanceRecordEntity record) {
         if (record.getCheckOutTime() != null) {
@@ -923,7 +928,11 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
         }
         return upper;
     }
-
+private String resolvePatchAddressText(String applyType) {
+    return AttendanceApplyType.EVIDENCE.equals(AttendanceApplyType.normalize(applyType))
+            ? PATCH_ADDRESS_TEXT_EVIDENCE
+            : PATCH_ADDRESS_TEXT_MAKEUP;
+}
     private String resolveApplyTypeText(String applyType) {
         return AttendanceApplyType.EVIDENCE.equals(AttendanceApplyType.normalize(applyType))
                 ? APPLY_TYPE_TEXT_EVIDENCE
