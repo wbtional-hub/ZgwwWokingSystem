@@ -64,7 +64,7 @@
           <div class="record-card__meta">审批人：{{ item.approveRealName || item.approveUsername || '-' }}</div>
           <div class="record-card__meta">审批时间：{{ formatDateTime(item.approveTime) }}</div>
           <div class="record-card__meta">审批意见：{{ item.approveComment || '-' }}</div>
-          <div v-if="item.status === 'PENDING'" class="panel-actions">
+          <div v-if="canApproveItem(item)" class="panel-actions">
             <van-button size="small" type="success" :disabled="reviewBusy" @click="openReviewDialog(item, 'approve')">审批通过</van-button>
             <van-button size="small" plain type="danger" :disabled="reviewBusy" @click="openReviewDialog(item, 'reject')">审批拒绝</van-button>
           </div>
@@ -193,7 +193,19 @@ function changePage(offset) {
   fetchList()
 }
 
+function isTrueValue(value) {
+  return value === true || value === 'true' || value === 1 || value === '1'
+}
+
+function canApproveItem(item) {
+  return isTrueValue(item?.canApprove)
+}
+
 function openReviewDialog(record, action) {
+  if (!canApproveItem(record)) {
+    showToast('当前记录不可审批')
+    return
+  }
   reviewDialog.show = true
   reviewDialog.record = record
   reviewDialog.action = action
@@ -208,6 +220,11 @@ function closeReviewDialog() {
 
 async function submitReview() {
   if (!reviewDialog.record?.id) {
+    return
+  }
+  if (!canApproveItem(reviewDialog.record)) {
+    showToast('当前记录不可审批')
+    closeReviewDialog()
     return
   }
   if (reviewDialog.action === 'reject' && !reviewDialog.comment) {

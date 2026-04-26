@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AiPolicyIntentPhraseMapper">
+    <resultMap id="AiPolicyIntentPhraseMap" type="com.example.lecturesystem.modules.agent.entity.AiPolicyIntentPhraseEntity">
+        <id property="id" column="id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="intentId" column="intent_id"/>
+        <result property="phrase" column="phrase"/>
+        <result property="phraseType" column="phrase_type"/>
+        <result property="hitWeight" column="hit_weight"/>
+        <result property="enabled" column="enabled"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.agent.entity.AiPolicyIntentPhraseEntity"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO ai_policy_intent_phrase (
+            base_id, intent_id, phrase, phrase_type, hit_weight, enabled, created_at, updated_at
+        ) VALUES (
+            #{baseId}, #{intentId}, #{phrase}, #{phraseType}, #{hitWeight}, #{enabled}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <delete id="deleteByBaseId">
+        DELETE FROM ai_policy_intent_phrase WHERE base_id = #{baseId}
+    </delete>
+
+    <select id="countByBaseId" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_policy_intent_phrase
+        WHERE base_id = #{baseId}
+    </select>
+
+    <select id="queryEnabledByBaseId" resultMap="AiPolicyIntentPhraseMap">
+        SELECT *
+        FROM ai_policy_intent_phrase
+        WHERE base_id = #{baseId}
+          AND enabled = TRUE
+        ORDER BY hit_weight DESC, id ASC
+    </select>
+
+    <select id="queryByIntentId" resultMap="AiPolicyIntentPhraseMap">
+        SELECT *
+        FROM ai_policy_intent_phrase
+        WHERE intent_id = #{intentId}
+          AND enabled = TRUE
+        ORDER BY hit_weight DESC, id ASC
+    </select>
+
+    <select id="countExisting" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_policy_intent_phrase
+        WHERE base_id = #{baseId}
+          AND intent_id = #{intentId}
+          AND phrase = #{phrase}
+    </select>
+</mapper>

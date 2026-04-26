@@ -9,8 +9,10 @@ public class AttendancePatchApplyEntity {
     private Long unitId;
     private LocalDate attendanceDate;
     private String patchType;
+    private String applyType;
     private LocalDateTime patchTime;
     private String reason;
+    private String attachmentsJson;
     private String status;
     private Long approveUserId;
     private LocalDateTime approveTime;
@@ -29,10 +31,14 @@ public class AttendancePatchApplyEntity {
     public void setAttendanceDate(LocalDate attendanceDate) { this.attendanceDate = attendanceDate; }
     public String getPatchType() { return patchType; }
     public void setPatchType(String patchType) { this.patchType = patchType; }
+    public String getApplyType() { return applyType; }
+    public void setApplyType(String applyType) { this.applyType = applyType; }
     public LocalDateTime getPatchTime() { return patchTime; }
     public void setPatchTime(LocalDateTime patchTime) { this.patchTime = patchTime; }
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
+    public String getAttachmentsJson() { return attachmentsJson; }
+    public void setAttachmentsJson(String attachmentsJson) { this.attachmentsJson = attachmentsJson; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public Long getApproveUserId() { return approveUserId; }

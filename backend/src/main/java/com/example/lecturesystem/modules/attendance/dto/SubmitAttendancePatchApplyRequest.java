@@ -12,8 +12,15 @@ public class SubmitAttendancePatchApplyRequest {
     @NotBlank(message = "补卡时间不能为空")
     private String patchTime;
 
+    private String applyType;
+
     @NotBlank(message = "补卡原因不能为空")
     private String reason;
+
+    /**
+     * JSON array string reserved for lightweight evidence attachments.
+     */
+    private String attachmentsJson;
 
     public String getAttendanceDate() { return attendanceDate; }
     public void setAttendanceDate(String attendanceDate) { this.attendanceDate = attendanceDate; }
@@ -21,6 +28,10 @@ public class SubmitAttendancePatchApplyRequest {
     public void setPatchType(String patchType) { this.patchType = patchType; }
     public String getPatchTime() { return patchTime; }
     public void setPatchTime(String patchTime) { this.patchTime = patchTime; }
+    public String getApplyType() { return applyType; }
+    public void setApplyType(String applyType) { this.applyType = applyType; }
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
+    public String getAttachmentsJson() { return attachmentsJson; }
+    public void setAttachmentsJson(String attachmentsJson) { this.attachmentsJson = attachmentsJson; }
 }

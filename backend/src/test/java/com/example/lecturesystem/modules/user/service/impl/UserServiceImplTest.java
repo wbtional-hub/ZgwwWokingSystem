@@ -2,6 +2,7 @@ package com.example.lecturesystem.modules.user.service.impl;
 
 import com.example.lecturesystem.modules.auth.dto.LoginRequest;
 import com.example.lecturesystem.modules.auth.dto.WechatMiniLoginRequest;
+import com.example.lecturesystem.modules.auth.mapper.WechatMpPendingBindMapper;
 import com.example.lecturesystem.modules.auth.security.LoginUser;
 import com.example.lecturesystem.modules.auth.security.JwtTokenService;
 import com.example.lecturesystem.modules.auth.service.AuthService;
@@ -131,6 +132,7 @@ public class UserServiceImplTest {
         userMapper.insertSeed(seedUser(1L, "lisi", "鏉庡洓", 1, false));
         UserServiceImpl service = new UserServiceImpl(
                 userMapper,
+                new StubWechatMpPendingBindMapper(),
                 new StubOperationLogService(),
                 new DataScopeService(),
                 new StubAuthService(),
@@ -265,7 +267,13 @@ public class UserServiceImplTest {
         UserEntity seeded = seedUser(1L, "lisi", "李四", 1, false);
         userMapper.insertSeed(seeded);
         StubOperationLogService operationLogService = new StubOperationLogService();
-        UserServiceImpl service = new UserServiceImpl(userMapper, operationLogService, new DataScopeService(), new StubAuthService());
+        UserServiceImpl service = new UserServiceImpl(
+                userMapper,
+                new StubWechatMpPendingBindMapper(),
+                operationLogService,
+                new DataScopeService(),
+                new StubAuthService()
+        );
         mockLoginUser(1L, "admin");
 
         service.detail(1L);
@@ -297,6 +305,7 @@ public class UserServiceImplTest {
         userMapper.insertSeed(seedUser(10L, "target", "目标用户", 1, false));
         UserServiceImpl service = new UserServiceImpl(
                 userMapper,
+                new StubWechatMpPendingBindMapper(),
                 new StubOperationLogService(),
                 new DataScopeService(),
                 new StubAuthService(new IllegalArgumentException("微信授权失败：invalid code"))
@@ -325,6 +334,7 @@ public class UserServiceImplTest {
         userMapper.insertSeed(occupied);
         UserServiceImpl service = new UserServiceImpl(
                 userMapper,
+                new StubWechatMpPendingBindMapper(),
                 new StubOperationLogService(),
                 new DataScopeService(),
                 new StubAuthService(new AuthService.WechatMiniIdentity("openid-occupied", "union-new"))
@@ -351,6 +361,7 @@ public class UserServiceImplTest {
         StubOperationLogService operationLogService = new StubOperationLogService();
         UserServiceImpl service = new UserServiceImpl(
                 userMapper,
+                new StubWechatMpPendingBindMapper(),
                 operationLogService,
                 new DataScopeService(),
                 new StubAuthService(new AuthService.WechatMiniIdentity("openid-new", "union-new"))
@@ -710,6 +721,38 @@ public class UserServiceImplTest {
         @Override
         public Object query(OperationLogQueryRequest request) {
             return List.of();
+        }
+    }
+
+    private static class StubWechatMpPendingBindMapper implements WechatMpPendingBindMapper {
+        @Override
+        public com.example.lecturesystem.modules.auth.entity.WechatMpPendingBindEntity findById(Long id) {
+            return null;
+        }
+
+        @Override
+        public List<com.example.lecturesystem.modules.auth.entity.WechatMpPendingBindEntity> queryPendingList() {
+            return List.of();
+        }
+
+        @Override
+        public com.example.lecturesystem.modules.auth.entity.WechatMpPendingBindEntity findPendingByIdentity(String openId, String unionId) {
+            return null;
+        }
+
+        @Override
+        public int insertPendingBind(com.example.lecturesystem.modules.auth.entity.WechatMpPendingBindEntity entity) {
+            return 0;
+        }
+
+        @Override
+        public int touchPendingBind(Long id, String requestIp, String userAgent, String remark) {
+            return 0;
+        }
+
+        @Override
+        public int updateBindSuccess(Long id, Long bindUserId, String bindUsername, String remark) {
+            return 0;
         }
     }
 

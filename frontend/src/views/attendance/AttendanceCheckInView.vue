@@ -29,8 +29,12 @@
       :recent-records="personalRecentRecords"
       :check-in-hint="personalWorkspaceCheckInHint"
       :check-in-button-text="personalCheckInButtonText"
+      :node-cards="personalNodeCards"
       @check-in="handleCheckIn"
+      @node-action="handlePersonalNodeAction"
     />
+
+    
 
     <template v-else>
     <section class="attendance-leadership-section">
@@ -370,10 +374,12 @@
         <div class="attendance-meta">判定分支：{{ state.checkInVisualization.decisionBranch || '-' }}</div>
         <div class="attendance-meta">弱定位容错：{{ state.checkInVisualization.weakToleranceApplied ? '已命中' : '未命中' }}</div>
       </div>
-      <div class="panel-title panel-title-sub">定位可视化地图</div>
-      <div class="panel-hint">当前地图仅展示最终提交定位点。红色表示打卡点与允许范围，蓝色表示最终提交定位与定位精度范围，重叠关系仅用于辅助诊断，不直接决定放行。</div>
-      <div v-if="state.checkInVisualization.error" class="attendance-guide">{{ state.checkInVisualization.error }}</div>
-      <div ref="checkInMapRef" class="attendance-map"></div>
+      <div v-if="!isMobile">
+  <div class="panel-title panel-title-sub">定位可视化地图</div>
+  <div class="panel-hint">当前地图仅展示最终提交定位点。红色表示打卡点与允许范围，蓝色表示最终提交定位与定位精度范围，重叠关系仅用于辅助诊断，不直接决定放行。</div>
+  <div v-if="state.checkInVisualization.error" class="attendance-guide">{{ state.checkInVisualization.error }}</div>
+  <div ref="checkInMapRef" class="attendance-map"></div>
+</div>
       <div class="diagnostic-grid">
         <div class="attendance-meta">当前定位经纬度：{{ checkInCurrentCoordinateText }}</div>
         <div class="attendance-meta">打卡点经纬度：{{ checkInTargetCoordinateText }}</div>
@@ -577,6 +583,72 @@
     </section>
     </template>
   </AppPageShell>
+  <van-popup v-model:show="patchDialogVisible" round position="bottom" teleport="body">
+      <div class="attendance-action-sheet">
+        <div class="attendance-action-sheet__title">{{ patchDialogMode === 'EVIDENCE' ? '提交取证' : '提交补打卡' }}</div>
+<div class="attendance-action-sheet__subtitle">
+  {{ patchDialogNodeLabel }} · {{ leadershipTodayText }}
+</div>
+<div class="attendance-action-sheet__desc">
+  {{ patchDialogUsageText }}
+</div>
+        <div class="field">
+          <span class="field-label">现场照片</span>
+          <div class="patch-upload-panel">
+            <div class="patch-upload-panel__actions">
+              <van-button
+                size="small"
+                type="primary"
+                plain
+                :disabled="patchDialogSubmitting"
+                @click="triggerPatchFileInput"
+              >
+                拍照/上传
+              </van-button>
+              <span class="patch-upload-panel__hint">请上传 1 张现场照片</span>
+            </div>
+            <input
+              ref="patchFileInputRef"
+              class="attendance-hidden-input"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              :disabled="patchDialogSubmitting"
+              @change="handlePatchAttachmentChange"
+            >
+            <div v-if="patchDialogAttachments.length" class="patch-attachment-list">
+              <div class="patch-attachment-card">
+                <img class="patch-attachment-card__image" :src="patchDialogAttachments[0].dataUrl" alt="现场照片预览">
+                <div class="patch-attachment-card__meta">
+                  <strong>{{ patchDialogAttachments[0].name || '现场照片' }}</strong>
+                  <span>{{ patchDialogAttachments[0].sourceType === 'camera' ? '现场拍照' : '上传图片' }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="patch-upload-panel__empty">
+              请先拍照或选择一张现场照片。
+            </div>
+          </div>
+        </div>
+        <label class="field">
+          <span class="field-label">说明</span>
+          <textarea
+            v-model.trim="patchDialogReason"
+            class="field-textarea"
+            rows="4"
+            maxlength="500"
+            :disabled="patchDialogSubmitting"
+            :placeholder="patchDialogMode === 'EVIDENCE' ? '填写超范围或外勤说明' : '填写补打卡原因'"
+          ></textarea>
+        </label>
+        <div class="panel-actions">
+          <van-button plain :disabled="patchDialogSubmitting" @click="closePatchDialog">关闭</van-button>
+          <van-button type="primary" :loading="patchDialogSubmitting" @click="submitPatchDialog">
+            {{ patchDialogMode === 'EVIDENCE' ? '提交取证' : '提交补打卡' }}
+          </van-button>
+        </div>
+      </div>
+    </van-popup>
 </template>
 
 <script setup>
@@ -622,7 +694,8 @@ import {
   queryAttendanceListApi,
   queryAttendanceSummaryApi,
   queryCurrentAttendanceLocationApi,
-  saveAttendanceApi
+  saveAttendanceApi,
+  submitAttendancePatchApplyApi
 } from '@/api/attendance'
 
 const userStore = useUserStore()
@@ -732,7 +805,10 @@ const state = reactive({
   currentActionLabel: '',
   currentActionAvailable: false,
   currentActionHint: '',
-  finished: false
+  finished: false,
+  nodeStates: [],
+  attendanceStatusCode: '',
+  evidenceNodeCode: ''
 },
   checkInResult: {
     success: null,
@@ -796,6 +872,39 @@ const state = reactive({
 let checkInMapInstance = null
 let checkInAmap = null
 let checkInMapElements = null
+const patchDialogVisible = ref(false)
+const patchDialogMode = ref('MAKEUP')
+const patchDialogNodeCode = ref('')
+const patchDialogReason = ref('')
+const patchDialogAttachments = ref([])
+const patchDialogSubmitting = ref(false)
+const patchFileInputRef = ref(null)
+
+const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth <= 960 : false)
+
+function updateIsMobile() {
+  if (typeof window === 'undefined') {
+    return
+  }
+  isMobile.value = window.innerWidth <= 960
+}
+
+const PATCH_NODE_LABEL_MAP = {
+  AM_ON: '上午 · 上班打卡',
+  AM_OFF: '上午 · 下班打卡',
+  PM_ON: '下午 · 上班打卡',
+  PM_OFF: '下午 · 下班打卡'
+}
+
+const patchDialogNodeLabel = computed(() => {
+  return PATCH_NODE_LABEL_MAP[patchDialogNodeCode.value] || '当前节点'
+})
+
+const patchDialogUsageText = computed(() => {
+  return patchDialogMode.value === 'EVIDENCE'
+    ? '适用于外勤、超出打卡范围、人在外面办事或做活动等情况。请上传现场照片，并填写实际情况说明。'
+    : '适用于忘记打卡、漏打卡的情况。请上传现场照片，并填写补打卡原因。'
+})
 
 const pageBusy = computed(() => {
   return state.loading || state.summaryLoading || state.abnormalLoading || state.trendLoading || state.userSummaryLoading || state.saving || state.checkingIn || state.exporting || state.abnormalExporting || state.deletingId !== null
@@ -1191,7 +1300,149 @@ const personalWorkspaceCheckInHint = computed(() => {
   }
   return state.locationInfo.currentActionHint || '点击后会自动获取定位、提交打卡并刷新今日状态。'
 })
+const PERSONAL_NODE_META = {
+  AM_ON: {
+    stepLabel: '上午',
+    nodeTitleShort: '上班打卡',
+    accentColor: '#4F7DF3',
+    accentSoft: 'rgba(79, 125, 243, 0.12)',
+    accentBorder: 'rgba(79, 125, 243, 0.22)'
+  },
+  AM_OFF: {
+    stepLabel: '上午',
+    nodeTitleShort: '下班打卡',
+    accentColor: '#33B18A',
+    accentSoft: 'rgba(51, 177, 138, 0.12)',
+    accentBorder: 'rgba(51, 177, 138, 0.22)'
+  },
+  PM_ON: {
+    stepLabel: '下午',
+    nodeTitleShort: '上班打卡',
+    accentColor: '#E7A93B',
+    accentSoft: 'rgba(231, 169, 59, 0.14)',
+    accentBorder: 'rgba(231, 169, 59, 0.24)'
+  },
+  PM_OFF: {
+    stepLabel: '下午',
+    nodeTitleShort: '下班打卡',
+    accentColor: '#6C78D8',
+    accentSoft: 'rgba(108, 120, 216, 0.14)',
+    accentBorder: 'rgba(108, 120, 216, 0.24)'
+  }
+}
 
+function resolvePersonalNodeStatusTone(node) {
+  const code = String(node?.statusCode || '').toUpperCase()
+
+  if (code.includes('APPROVED') || code.includes('SUCCESS') || code.includes('NORMAL')) {
+    return 'approved'
+  }
+  if (code.includes('LATE')) {
+    return 'late'
+  }
+  if (code.includes('EARLY')) {
+    return 'early'
+  }
+  if (code.includes('MISSING') || code.includes('ABSENT') || code.includes('REJECT')) {
+    return 'missing'
+  }
+  if (code.includes('EVIDENCE') || node?.canEvidence) {
+    return 'evidence'
+  }
+  if (code.includes('MAKEUP') || node?.canApplyMakeup) {
+    return 'makeup'
+  }
+  if (code.includes('PENDING')) {
+    return 'pending'
+  }
+  return 'pending'
+}
+
+function resolvePersonalNodeStatusLabel(node) {
+  if (node?.statusLabel) {
+    return node.statusLabel
+  }
+
+  const code = String(node?.statusCode || '').toUpperCase()
+
+  if (code.includes('APPROVED') || code.includes('SUCCESS') || code.includes('NORMAL')) {
+    return '正常'
+  }
+  if (code.includes('LATE')) {
+    return '迟到'
+  }
+  if (code.includes('EARLY')) {
+    return '早退'
+  }
+  if (code.includes('MISSING') || code.includes('ABSENT')) {
+    return '未打卡'
+  }
+  if (code.includes('REJECT')) {
+    return '已驳回'
+  }
+  if (code.includes('EVIDENCE')) {
+    return '待取证'
+  }
+  if (code.includes('MAKEUP')) {
+    return '待补卡'
+  }
+  if (code.includes('PENDING')) {
+    return '审核中'
+  }
+  return '待处理'
+}
+
+function buildPersonalNodeActions(node) {
+  const actions = []
+
+if (node?.canEvidence) {
+  actions.push({
+    key: 'evidence',
+    label: '取证（外勤/超范围）',
+    tone: 'primary'
+  })
+}
+
+if (node?.canApplyMakeup) {
+  actions.push({
+    key: 'makeup',
+    label: '补打卡（忘记打卡）',
+    tone: 'warning'
+  })
+}
+
+  return actions
+}
+
+const personalNodeCards = computed(() => {
+  const rawList = Array.isArray(state.locationInfo.nodeStates) ? state.locationInfo.nodeStates : []
+  const rawMap = new Map(rawList.map(item => [item.nodeCode, item]))
+
+  return ['AM_ON', 'AM_OFF', 'PM_ON', 'PM_OFF'].map((nodeCode) => {
+    const raw = rawMap.get(nodeCode) || {}
+    const meta = PERSONAL_NODE_META[nodeCode]
+
+    return {
+      nodeCode,
+      stepLabel: meta.stepLabel,
+      nodeTitleShort: raw.nodeTitleShort || meta.nodeTitleShort,
+      timeRangeText: raw.timeRangeText || '时间以规则为准',
+      actualPunchTime: raw.actualPunchTime || '未打卡',
+      simpleRemark: raw.simpleRemark || '等待当前节点处理',
+      canPunch: Boolean(raw.canPunch),
+      canApplyMakeup: Boolean(raw.canApplyMakeup),
+      canEvidence: Boolean(raw.canEvidence),
+      needEarlyConfirm: Boolean(raw.needEarlyConfirm),
+      statusCode: raw.statusCode || '',
+      statusLabel: resolvePersonalNodeStatusLabel(raw),
+      statusTone: resolvePersonalNodeStatusTone(raw),
+      accentColor: meta.accentColor,
+      accentSoft: meta.accentSoft,
+      accentBorder: meta.accentBorder,
+      actions: buildPersonalNodeActions(raw)
+    }
+  })
+})
 function createEmptyForm() {
   return {
     id: null,
@@ -2841,6 +3092,9 @@ async function fetchCurrentLocation() {
     state.locationInfo.currentActionAvailable = Boolean(data.currentActionAvailable)
     state.locationInfo.currentActionHint = data.currentActionHint || ''
     state.locationInfo.finished = Boolean(data.finished)
+    state.locationInfo.nodeStates = Array.isArray(data.nodeStates) ? data.nodeStates : []
+state.locationInfo.attendanceStatusCode = data.attendanceStatusCode || ''
+state.locationInfo.evidenceNodeCode = data.evidenceNodeCode || ''
     resetCheckInVisualizationTarget()
   } catch (error) {
     state.locationInfo.unitName = ''
@@ -2859,6 +3113,9 @@ async function fetchCurrentLocation() {
     state.locationInfo.currentActionAvailable = false
     state.locationInfo.currentActionHint = ''
     state.locationInfo.finished = false
+    state.locationInfo.nodeStates = []
+state.locationInfo.attendanceStatusCode = ''
+state.locationInfo.evidenceNodeCode = ''
     resetCheckInVisualizationTarget()
   } finally {
     state.locationLoading = false
@@ -3331,7 +3588,111 @@ async function legacyHandleCheckInBrowserOnly() {
     state.checkingIn = false
   }
 }
+function openPatchDialog(nodeCode, mode = 'MAKEUP') {
+  patchDialogMode.value = mode === 'EVIDENCE' ? 'EVIDENCE' : 'MAKEUP'
+  patchDialogNodeCode.value = nodeCode || state.locationInfo.evidenceNodeCode || state.locationInfo.currentAction || ''
+  patchDialogReason.value = ''
+  patchDialogAttachments.value = []
+  patchDialogSubmitting.value = false
+  patchDialogVisible.value = true
+}
+function closePatchDialog() {
+  if (patchDialogSubmitting.value) {
+    return
+  }
+  patchDialogVisible.value = false
+  patchDialogReason.value = ''
+  patchDialogAttachments.value = []
+}
+function handlePersonalNodeAction(payload) {
+  const node = payload?.node || payload || {}
+  const actionKey = payload?.action?.key || payload?.action || ''
+  const nodeCode = node.nodeCode || node.code || ''
 
+  if (actionKey === 'evidence') {
+    openPatchDialog(nodeCode, 'EVIDENCE')
+    return
+  }
+
+  if (actionKey === 'makeup') {
+    openPatchDialog(nodeCode, 'MAKEUP')
+    return
+  }
+
+  showToast('当前操作暂未开放')
+}
+function triggerPatchFileInput() {
+  if (patchDialogSubmitting.value) {
+    return
+  }
+  patchFileInputRef.value?.click()
+}
+function handlePatchAttachmentChange(event) {
+  const file = event?.target?.files?.[0]
+  if (!file) {
+    return
+  }
+
+  const reader = new FileReader()
+  reader.onload = () => {
+    patchDialogAttachments.value = [{
+      name: file.name || '现场照片.jpg',
+      dataUrl: reader.result,
+      sourceType: 'camera',
+      mimeType: file.type || 'image/jpeg'
+    }]
+  }
+  reader.readAsDataURL(file)
+
+  if (event.target) {
+    event.target.value = ''
+  }
+}
+async function submitPatchDialog() {
+  if (!patchDialogNodeCode.value) {
+    showToast('未识别到当前节点')
+    return
+  }
+  if (!patchDialogAttachments.value.length) {
+    showToast('请先上传现场照片')
+    return
+  }
+  if (!patchDialogReason.value) {
+    showToast(patchDialogMode.value === 'EVIDENCE' ? '请填写取证说明' : '请填写补打卡原因')
+    return
+  }
+
+  patchDialogSubmitting.value = true
+  try {
+    const now = new Date()
+    const pad = (v) => String(v).padStart(2, '0')
+    const patchTime = `${leadershipTodayText.value} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+
+    await submitAttendancePatchApplyApi({
+      attendanceDate: leadershipTodayText.value,
+      patchType: patchDialogNodeCode.value,
+      applyType: patchDialogMode.value,
+      patchTime,
+      reason: patchDialogReason.value,
+      attachmentsJson: JSON.stringify(
+        patchDialogAttachments.value.map(item => ({
+          name: item.name,
+          dataUrl: item.dataUrl,
+          sourceType: item.sourceType,
+          mimeType: item.mimeType || ''
+        }))
+      )
+    })
+
+    showToast(patchDialogMode.value === 'EVIDENCE' ? '取证申请已提交，等待审核' : '补打卡申请已提交，等待审核')
+    closePatchDialog()
+    await Promise.all([fetchCurrentLocation(), fetchList(), fetchLeadershipWorkspace()])
+  } catch (error) {
+    showToast(error?.message || (patchDialogMode.value === 'EVIDENCE' ? '取证提交失败' : '补打卡提交失败'))
+  } finally {
+    patchDialogSubmitting.value = false
+  }
+}
 async function handleCheckIn() {
   state.checkingIn = true
   resetCheckInVisualizationSubmission()
@@ -3430,48 +3791,58 @@ async function handleCheckIn() {
 
     await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
     if (result.success) {
-      showToast(resolveCheckInSuccessMessage(result.action))
-    } else {
-      await reportLog(
-        result.status === ATTENDANCE_CHECK_IN_STATUS.OUT_OF_RANGE
-          || result.status === ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
-          || result.status === ATTENDANCE_CHECK_IN_STATUS.LOCATION_WEAK
-          ? LOG_TYPES.FRONTEND_LOCATION_ERROR
-          : LOG_TYPES.FRONTEND_API_ERROR,
-        {
-          traceId: response.traceId || '',
-          module: 'ATTENDANCE',
-          subModule: 'CHECK_IN',
-          title: '打卡失败',
-          summary: state.checkInResult.reason || result.reason || CHECK_IN_FAILURE_MESSAGE,
-          diagnosis: buildLocationDiagnosticPayload({
-            env: usingWechatJsapi ? 'WECHAT' : 'BROWSER',
-            provider: locationSelection.source,
-            stage: 'CHECK_IN_RESULT',
-            errorCode: result.status || 'CHECK_IN_FAILED',
-            rawMessage: result.failReason || result.reason || '',
-            diagnostics,
-            policy: locationAccuracyPolicy.value,
-            extra: {
-              result,
-              locationSelectionSource: locationSelection.source
-            }
-          }).suggestion,
-          errorCode: result.status || 'CHECK_IN_FAILED',
-          message: result.failReason || result.reason || '',
-          requestUrl: '/attendance/check-in',
-          requestMethod: 'POST',
-          requestParams: buildCheckInSubmissionPayload(locationSelection),
-          responseStatus: 200,
-          rawData: {
-            result,
-            diagnostics,
-            visualization: state.checkInVisualization
-          }
+  showToast(resolveCheckInSuccessMessage(result.action))
+} else {
+  if (result.status === 'EVIDENCE_REQUIRED' || result.evidenceNodeCode) {
+    showToast('当前位置超出范围，请提交取证')
+    openPatchDialog(
+      result.evidenceNodeCode || result.action || state.locationInfo.currentAction,
+      'EVIDENCE'
+    )
+    return
+  }
+
+  await reportLog(
+    result.status === ATTENDANCE_CHECK_IN_STATUS.OUT_OF_RANGE
+      || result.status === ATTENDANCE_CHECK_IN_STATUS.LOCATION_INVALID
+      || result.status === ATTENDANCE_CHECK_IN_STATUS.LOCATION_WEAK
+      ? LOG_TYPES.FRONTEND_LOCATION_ERROR
+      : LOG_TYPES.FRONTEND_API_ERROR,
+    {
+      traceId: response.traceId || '',
+      module: 'ATTENDANCE',
+      subModule: 'CHECK_IN',
+      title: '打卡失败',
+      summary: state.checkInResult.reason || result.reason || CHECK_IN_FAILURE_MESSAGE,
+      diagnosis: buildLocationDiagnosticPayload({
+        env: usingWechatJsapi ? 'WECHAT' : 'BROWSER',
+        provider: locationSelection.source,
+        stage: 'CHECK_IN_RESULT',
+        errorCode: result.status || 'CHECK_IN_FAILED',
+        rawMessage: result.failReason || result.reason || '',
+        diagnostics,
+        policy: locationAccuracyPolicy.value,
+        extra: {
+          result,
+          locationSelectionSource: locationSelection.source
         }
-      )
-      showToast(state.checkInResult.reason || result.reason || CHECK_IN_FAILURE_MESSAGE)
+      }).suggestion,
+      errorCode: result.status || 'CHECK_IN_FAILED',
+      message: result.failReason || result.reason || '',
+      requestUrl: '/attendance/check-in',
+      requestMethod: 'POST',
+      requestParams: buildCheckInSubmissionPayload(locationSelection),
+      responseStatus: 200,
+      rawData: {
+        result,
+        diagnostics,
+        visualization: state.checkInVisualization
+      }
     }
+  )
+
+  showToast(state.checkInResult.reason || result.reason || CHECK_IN_FAILURE_MESSAGE)
+}
   } catch (error) {
     const message = resolveCheckInRequestErrorMessage(error)
     const inferredLocationSource = state.checkInVisualization.coordinateSource === 'wechat-gcj02'
@@ -3816,6 +4187,11 @@ async function handleExportAbnormalRanks() {
 }
 
 onMounted(() => {
+  updateIsMobile()
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', updateIsMobile)
+  }
+
   fetchCurrentLocation()
   fetchList()
   fetchLeadershipWorkspace()
@@ -3859,6 +4235,10 @@ watch(leadershipFilteredMembers, (members) => {
 })
 
 onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', updateIsMobile)
+  }
+
   if (checkInMapInstance) {
     checkInMapInstance.destroy()
     checkInMapInstance = null
@@ -4384,5 +4764,112 @@ onBeforeUnmount(() => {
   .attendance-legacy-tools__summary {
     padding: 14px 16px;
   }
+}
+.attendance-action-sheet {
+  padding: 18px 16px 24px;
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+}
+
+.attendance-action-sheet__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1f2937;
+  text-align: center;
+}
+
+.attendance-action-sheet__subtitle {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #64748b;
+  text-align: center;
+}
+
+.attendance-action-sheet__desc {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #475569;
+}
+
+.field {
+  display: block;
+  margin-top: 16px;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.field-textarea {
+  width: 100%;
+  border: 1px solid #dbe3ee;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  resize: none;
+  box-sizing: border-box;
+}
+
+.patch-upload-panel {
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.patch-upload-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.patch-upload-panel__hint {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.patch-upload-panel__empty {
+  margin-top: 10px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.patch-attachment-list {
+  margin-top: 12px;
+}
+
+.patch-attachment-card {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.patch-attachment-card__image {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.patch-attachment-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.attendance-hidden-input {
+  display: none;
 }
 </style>

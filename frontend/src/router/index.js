@@ -43,6 +43,7 @@ import { findFirstMobileWorkspacePath, MOBILE_WORKSPACE_PATH } from '@/constants
 import { isMobileClient } from '@/utils/device'
 
 const WECHAT_LOGIN_RECOVERING_KEY = 'wechat_login_recovering'
+const WECHAT_MOBILE_AUTH_ENTRY_PATHS = new Set(['/mobile-workspace', '/attendance'])
 
 const routes = [
   { path: '/login', component: LoginView, meta: { public: true, title: '登录' } },
@@ -127,6 +128,61 @@ function clearWechatLoginRecoveryFlag() {
   }
 }
 
+function setWechatLoginRecoveryFlag() {
+  if (typeof window === 'undefined') {
+    return
+  }
+  try {
+    window.sessionStorage.setItem(WECHAT_LOGIN_RECOVERING_KEY, '1')
+  } catch (error) {
+    // ignore sessionStorage access errors
+  }
+}
+
+function isWechatLoginRecovering() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+  try {
+    return window.sessionStorage.getItem(WECHAT_LOGIN_RECOVERING_KEY) === '1'
+  } catch (error) {
+    return false
+  }
+}
+
+function isWechatBrowser() {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+  return /micromessenger/i.test(navigator.userAgent || '')
+}
+
+function normalizeEntryRedirect(value, fallback = MOBILE_WORKSPACE_PATH) {
+  const redirect = Array.isArray(value) ? value[0] : value
+  if (typeof redirect !== 'string' || !redirect.startsWith('/') || redirect.startsWith('//')) {
+    return fallback
+  }
+  if (redirect === '/mobile' || redirect.startsWith('/mobile?') || redirect === '/login') {
+    return fallback
+  }
+  return redirect
+}
+
+function applyMobileEntryRedirect(to) {
+  if (to.path !== '/mobile') {
+    return
+  }
+  to.meta.entryRedirectPath = normalizeEntryRedirect(to.query?.redirect, MOBILE_WORKSPACE_PATH)
+}
+
+function shouldStartWechatMobileAuth(to, from) {
+  return WECHAT_MOBILE_AUTH_ENTRY_PATHS.has(to.path)
+    && isWechatBrowser()
+    && isMobileClient()
+    && !isWechatLoginRecovering()
+    && (!from || from.matched.length === 0)
+}
+
 function ensureSuccess(response, fallbackMessage) {
   if (!response || response.code !== 0) {
     throw new Error(response?.message || fallbackMessage)
@@ -162,12 +218,23 @@ async function ensureAccessContext(userStore) {
   return accessContextLoadingPromise
 }
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
   if (to.path.startsWith('/api/auth/wechat-mp-callback')) {
     return '/login'
   }
 
+  applyMobileEntryRedirect(to)
+
   const userStore = useUserStore()
+  if (shouldStartWechatMobileAuth(to, from)) {
+    setWechatLoginRecoveryFlag()
+    userStore.clearLogin()
+    return {
+      path: '/mobile',
+      query: { redirect: normalizeEntryRedirect(to.fullPath, MOBILE_WORKSPACE_PATH) }
+    }
+  }
+
   if (to.meta.public) {
     if (to.path === '/login' && userStore.token) {
       if (userStore.forcePasswordChange) {

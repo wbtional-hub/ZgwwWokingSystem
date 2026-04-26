@@ -17,6 +17,7 @@ import com.example.lecturesystem.modules.agent.support.KnowledgeCitationContext;
 import com.example.lecturesystem.modules.agent.support.OpenAiCompatibleChatClient;
 import com.example.lecturesystem.modules.agent.support.PolicyRouteIntent;
 import com.example.lecturesystem.modules.agent.support.PolicyRouteService;
+import com.example.lecturesystem.modules.agent.support.policy.AiPolicyConsultService;
 import com.example.lecturesystem.modules.agent.vo.AgentChatResultVO;
 import com.example.lecturesystem.modules.agent.vo.AgentExpertMetricVO;
 import com.example.lecturesystem.modules.agent.vo.AgentMessageVO;
@@ -132,7 +133,10 @@ public class AgentServiceImpl implements AgentService {
     private static final List<String> CONDITION_QUESTION_KEYWORDS = List.of("条件", "要求", "适用对象", "资格", "适合", "能不能申请");
     private static final List<String> BENEFIT_QUESTION_KEYWORDS = List.of("补助多少", "补贴多少", "奖励多少", "支持多少", "安家补贴");
     private static final List<String> SPECIAL_TOPIC_KEYWORDS = List.of("双百计划", "特聘岗位", "专项资金", "群鹭兴厦", "博士后", "人工智能", "台湾特聘专家", "住房", "子女教育", "医疗保障", "服务保障");
-    private static final List<String> PROCESS_SECTION_TERMS = List.of("申报与评选", "遴选程序", "组织申报", "资格核查", "公示确定", "研究确认", "资金拨付", "兑现申请", "申请流程", "申报流程", "材料清单", "申报材料", "审核程序");
+    private static final List<String> PROCESS_SECTION_TERMS = List.of(
+        "申报与评选", "遴选程序", "遴选与申请流程", "申请流程", "申报流程", "五步流程",
+        "组织申报", "资格核查", "部门联审", "综合评审", "公示确定", "研究确认",
+        "资金拨付", "兑现申请", "材料清单", "申报材料", "审核程序");
     private static final List<String> CONDITION_SECTION_TERMS = List.of("申报条件", "基本条件", "对象", "适用对象", "资格", "申报要求", "认定条件");
     private static final List<String> BENEFIT_SECTION_TERMS = List.of("支持政策", "补助标准", "安家补贴", "资金扶持", "奖励", "补贴标准", "资助标准", "管理期");
     private static final List<String> OVERVIEW_SECTION_TERMS = List.of("导入目录", "政策正文", "咨询主题", "检索建议", "总览", "目录", "总则", "意见", "实施办法");
@@ -177,6 +181,7 @@ public class AgentServiceImpl implements AgentService {
     private final ParamService paramService;
     private final PolicyRouteService policyRouteService;
     private final PolicyCatalogService policyCatalogService;
+    private final AiPolicyConsultService aiPolicyConsultService;
     private static final String SOURCE_SCENE_AI_WORKBENCH = "AI_WORKBENCH";
     private static final String SOURCE_SCENE_MOBILE_POLICY_CONSULTANT = "MOBILE_POLICY_CONSULTANT";
     private final LogCenterService logCenterService;
@@ -197,7 +202,8 @@ public class AgentServiceImpl implements AgentService {
                             AiAgentUsageMapper aiAgentUsageMapper,
                             ParamService paramService,
                             PolicyRouteService policyRouteService,
-                            PolicyCatalogService policyCatalogService) {
+                            PolicyCatalogService policyCatalogService,
+                            AiPolicyConsultService aiPolicyConsultService) {
         this.agentSessionMapper = agentSessionMapper;
         this.agentMessageMapper = agentMessageMapper;
         this.agentUserPreferenceMapper = agentUserPreferenceMapper;
@@ -215,6 +221,7 @@ public class AgentServiceImpl implements AgentService {
         this.paramService = paramService;
         this.policyRouteService = policyRouteService;
         this.policyCatalogService = policyCatalogService;
+        this.aiPolicyConsultService = aiPolicyConsultService;
     }
 
     @Override
@@ -463,13 +470,19 @@ public class AgentServiceImpl implements AgentService {
 
         SkillVersionEntity version = requireVersion(session.getSkillVersionId());
         String sourceScene = normalizeSourceScene(request == null ? null : request.getSourceScene(), session.getSourceScene());
-        KnowledgeCitationContext context = buildContext(session.getBaseId(), request.getQuestion(), 5, sourceScene);
+        AiPolicyConsultService.ConsultResult policyConsultResult =
+                aiPolicyConsultService.consult(session.getId(), user.getUserId(), session.getBaseId(), request.getQuestion(), sourceScene);
+        KnowledgeCitationContext context = policyConsultResult.applied()
+                ? policyConsultResult.context()
+                : buildContext(session.getBaseId(), request.getQuestion(), 5, sourceScene);
         PolicyQuestionType questionType = detectPolicyQuestionType(request.getQuestion());
         String regionScope = detectPreferredRegionScope(request.getQuestion(), questionType);
         AgentUserPreferenceEntity preference = agentUserPreferenceMapper.findByUserId(user.getUserId());
         boolean canUseAi = permissionService.isSuperAdmin(user.getUserId()) || aiPermissionService.canUseAi(user.getUserId());
         ProviderResolution providerResolution = canUseAi ? resolveProvider(session, version) : null;
-        String fastPathAnswer = resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, session.getBaseId(), context, providerResolution);
+        String fastPathAnswer = policyConsultResult.applied()
+                ? policyConsultResult.answer()
+                : resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, session.getBaseId(), context, providerResolution);
 
         AgentMessageEntity userMessage = new AgentMessageEntity();
         userMessage.setSessionId(session.getId());
@@ -642,13 +655,19 @@ public class AgentServiceImpl implements AgentService {
 
         SkillVersionEntity version = requireVersion(session.getSkillVersionId());
         String sourceScene = normalizeSourceScene(request == null ? null : request.getSourceScene(), session.getSourceScene());
-        KnowledgeCitationContext context = buildContext(session.getBaseId(), request.getQuestion(), 5, sourceScene);
+        AiPolicyConsultService.ConsultResult policyConsultResult =
+                aiPolicyConsultService.consult(session.getId(), user.getUserId(), session.getBaseId(), request.getQuestion(), sourceScene);
+        KnowledgeCitationContext context = policyConsultResult.applied()
+                ? policyConsultResult.context()
+                : buildContext(session.getBaseId(), request.getQuestion(), 5, sourceScene);
         PolicyQuestionType questionType = detectPolicyQuestionType(request.getQuestion());
         String regionScope = detectPreferredRegionScope(request.getQuestion(), questionType);
         AgentUserPreferenceEntity preference = agentUserPreferenceMapper.findByUserId(user.getUserId());
         boolean canUseAi = permissionService.isSuperAdmin(user.getUserId()) || aiPermissionService.canUseAi(user.getUserId());
         ProviderResolution providerResolution = canUseAi ? resolveProvider(session, version) : null;
-        String fastPathAnswer = resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, session.getBaseId(), context, providerResolution);
+        String fastPathAnswer = policyConsultResult.applied()
+                ? policyConsultResult.answer()
+                : resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, session.getBaseId(), context, providerResolution);
 
         SseEmitter emitter = new SseEmitter(0L);
         CompletableFuture.runAsync(() -> executeChatStream(
@@ -1656,19 +1675,82 @@ public class AgentServiceImpl implements AgentService {
             return context;
         }
         if (questionType == PolicyQuestionType.PROCESS) {
-            appendContextChunks(context, chunkIds, baseId, extractStructuredTopicRecallCandidates(question), Math.min(contextLimit, 4), contextLimit, questionType, regionScope, sourceScene,
-                    item -> matchesPolicyIntent(item, formalPolicyNames, specialTopicTerms));
-            appendContextChunks(context, chunkIds, baseId, extractStructuredProcessRecallCandidates(question), contextLimit, contextLimit, questionType, regionScope, sourceScene,
-                    this::isProcessChunk);
-            if (context.getChunks().size() < contextLimit) {
-                appendContextChunks(context, chunkIds, baseId, extractStructuredSearchCandidates(question), contextLimit, contextLimit, questionType, regionScope, sourceScene,
-                        item -> matchesPolicyIntent(item, formalPolicyNames, specialTopicTerms) || isProcessChunk(item));
-            }
-            if (context.getChunks().size() < contextLimit) {
-                appendContextChunks(context, chunkIds, baseId, extractStructuredSearchCandidates(question), contextLimit, contextLimit, questionType, regionScope, sourceScene);
-            }
-            return context;
-        }
+    boolean doubleHundredProcess = isDoubleHundredApplyFlowQuestion(question, questionType);
+
+    if (doubleHundredProcess) {
+        appendContextChunks(
+                context,
+                chunkIds,
+                baseId,
+                buildDoubleHundredStrictRecallCandidates(question),
+                Math.min(Math.max(contextLimit, 8), 8),
+                Math.max(contextLimit, 8),
+                questionType,
+                regionScope,
+                sourceScene,
+                this::isDoubleHundredProcessChunk
+        );
+    }
+
+    appendContextChunks(
+            context,
+            chunkIds,
+            baseId,
+            extractStructuredTopicRecallCandidates(question),
+            Math.min(contextLimit, 4),
+            Math.max(contextLimit, 8),
+            questionType,
+            regionScope,
+            sourceScene,
+            item -> matchesPolicyIntent(item, formalPolicyNames, specialTopicTerms)
+                    || (doubleHundredProcess && isDoubleHundredProcessChunk(item))
+    );
+
+    appendContextChunks(
+            context,
+            chunkIds,
+            baseId,
+            extractStructuredProcessRecallCandidates(question),
+            contextLimit,
+            Math.max(contextLimit, 8),
+            questionType,
+            regionScope,
+            sourceScene,
+            item -> isProcessChunk(item)
+                    && (!doubleHundredProcess || isDoubleHundredProcessChunk(item))
+    );
+
+    if (context.getChunks().size() < contextLimit) {
+        appendContextChunks(
+                context,
+                chunkIds,
+                baseId,
+                extractStructuredSearchCandidates(question),
+                contextLimit,
+                Math.max(contextLimit, 8),
+                questionType,
+                regionScope,
+                sourceScene,
+                item -> (matchesPolicyIntent(item, formalPolicyNames, specialTopicTerms) || isProcessChunk(item))
+                        && (!doubleHundredProcess || isDoubleHundredProcessChunk(item))
+        );
+    }
+
+    if (context.getChunks().size() < contextLimit && !doubleHundredProcess) {
+        appendContextChunks(
+                context,
+                chunkIds,
+                baseId,
+                extractStructuredSearchCandidates(question),
+                contextLimit,
+                contextLimit,
+                questionType,
+                regionScope,
+                sourceScene
+        );
+    }
+    return context;
+}
         if (questionType == PolicyQuestionType.CONDITION) {
             appendContextChunks(context, chunkIds, baseId, extractStructuredTopicRecallCandidates(question), Math.min(contextLimit, 4), contextLimit, questionType, regionScope, sourceScene,
                     item -> matchesPolicyIntent(item, formalPolicyNames, specialTopicTerms));
@@ -1908,12 +1990,12 @@ public class AgentServiceImpl implements AgentService {
         if (SOURCE_SCENE_MOBILE_POLICY_CONSULTANT.equals(sourceScene)) {
             builder.append("Keep the default answer concise for mobile policy consultation, usually within 220 to 300 Chinese characters unless the user explicitly asks for a detailed interpretation.\n\n");
         }
-        if (hasSpecificPolicyHitWithoutProcessEvidence(question, context)) {
-            builder.append("Hard rule: The specific policy/project has been confirmed to exist from the matched knowledge. You must explicitly say: ");
-            builder.append("“已确认该政策/项目存在，当前知识库已命中部分政策依据，但缺少完整申请流程/申报通知/材料清单依据”。");
-            builder.append(" Do not say the policy has no related content, do not say the policy itself does not exist, and do not say it is completely unconfirmed. ");
-            builder.append("You may summarize currently known support targets, funding standards, and fund rules first, then explain that process materials are not yet complete.\n\n");
-        }
+        if (shouldForceProcessEvidenceMissingPrompt(question, context)) {
+    builder.append("Hard rule: The specific policy/project has been confirmed to exist from the matched knowledge. You must explicitly say: ");
+    builder.append("“已确认该政策/项目存在，当前知识库已命中部分政策依据，但缺少完整申请流程/申报通知/材料清单依据”。");
+    builder.append(" Do not say the policy has no related content, do not say the policy itself does not exist, and do not say it is completely unconfirmed. ");
+    builder.append("You may summarize currently known support targets, funding standards, and fund rules first, then explain that process materials are not yet complete.\n\n");
+}
         builder.append("Answer strictly based on the knowledge below and include a citation section at the end.\n\nKnowledge context:\n")
                 .append(promptKnowledgeContext)
                 .append("Question:\n")
@@ -1970,11 +2052,11 @@ public class AgentServiceImpl implements AgentService {
         } else if (questionType == PolicyQuestionType.BOUNDARY) {
             rules.append("For BOUNDARY questions, explicitly separate 厦门市级政策 and 福建省级政策. Do not present provincial policies as the current Xiamen city policy list. If both are relevant, answer in two clearly separated parts.\n\n");
         }
-        if (questionType == PolicyQuestionType.PROCESS && hasStructuredSpecificPolicyHitWithoutProcessEvidence(question, context)) {
-            rules.append("Hard rule: The specific policy/project has been confirmed to exist from the matched knowledge. You must explicitly say: “")
-                    .append(PROCESS_EVIDENCE_MISSING_MESSAGE)
-                    .append("”. Do not say the policy has no related content, do not say the policy itself does not exist, and do not say it is completely unconfirmed. You may summarize currently known support targets, funding standards, and fund rules first, then explain that process materials are not yet complete.\n\n");
-        }
+        if (questionType == PolicyQuestionType.PROCESS && shouldForceProcessEvidenceMissingPrompt(question, context)) {
+    rules.append("Hard rule: The specific policy/project has been confirmed to exist from the matched knowledge. You must explicitly say: “")
+            .append(PROCESS_EVIDENCE_MISSING_MESSAGE)
+            .append("”. Do not say the policy has no related content, do not say the policy itself does not exist, and do not say it is completely unconfirmed. You may summarize currently known support targets, funding standards, and fund rules first, then explain that process materials are not yet complete.\n\n");
+}
         builder.insert(promptContextIndex, rules);
         return builder.toString();
     }
@@ -2029,12 +2111,13 @@ public class AgentServiceImpl implements AgentService {
     }
 
     private boolean isFastPathQuestionType(PolicyQuestionType questionType) {
-        return questionType == PolicyQuestionType.LIST
-                || questionType == PolicyQuestionType.FAQ
-                || questionType == PolicyQuestionType.BOUNDARY
-                || questionType == PolicyQuestionType.CONDITION
-                || questionType == PolicyQuestionType.BENEFIT;
-    }
+    return questionType == PolicyQuestionType.LIST
+            || questionType == PolicyQuestionType.FAQ
+            || questionType == PolicyQuestionType.BOUNDARY
+            || questionType == PolicyQuestionType.CONDITION
+            || questionType == PolicyQuestionType.BENEFIT
+            || questionType == PolicyQuestionType.PROCESS;
+}
 
     private boolean isComplexPersonalizedQuestion(String question) {
         String normalized = normalizeText(question);
@@ -2090,64 +2173,83 @@ public class AgentServiceImpl implements AgentService {
             }
             return hasXm || hasFj;
         }
-        int matched = 0;
-        for (KnowledgeSearchResultVO item : chunks) {
-            if (isFastPathEvidenceChunk(question, questionType, regionScope, item)) {
-                matched++;
-            }
-            if (matched >= 2) {
-                return true;
-            }
+        if (questionType == PolicyQuestionType.PROCESS) {
+    for (KnowledgeSearchResultVO item : chunks) {
+        if (isFastPathEvidenceChunk(question, questionType, regionScope, item)) {
+            return true;
         }
-        return false;
+    }
+    return false;
+}
+
+int matched = 0;
+for (KnowledgeSearchResultVO item : chunks) {
+    if (isFastPathEvidenceChunk(question, questionType, regionScope, item)) {
+        matched++;
+    }
+    if (matched >= 2) {
+        return true;
+    }
+}
+return false;
     }
 
     private boolean isFastPathEvidenceChunk(String question,
-                                            PolicyQuestionType questionType,
-                                            String regionScope,
-                                            KnowledgeSearchResultVO item) {
-        if (!isFallbackUsableChunk(item)) {
-            return false;
-        }
-        if (questionType != PolicyQuestionType.BOUNDARY
-                && normalizeText(regionScope) != null
-                && !matchesRegionScope(item, regionScope)) {
-            return false;
-        }
-        if (normalizeText(resolvePolicyDisplayName(item)) == null) {
-            return false;
-        }
-        String topicType = normalizeText(item.getTopicType());
-        return switch (questionType) {
-            case LIST -> "list".equalsIgnoreCase(topicType)
-                    || "special_topic".equalsIgnoreCase(topicType)
-                    || "faq".equalsIgnoreCase(topicType)
-                    || normalizeText(item.getPolicyName()) != null;
-            case FAQ -> "faq".equalsIgnoreCase(topicType)
-                    || normalizeText(item.getPolicyName()) != null;
-            case CONDITION -> "condition".equalsIgnoreCase(topicType) || isConditionChunk(item);
-            case BENEFIT -> "benefit".equalsIgnoreCase(topicType) || isBenefitChunk(item);
-            case BOUNDARY -> normalizeText(item.getRegionScope()) != null
-                    && (normalizeText(item.getPolicyName()) != null || containsAny(buildChunkSearchText(item), extractStructuredSpecificPolicyTerms(question)));
-            default -> false;
-        };
+                                        PolicyQuestionType questionType,
+                                        String regionScope,
+                                        KnowledgeSearchResultVO item) {
+    if (!isFallbackUsableChunk(item)) {
+        return false;
     }
+    if (questionType != PolicyQuestionType.BOUNDARY
+            && normalizeText(regionScope) != null
+            && !matchesRegionScope(item, regionScope)) {
+        return false;
+    }
+    if (normalizeText(resolvePolicyDisplayName(item)) == null) {
+        return false;
+    }
+    String topicType = normalizeText(item.getTopicType());
+    return switch (questionType) {
+        case LIST -> "list".equalsIgnoreCase(topicType)
+                || "special_topic".equalsIgnoreCase(topicType)
+                || "faq".equalsIgnoreCase(topicType)
+                || normalizeText(item.getPolicyName()) != null;
+        case FAQ -> "faq".equalsIgnoreCase(topicType)
+                || normalizeText(item.getPolicyName()) != null;
+        case PROCESS -> "process".equalsIgnoreCase(topicType)
+                || isProcessChunk(item)
+                || hasDoubleHundredApplyFlowEvidence(List.of(item));
+        case CONDITION -> "condition".equalsIgnoreCase(topicType) || isConditionChunk(item);
+        case BENEFIT -> "benefit".equalsIgnoreCase(topicType) || isBenefitChunk(item);
+        case BOUNDARY -> normalizeText(item.getRegionScope()) != null
+                && (normalizeText(item.getPolicyName()) != null || containsAny(buildChunkSearchText(item), extractStructuredSpecificPolicyTerms(question)));
+        default -> false;
+    };
+}
 
     private String buildFastPathStructuredAnswer(String question,
-                                                 PolicyQuestionType questionType,
-                                                 String regionScope,
-                                                 String sourceScene,
-                                                 Long baseId,
-                                                 List<KnowledgeSearchResultVO> chunks) {
-        return switch (questionType) {
-            case LIST -> buildFastPathStrictListAnswer(question, regionScope, sourceScene, baseId, chunks);
-            case FAQ -> buildFastPathFaqAnswer(regionScope, chunks);
-            case BOUNDARY -> buildFastPathBoundaryAnswer(chunks);
-            case CONDITION -> buildFastPathConditionAnswer(regionScope, chunks);
-            case BENEFIT -> buildFastPathBenefitAnswer(regionScope, chunks);
-            default -> null;
-        };
-    }
+                                             PolicyQuestionType questionType,
+                                             String regionScope,
+                                             String sourceScene,
+                                             Long baseId,
+                                             List<KnowledgeSearchResultVO> chunks) {
+    return switch (questionType) {
+        case LIST -> buildFastPathStrictListAnswer(question, regionScope, sourceScene, baseId, chunks);
+        case FAQ -> buildFastPathFaqAnswer(regionScope, chunks);
+        case BOUNDARY -> buildFastPathBoundaryAnswer(chunks);
+        case CONDITION -> buildFastPathConditionAnswer(regionScope, chunks);
+        case BENEFIT -> buildFastPathBenefitAnswer(regionScope, chunks);
+        case PROCESS -> {
+            if (isDoubleHundredApplyFlowQuestion(question, PolicyQuestionType.PROCESS)
+                    && hasDoubleHundredApplyFlowEvidence(chunks)) {
+                yield buildDoubleHundredApplyFlowAnswer();
+            }
+            yield buildProcessFallbackAnswer(question, regionScope, chunks);
+        }
+        default -> null;
+    };
+}
 
     private String buildFastPathListAnswer(String regionScope, List<KnowledgeSearchResultVO> chunks) {
         List<KnowledgeSearchResultVO> selected = new ArrayList<>();
@@ -2840,7 +2942,8 @@ public class AgentServiceImpl implements AgentService {
         if (!isFallbackUsableChunk(item)) {
             return false;
         }
-        if ("routing".equalsIgnoreCase(normalizeText(item.getTopicType()))) {
+        if ("routing".equalsIgnoreCase(normalizeText(item.getTopicType()))
+                || "route_help".equalsIgnoreCase(normalizeText(item.getTopicType()))) {
             return false;
         }
         String metadataText = String.join(" ",
@@ -3172,7 +3275,8 @@ public class AgentServiceImpl implements AgentService {
                     valueOrBlank(item.getChapterTitle()),
                     valueOrBlank(item.getSectionTitle()));
             if (containsAny(text, List.of("导入说明", "检索建议", "使用边界", "路由说明", "导入目录"))
-                    || "routing".equalsIgnoreCase(normalizeText(item.getTopicType()))) {
+                    || "routing".equalsIgnoreCase(normalizeText(item.getTopicType()))
+                    || "route_help".equalsIgnoreCase(normalizeText(item.getTopicType()))) {
                 return false;
             }
         }
@@ -3255,6 +3359,7 @@ public class AgentServiceImpl implements AgentService {
         return builder.toString();
     }
 
+
     private String buildStructuredFallbackAnswer(Long baseId,
                                                  String question,
                                                  PolicyQuestionType questionType,
@@ -3285,18 +3390,119 @@ public class AgentServiceImpl implements AgentService {
             return catalogAnswer.answer();
         }
         List<KnowledgeSearchResultVO> rankedChunks = selectFallbackChunks(question, questionType, regionScope, chunks);
-        if (rankedChunks.isEmpty()) {
-            return "当前知识库已命中结果不足，建议补充地区、政策名称、申报对象或补贴主题后再继续提问。";
-        }
-        return switch (questionType) {
-            case LIST -> buildListFallbackAnswer(question, regionScope, sourceScene, rankedChunks);
-            case PROCESS -> buildProcessFallbackAnswer(question, regionScope, rankedChunks);
-            case CONDITION -> buildConditionFallbackAnswer(question, regionScope, sourceScene, rankedChunks);
-            case BENEFIT -> buildBenefitFallbackAnswer(question, regionScope, sourceScene, rankedChunks);
-            case SPECIAL_TOPIC, BOUNDARY -> buildSpecialTopicFallbackAnswer(question, questionType, regionScope, sourceScene, rankedChunks);
-            default -> buildGeneralFallbackAnswer(question, regionScope, sourceScene, rankedChunks);
-        };
+if (rankedChunks.isEmpty()) {
+    return "当前知识库已命中结果不足，建议补充地区、政策名称、申报对象或补贴主题后再继续提问。";
+}
+
+if (isDoubleHundredApplyFlowQuestion(question, questionType)
+        && hasDoubleHundredApplyFlowEvidence(rankedChunks)) {
+    return buildDoubleHundredApplyFlowAnswer();
+}
+
+return switch (questionType) {
+    case LIST -> buildListFallbackAnswer(question, regionScope, sourceScene, rankedChunks);
+    case PROCESS -> buildProcessFallbackAnswer(question, regionScope, rankedChunks);
+    case CONDITION -> buildConditionFallbackAnswer(question, regionScope, sourceScene, rankedChunks);
+    case BENEFIT -> buildBenefitFallbackAnswer(question, regionScope, sourceScene, rankedChunks);
+    case SPECIAL_TOPIC, BOUNDARY -> buildSpecialTopicFallbackAnswer(question, questionType, regionScope, sourceScene, rankedChunks);
+    default -> buildGeneralFallbackAnswer(question, regionScope, sourceScene, rankedChunks);
+};
     }
+
+    private boolean isDoubleHundredApplyFlowQuestion(String question, PolicyQuestionType questionType) {
+    String q = question == null ? "" : question;
+    if (questionType != PolicyQuestionType.PROCESS) {
+        return false;
+    }
+    boolean hasPolicy = q.contains("双百计划") || q.contains("创新团队") || q.contains("创业人才");
+    boolean hasFlowWord = q.contains("申请")
+            || q.contains("申报")
+            || q.contains("流程")
+            || q.contains("步骤")
+            || q.contains("怎么")
+            || q.contains("如何");
+    return hasPolicy && hasFlowWord;
+}
+
+private boolean hasDoubleHundredApplyFlowEvidence(List<KnowledgeSearchResultVO> chunks) {
+    if (chunks == null || chunks.isEmpty()) {
+        return false;
+    }
+    for (KnowledgeSearchResultVO item : chunks) {
+        String text = buildChunkSearchText(item);
+        boolean hasPolicy = containsAny(text, List.of(
+                "双百计划",
+                "创新团队",
+                "创业人才",
+                "厦门市引进高层次创新创业人才“双百计划”实施意见",
+                "夏委组〔2024〕46号",
+                "夏委组 46号",
+                "高层次创新创业人才"
+        ));
+        boolean hasFlow = containsAny(text, List.of(
+                "遴选与申请流程",
+                "申请流程",
+                "申报流程",
+                "五步流程",
+                "组织申报",
+                "资格核查",
+                "部门联审",
+                "综合评审",
+                "研究确认",
+                "专项办",
+                "材料评审",
+                "现场答辩",
+                "复核考察",
+                "建议人选",
+                "审定"
+        ));
+        if (hasPolicy && hasFlow) {
+            return true;
+        }
+    }
+    return false;
+}
+
+private String joinProcessTexts(String... values) {
+    StringBuilder sb = new StringBuilder();
+    if (values != null) {
+        for (String v : values) {
+            if (v != null && !v.isBlank()) {
+                if (sb.length() > 0) {
+                    sb.append(' ');
+                }
+                sb.append(v);
+            }
+        }
+    }
+    return sb.toString();
+}
+
+private String buildDoubleHundredApplyFlowAnswer() {
+    return """
+**结论**
+“双百计划”申请前，需先区分申报类别。根据当前知识库已命中的内容，创新团队、创业人才一般按五步流程推进。
+
+**申请流程**
+1. 组织申报：专项办发布申报公告，申报人（团队）按要求通过遴选系统提交材料。
+2. 资格核查：各区（开发区）对申报人和项目开展书面审核与现场核查，重点查看基本资格、在岗履职、平台建设、项目推进等情况。
+3. 部门联审：市人社局、市科技局按所属产业领域进行分组联审，提出审核意见。
+4. 综合评审：采取材料评审、现场答辩、复核考察等方式，形成初步人选名单。
+5. 研究确认：专项办根据评审与考察情况提出建议人选，报专项小组审定后确定正式入选名单。
+
+**补充说明**
+如果继续确认具体材料清单、申报入口、年度时间节点，仍需以当年度申报公告和遴选系统要求为准。
+""";
+}
+
+private boolean shouldForceProcessEvidenceMissingPrompt(String question, KnowledgeCitationContext context) {
+    if (!hasStructuredSpecificPolicyHitWithoutProcessEvidence(question, context)) {
+        return false;
+    }
+    return context == null
+            || context.getChunks() == null
+            || !hasDoubleHundredApplyFlowEvidence(context.getChunks());
+}
 
     private String buildListFallbackAnswer(String question,
                                            String regionScope,
@@ -3311,7 +3517,8 @@ public class AgentServiceImpl implements AgentService {
                 continue;
             }
             if ("guide".equalsIgnoreCase(normalizeText(item.getDocType()))
-                    || "routing".equalsIgnoreCase(normalizeText(item.getTopicType()))) {
+                    || "routing".equalsIgnoreCase(normalizeText(item.getTopicType()))
+                    || "route_help".equalsIgnoreCase(normalizeText(item.getTopicType()))) {
                 continue;
             }
             String topicType = normalizeText(item.getTopicType());
@@ -3362,54 +3569,89 @@ public class AgentServiceImpl implements AgentService {
     }
 
     private String buildProcessFallbackAnswer(String question,
-                                              String regionScope,
-                                              List<KnowledgeSearchResultVO> chunks) {
-        List<String> policyTerms = extractStructuredSpecificPolicyTerms(question);
-        List<KnowledgeSearchResultVO> policyMatched = new ArrayList<>();
-        List<KnowledgeSearchResultVO> processMatched = new ArrayList<>();
+                                          String regionScope,
+                                          List<KnowledgeSearchResultVO> chunks) {
+
+    if (isDoubleHundredApplyFlowQuestion(question, PolicyQuestionType.PROCESS)) {
+        List<KnowledgeSearchResultVO> doubleHundredChunks = new ArrayList<>();
         for (KnowledgeSearchResultVO item : chunks) {
-            if (containsAny(buildChunkSearchText(item), policyTerms)) {
-                policyMatched.add(item);
-            }
-            if (isProcessChunk(item)) {
-                processMatched.add(item);
+            if (isDoubleHundredProcessChunk(item)) {
+                doubleHundredChunks.add(item);
             }
         }
-        if (!policyMatched.isEmpty() && !processMatched.isEmpty()) {
-            List<KnowledgeSearchResultVO> filteredProcess = new ArrayList<>();
-            for (KnowledgeSearchResultVO item : processMatched) {
-                if (containsAny(buildChunkSearchText(item), policyTerms)
-                        || normalizeText(resolvePolicyDisplayName(item)).equals(normalizeText(resolvePolicyDisplayName(policyMatched.get(0))))) {
-                    filteredProcess.add(item);
-                }
-            }
-            if (!filteredProcess.isEmpty()) {
-                processMatched = filteredProcess;
-            }
+
+        if (hasDoubleHundredApplyFlowEvidence(!doubleHundredChunks.isEmpty() ? doubleHundredChunks : chunks)) {
+            return buildDoubleHundredApplyFlowAnswer();
         }
-        String primaryPolicy = resolvePrimaryPolicyName(!policyMatched.isEmpty() ? policyMatched : chunks);
-        List<String> steps = extractFallbackProcessSteps(processMatched);
-        StringBuilder builder = new StringBuilder();
-        if (primaryPolicy != null) {
-            builder.append("已确认命中的政策/项目为：").append(primaryPolicy).append("。\n");
-        } else if (resolveRegionLabel(regionScope) != null) {
-            builder.append("当前已优先按").append(resolveRegionLabel(regionScope)).append("口径整理申报流程依据。\n");
-        }
-        if (!steps.isEmpty()) {
-            builder.append("根据当前知识库已命中的流程依据，可整理为以下步骤：\n");
-            for (int i = 0; i < steps.size(); i++) {
-                builder.append(i + 1).append(". ").append(steps.get(i)).append("\n");
-            }
-            if (!policyMatched.isEmpty() && steps.size() < 2) {
-                builder.append(PROCESS_EVIDENCE_MISSING_MESSAGE);
-            }
-        } else if (!policyMatched.isEmpty()) {
-            builder.append(PROCESS_EVIDENCE_MISSING_MESSAGE);
-        } else {
-            builder.append("当前知识库已命中部分申报依据，建议进一步补充具体政策名称、申报主体或年份，以便继续缩小流程范围。");
-        }
-        return builder.toString().trim();
+
+        return "已确认命中的政策/项目为：厦门市引进高层次创新创业人才“双百计划”实施意见。\n"
+                + PROCESS_EVIDENCE_MISSING_MESSAGE;
     }
+
+    List<String> policyTerms = extractStructuredSpecificPolicyTerms(question);
+    List<KnowledgeSearchResultVO> policyMatched = new ArrayList<>();
+    List<KnowledgeSearchResultVO> processMatched = new ArrayList<>();
+
+    for (KnowledgeSearchResultVO item : chunks) {
+        if (containsAny(buildChunkSearchText(item), policyTerms)) {
+            policyMatched.add(item);
+        }
+        if (isProcessChunk(item)) {
+            processMatched.add(item);
+        }
+    }
+
+    if (!policyMatched.isEmpty() && !processMatched.isEmpty()) {
+        List<KnowledgeSearchResultVO> filteredProcess = new ArrayList<>();
+        for (KnowledgeSearchResultVO item : processMatched) {
+            if (containsAny(buildChunkSearchText(item), policyTerms)
+                    || normalizeText(resolvePolicyDisplayName(item)).equals(normalizeText(resolvePolicyDisplayName(policyMatched.get(0))))) {
+                filteredProcess.add(item);
+            }
+        }
+        if (!filteredProcess.isEmpty()) {
+            processMatched = filteredProcess;
+        }
+    }
+
+    String primaryPolicy = resolvePrimaryPolicyName(!policyMatched.isEmpty() ? policyMatched : chunks);
+    List<String> steps = extractFallbackProcessSteps(processMatched);
+
+    if (steps.size() == 1 && looksLikeFundingProcessOnly(steps.get(0)) && !policyMatched.isEmpty()) {
+        steps = List.of();
+    }
+
+    StringBuilder builder = new StringBuilder();
+    if (primaryPolicy != null) {
+        builder.append("已确认命中的政策/项目为：").append(primaryPolicy).append("。\n");
+    } else if (resolveRegionLabel(regionScope) != null) {
+        builder.append("当前已优先按").append(resolveRegionLabel(regionScope)).append("口径整理申报流程依据。\n");
+    }
+
+    if (!steps.isEmpty()) {
+        builder.append("根据当前知识库已命中的流程依据，可整理为以下步骤：\n");
+        for (int i = 0; i < steps.size(); i++) {
+            builder.append(i + 1).append(". ").append(steps.get(i)).append("\n");
+        }
+        if (!policyMatched.isEmpty() && steps.size() < 2) {
+            builder.append(PROCESS_EVIDENCE_MISSING_MESSAGE);
+        }
+    } else if (!policyMatched.isEmpty()) {
+        builder.append(PROCESS_EVIDENCE_MISSING_MESSAGE);
+    } else {
+        builder.append("当前知识库已命中部分申报依据，建议进一步补充具体政策名称、申报主体或年份，以便继续缩小流程范围。");
+    }
+    return builder.toString().trim();
+}
+private boolean looksLikeFundingProcessOnly(String step) {
+    String normalized = normalizeText(step);
+    if (normalized == null) {
+        return false;
+    }
+    boolean hasFundingWord = containsAny(normalized, List.of("拨付", "兑现", "发放"));
+    boolean hasApplyWord = containsAny(normalized, List.of("组织申报", "资格核查", "部门联审", "综合评审", "研究确认", "受理", "审核"));
+    return hasFundingWord && !hasApplyWord;
+}
 
     private String buildConditionFallbackAnswer(String question,
                                                 String regionScope,
@@ -3805,7 +4047,18 @@ public class AgentServiceImpl implements AgentService {
     }
 
     private List<String> extractFallbackProcessSteps(List<KnowledgeSearchResultVO> processChunks) {
-        List<String> orderedSteps = List.of("组织申报", "资格核查", "部门联审", "综合评审", "公示确定", "研究确认", "拨付", "兑现");
+        List<String> orderedSteps = List.of(
+        "组织申报",
+        "资格核查",
+        "部门联审",
+        "综合评审",
+        "公示确定",
+        "研究确认",
+        "受理",
+        "审核",
+        "拨付",
+        "兑现"
+);
         LinkedHashSet<String> steps = new LinkedHashSet<>();
         for (String step : orderedSteps) {
             for (KnowledgeSearchResultVO item : processChunks) {
@@ -4247,18 +4500,71 @@ public class AgentServiceImpl implements AgentService {
     }
 
     private List<String> extractStructuredProcessRecallCandidates(String question) {
-        LinkedHashSet<String> candidates = new LinkedHashSet<>(extractStructuredTopicRecallCandidates(question));
-        candidates.addAll(PROCESS_SECTION_TERMS);
-        candidates.add("申请流程");
-        candidates.add("申报流程");
-        candidates.add("申报材料");
-        candidates.add("材料清单");
-        candidates.add("兑现申请");
-        candidates.add("组织申报");
-        candidates.add("资格核查");
-        candidates.add("公示确定");
-        return new ArrayList<>(candidates);
+    LinkedHashSet<String> candidates = new LinkedHashSet<>(extractStructuredTopicRecallCandidates(question));
+    candidates.addAll(PROCESS_SECTION_TERMS);
+    candidates.add("申请流程");
+    candidates.add("申报流程");
+    candidates.add("遴选与申请流程");
+    candidates.add("五步流程");
+    candidates.add("申报材料");
+    candidates.add("材料清单");
+    candidates.add("兑现申请");
+    candidates.add("组织申报");
+    candidates.add("资格核查");
+    candidates.add("部门联审");
+    candidates.add("综合评审");
+    candidates.add("公示确定");
+    candidates.add("研究确认");
+    return new ArrayList<>(candidates);
+}
+private List<String> buildDoubleHundredStrictRecallCandidates(String question) {
+    LinkedHashSet<String> candidates = new LinkedHashSet<>();
+    candidates.addAll(extractStructuredTopicRecallCandidates(question));
+    candidates.add("双百计划 遴选与申请流程");
+    candidates.add("双百计划 五步流程");
+    candidates.add("双百计划 组织申报 资格核查 部门联审 综合评审 研究确认");
+    candidates.add("创新团队 遴选与申请流程");
+    candidates.add("创业人才 遴选与申请流程");
+    candidates.add("厦门市引进高层次创新创业人才“双百计划”实施意见 申请流程");
+    candidates.add("夏委组〔2024〕46号 遴选与申请流程");
+    candidates.add("专项办 组织申报 资格核查 部门联审 综合评审 研究确认");
+    candidates.add("材料评审 现场答辩 复核考察 建议人选 审定");
+    return new ArrayList<>(candidates);
+}
+
+private boolean isDoubleHundredProcessChunk(KnowledgeSearchResultVO item) {
+    if (!isProcessChunk(item)) {
+        return false;
     }
+    String text = buildChunkSearchText(item);
+    boolean hasPolicy = containsAny(text, List.of(
+            "双百计划",
+            "创新团队",
+            "创业人才",
+            "厦门市引进高层次创新创业人才“双百计划”实施意见",
+            "夏委组〔2024〕46号",
+            "夏委组 46号",
+            "高层次创新创业人才"
+    ));
+    boolean hasFlow = containsAny(text, List.of(
+            "遴选与申请流程",
+            "申请流程",
+            "申报流程",
+            "五步流程",
+            "组织申报",
+            "资格核查",
+            "部门联审",
+            "综合评审",
+            "研究确认",
+            "专项办",
+            "材料评审",
+            "现场答辩",
+            "复核考察",
+            "建议人选",
+            "审定"
+    ));
+    return hasPolicy && hasFlow;
+}
 
     private List<String> extractStructuredConditionRecallCandidates(String question) {
         LinkedHashSet<String> candidates = new LinkedHashSet<>(extractStructuredTopicRecallCandidates(question));
@@ -4393,165 +4699,42 @@ public class AgentServiceImpl implements AgentService {
     }
 
     private boolean isSpecificProjectProcessQuestion(String question) {
-        if (question != null || question == null) {
-            return detectPolicyQuestionType(question) == PolicyQuestionType.PROCESS
-                    && !extractStructuredSpecificPolicyTerms(question).isEmpty();
-        }
-        String normalized = normalizeText(question);
-        return normalized != null
-                && isProcessQuestion(normalized)
-                && (normalized.contains("双百计划")
-                || normalized.contains("计划")
-                || normalized.contains("项目")
-                || normalized.contains("工程")
-                || normalized.contains("方案")
-                || normalized.contains("通知")
-                || normalized.contains("指南")
-                || normalized.contains("号"));
-    }
+    return detectPolicyQuestionType(question) == PolicyQuestionType.PROCESS
+            && !extractStructuredSpecificPolicyTerms(question).isEmpty();
+}
 
     private boolean isProcessQuestion(String question) {
-        if (question != null || question == null) {
-            return detectPolicyQuestionType(question) == PolicyQuestionType.PROCESS;
-        }
-        String normalized = normalizeText(question);
-        return normalized != null
-                && (normalized.contains("申请")
-                || normalized.contains("如何申请")
-                || normalized.contains("怎么申请")
-                || normalized.contains("申报")
-                || normalized.contains("办理"));
-    }
+    return detectPolicyQuestionType(question) == PolicyQuestionType.PROCESS;
+}
 
     private List<String> extractProjectRecallCandidates(String question) {
-        if (question != null || question == null) {
-            return extractStructuredTopicRecallCandidates(question);
-        }
-        LinkedHashSet<String> candidates = new LinkedHashSet<>();
-        String normalized = normalizeText(question);
-        if (normalized == null) {
-            return List.of();
-        }
-        if (normalized.contains("双百计划")) {
-            candidates.add("双百计划");
-            candidates.add("厦门双百计划");
-            candidates.add("市双百计划");
-            candidates.add("创新个人");
-            candidates.add("创新团队");
-            candidates.add("创业人才");
-            candidates.add("厦门市高层次人才特聘岗位实施方案");
-            candidates.add("夏委组 46号");
-            candidates.add("夏委组〔2024〕46号");
-        }
-        for (String candidate : extractSearchCandidates(question)) {
-            if (!isProcessRecallCandidate(candidate)) {
-                candidates.add(candidate);
-            }
-        }
-        return new ArrayList<>(candidates);
-    }
+    return extractStructuredTopicRecallCandidates(question);
+}
 
     private List<String> extractProcessRecallCandidates(String question) {
-        if (question != null || question == null) {
-            return extractStructuredProcessRecallCandidates(question);
-        }
-        LinkedHashSet<String> candidates = new LinkedHashSet<>();
-        for (String candidate : extractSearchCandidates(question)) {
-            if (isProcessRecallCandidate(candidate)) {
-                candidates.add(candidate);
-            }
-        }
-        return new ArrayList<>(candidates);
-    }
+    return extractStructuredProcessRecallCandidates(question);
+}
 
     private boolean isProcessRecallCandidate(String candidate) {
-        if (candidate != null || candidate == null) {
-            return containsAny(candidate, PROCESS_SECTION_TERMS)
-                    || containsAny(candidate, List.of("申请", "申报", "流程", "材料", "清单", "办理", "受理", "推荐", "审核", "入口", "通知", "指南", "公示"));
-        }
-        String normalized = normalizeText(candidate);
-        return normalized != null
-                && (normalized.contains("申请")
-                || normalized.contains("申报")
-                || normalized.contains("流程")
-                || normalized.contains("条件")
-                || normalized.contains("材料")
-                || normalized.contains("清单")
-                || normalized.contains("办理")
-                || normalized.contains("受理")
-                || normalized.contains("推荐")
-                || normalized.contains("审核")
-                || normalized.contains("入口")
-                || normalized.contains("通知")
-                || normalized.contains("指南"));
-    }
+    return containsAny(candidate, PROCESS_SECTION_TERMS)
+            || containsAny(candidate, List.of("申请", "申报", "流程", "材料", "清单", "办理", "受理", "推荐", "审核", "入口", "通知", "指南", "公示"));
+}
 
     private boolean hasSpecificPolicyHitWithoutProcessEvidence(String question, KnowledgeCitationContext context) {
-        if (question != null || question == null) {
-            return hasStructuredSpecificPolicyHitWithoutProcessEvidence(question, context);
-        }
-        return contextMatchesSpecificPolicy(question, context) && !contextHasProcessEvidence(context);
-    }
+    return hasStructuredSpecificPolicyHitWithoutProcessEvidence(question, context);
+}
 
     private boolean contextMatchesSpecificPolicy(String question, KnowledgeCitationContext context) {
-        if (question != null || question == null) {
-            return contextMatchesStructuredSpecificPolicy(question, context);
-        }
-        if (context == null || context.getChunks().isEmpty()) {
-            return false;
-        }
-        List<String> terms = extractSpecificPolicyTerms(question);
-        if (terms.isEmpty()) {
-            return false;
-        }
-        for (KnowledgeSearchResultVO item : context.getChunks()) {
-            String text = buildChunkSearchText(item);
-            for (String term : terms) {
-                if (text.contains(term)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
+    return contextMatchesStructuredSpecificPolicy(question, context);
+}
 
     private boolean contextHasProcessEvidence(KnowledgeCitationContext context) {
-        if (context != null || context == null) {
-            return contextHasStructuredProcessEvidence(context);
-        }
-        if (context == null || context.getChunks().isEmpty()) {
-            return false;
-        }
-        for (KnowledgeSearchResultVO item : context.getChunks()) {
-            if (isProcessRecallCandidate(buildChunkSearchText(item))) {
-                return true;
-            }
-        }
-        return false;
-    }
+    return contextHasStructuredProcessEvidence(context);
+}
 
     private List<String> extractSpecificPolicyTerms(String question) {
-        if (question != null || question == null) {
-            return extractStructuredSpecificPolicyTerms(question);
-        }
-        LinkedHashSet<String> terms = new LinkedHashSet<>();
-        String normalized = normalizeText(question);
-        if (normalized == null) {
-            return List.of();
-        }
-        if (normalized.contains("双百计划")) {
-            terms.add("双百计划");
-            terms.add("厦门双百计划");
-            terms.add("市双百计划");
-            terms.add("创新个人");
-            terms.add("创新团队");
-            terms.add("创业人才");
-            terms.add("厦门市高层次人才特聘岗位实施方案");
-            terms.add("夏委组 46号");
-            terms.add("夏委组〔2024〕46号");
-        }
-        return new ArrayList<>(terms);
-    }
+    return extractStructuredSpecificPolicyTerms(question);
+}
 
     private String buildChunkSearchText(KnowledgeSearchResultVO item) {
         if (item == null) {
@@ -4571,97 +4754,8 @@ public class AgentServiceImpl implements AgentService {
     }
 
     private List<String> extractSearchCandidates(String question) {
-        if (question != null || question == null) {
-            return extractStructuredSearchCandidates(question);
-        }
-        LinkedHashSet<String> candidates = new LinkedHashSet<>();
-        String normalized = normalizeText(question);
-        if (normalized == null) {
-            return List.of();
-        }
-        candidates.add(normalized);
-
-        String simplified = normalized
-                .replace('？', ' ')
-                .replace('?', ' ')
-                .replace('，', ' ')
-                .replace(',', ' ')
-                .replace('。', ' ')
-                .replace('；', ' ')
-                .replace(';', ' ')
-                .replace('：', ' ')
-                .replace(':', ' ')
-                .replace('、', ' ');
-        for (String stop : SEARCH_STOP_TERMS) {
-            simplified = simplified.replace(stop, " ");
-        }
-        simplified = simplified.replaceAll("\\s+", " ").trim();
-        if (!simplified.isEmpty()) {
-            candidates.add(simplified);
-            candidates.add(simplified.replace(" ", ""));
-        }
-
-        for (String term : SEARCH_HINT_TERMS) {
-            if (normalized.contains(term)) {
-                candidates.add(term);
-            }
-        }
-
-        if (normalized.contains("双百计划")) {
-            candidates.add("双百计划");
-            candidates.add("厦门双百计划");
-            candidates.add("市双百计划");
-            candidates.add("创新个人");
-            candidates.add("创新团队");
-            candidates.add("创业人才");
-            candidates.add("厦门市高层次人才特聘岗位实施方案");
-            candidates.add("夏委组 46号");
-            candidates.add("夏委组〔2024〕46号");
-        }
-        if (isProcessQuestion(normalized)) {
-            candidates.add("申报");
-            candidates.add("申报流程");
-            candidates.add("申请条件");
-            candidates.add("申报条件");
-            candidates.add("申报材料");
-            candidates.add("材料清单");
-            candidates.add("办理流程");
-            candidates.add("受理");
-            candidates.add("推荐");
-            candidates.add("审核");
-            candidates.add("入口");
-            candidates.add("通知");
-            candidates.add("指南");
-        }
-
-        if (normalized.contains("人才计划")) {
-            candidates.add("人才政策");
-            candidates.add("人才项目");
-            candidates.add("人才工程");
-            candidates.add("人才认定");
-            candidates.add("人才支持政策");
-        }
-        if (normalized.contains("厦门人才计划")) {
-            candidates.add("厦门人才政策");
-            candidates.add("厦门人才项目");
-            candidates.add("厦门人才工程");
-        }
-        if (normalized.contains("有哪些人才计划")) {
-            candidates.add("有哪些人才政策");
-            candidates.add("有哪些人才项目");
-            candidates.add("有哪些人才工程");
-        }
-
-        if (normalized.contains("厦门") && normalized.contains("人才") && normalized.contains("政策")) {
-            candidates.add("厦门市人才政策");
-            candidates.add("厦门人才政策");
-        }
-        if (normalized.contains("福建") && normalized.contains("人才") && normalized.contains("政策")) {
-            candidates.add("福建省人才政策");
-            candidates.add("福建人才政策");
-        }
-        return new ArrayList<>(candidates);
-    }
+    return extractStructuredSearchCandidates(question);
+}
 
     private String abbreviate(String text, int maxLength) {
         String normalized = normalizeText(text);

@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AiPolicyChunkMapper">
+    <resultMap id="AiPolicySearchResultMap" type="com.example.lecturesystem.modules.knowledge.vo.KnowledgeSearchResultVO">
+        <id property="chunkId" column="chunk_id"/>
+        <result property="documentId" column="document_id"/>
+        <result property="docTitle" column="doc_title"/>
+        <result property="policyRegion" column="policy_region"/>
+        <result property="headingPath" column="heading_path"/>
+        <result property="snippet" column="snippet"/>
+        <result property="keywordText" column="keyword_text"/>
+        <result property="regionScope" column="region_scope"/>
+        <result property="docType" column="doc_type"/>
+        <result property="topicType" column="topic_type"/>
+        <result property="policyName" column="policy_name"/>
+        <result property="policyAliases" column="policy_aliases"/>
+        <result property="policyNo" column="policy_no"/>
+        <result property="chapterTitle" column="chapter_title"/>
+        <result property="sectionTitle" column="section_title"/>
+        <result property="scenePriority" column="scene_priority"/>
+        <result property="searchable" column="searchable"/>
+        <result property="chunkNo" column="chunk_no"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.agent.entity.AiPolicyChunkEntity"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO ai_policy_chunk (
+            base_id, document_id, region_scope, policy_key, policy_name, policy_aliases,
+            doc_type, topic_type, question_type, title, content, answer_level, priority,
+            source_scene, sort_no, enabled, created_at, updated_at
+        ) VALUES (
+            #{baseId}, #{documentId}, #{regionScope}, #{policyKey}, #{policyName}, #{policyAliases},
+            #{docType}, #{topicType}, #{questionType}, #{title}, #{content}, #{answerLevel}, #{priority},
+            #{sourceScene}, #{sortNo}, #{enabled}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <insert id="batchInsert">
+        INSERT INTO ai_policy_chunk (
+            base_id, document_id, region_scope, policy_key, policy_name, policy_aliases,
+            doc_type, topic_type, question_type, title, content, answer_level, priority,
+            source_scene, sort_no, enabled, created_at, updated_at
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+                #{item.baseId}, #{item.documentId}, #{item.regionScope}, #{item.policyKey}, #{item.policyName}, #{item.policyAliases},
+                #{item.docType}, #{item.topicType}, #{item.questionType}, #{item.title}, #{item.content}, #{item.answerLevel}, #{item.priority},
+                #{item.sourceScene}, #{item.sortNo}, #{item.enabled}, #{item.createdAt}, #{item.updatedAt}
+            )
+        </foreach>
+    </insert>
+
+    <delete id="deleteByBaseId">
+        DELETE FROM ai_policy_chunk WHERE base_id = #{baseId}
+    </delete>
+
+    <select id="countByBaseId" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_policy_chunk
+        WHERE base_id = #{baseId}
+    </select>
+
+    <select id="search" resultMap="AiPolicySearchResultMap">
+        SELECT chunk.id AS chunk_id,
+               chunk.document_id,
+               doc.name AS doc_title,
+               doc.region_scope AS policy_region,
+               chunk.title AS heading_path,
+               chunk.content AS snippet,
+               chunk.policy_aliases AS keyword_text,
+               chunk.region_scope,
+               chunk.doc_type,
+               chunk.topic_type,
+               chunk.policy_name,
+               chunk.policy_aliases,
+               NULL AS policy_no,
+               chunk.title AS chapter_title,
+               chunk.title AS section_title,
+               chunk.source_scene AS scene_priority,
+               chunk.enabled AS searchable,
+               chunk.sort_no AS chunk_no
+        FROM ai_policy_chunk chunk
+        INNER JOIN ai_policy_document doc ON doc.id = chunk.document_id
+        WHERE chunk.base_id = #{query.baseId}
+        <if test="query.enabled != null">
+            AND chunk.enabled = #{query.enabled}
+        </if>
+        <if test="query.policyKey != null and query.policyKey != ''">
+            AND chunk.policy_key = #{query.policyKey}
+        </if>
+        <if test="query.policyKeys != null and query.policyKeys.size() > 0">
+            AND chunk.policy_key IN
+            <foreach collection="query.policyKeys" item="item" open="(" close=")" separator=",">
+                #{item}
+            </foreach>
+        </if>
+        <if test="query.regionScopes != null and query.regionScopes.size() > 0">
+            AND chunk.region_scope IN
+            <foreach collection="query.regionScopes" item="item" open="(" close=")" separator=",">
+                #{item}
+            </foreach>
+        </if>
+        <if test="query.docTypes != null and query.docTypes.size() > 0">
+            AND chunk.doc_type IN
+            <foreach collection="query.docTypes" item="item" open="(" close=")" separator=",">
+                #{item}
+            </foreach>
+        </if>
+        <if test="query.topicTypes != null and query.topicTypes.size() > 0">
+            AND chunk.topic_type IN
+            <foreach collection="query.topicTypes" item="item" open="(" close=")" separator=",">
+                #{item}
+            </foreach>
+        </if>
+        <if test="query.questionTypes != null and query.questionTypes.size() > 0">
+            AND chunk.question_type IN
+            <foreach collection="query.questionTypes" item="item" open="(" close=")" separator=",">
+                #{item}
+            </foreach>
+        </if>
+        <if test="query.keywords != null and query.keywords != ''">
+            AND (
+                chunk.title LIKE '%' || #{query.keywords} || '%'
+                OR chunk.content LIKE '%' || #{query.keywords} || '%'
+                OR COALESCE(chunk.policy_name, '') LIKE '%' || #{query.keywords} || '%'
+                OR COALESCE(chunk.policy_aliases, '') LIKE '%' || #{query.keywords} || '%'
+                OR COALESCE(doc.name, '') LIKE '%' || #{query.keywords} || '%'
+            )
+        </if>
+        ORDER BY chunk.priority DESC, chunk.sort_no ASC, chunk.id ASC
+        LIMIT #{query.topN}
+    </select>
+</mapper>

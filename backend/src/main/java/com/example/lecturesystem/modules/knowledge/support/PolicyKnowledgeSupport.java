@@ -269,7 +269,7 @@ public final class PolicyKnowledgeSupport {
     public static String detectTopicType(String chapterTitle, String sectionTitle, String contentText, StructuredDocType structuredDocType) {
         String merged = mergeText(chapterTitle, sectionTitle, contentText);
         if (containsAny(merged, ROUTING_SECTION_KEYWORDS)) {
-            return "routing";
+            return "route_help";
         }
         if (containsAny(merged, FAQ_SECTION_KEYWORDS)) {
             return "faq";
@@ -283,6 +283,18 @@ public final class PolicyKnowledgeSupport {
         if (containsAny(merged, BENEFIT_SECTION_KEYWORDS)) {
             return "benefit";
         }
+        if (containsAny(merged, List.of("服务保障", "子女教育", "医疗保障", "住房保障", "平台申报"))) {
+            return "service";
+        }
+        if (containsAny(merged, List.of("退出机制", "追回", "撤销", "终止", "考核"))) {
+            return "risk";
+        }
+        if (containsAny(merged, List.of("管理期", "服务期", "管理周期"))) {
+            return "management_period";
+        }
+        if (containsAny(merged, List.of("资金拨付", "兑现申请", "分批拨付", "拨付", "兑现"))) {
+            return "payment";
+        }
         if (containsAny(merged, LIST_SECTION_KEYWORDS) || structuredDocType == StructuredDocType.MAIN_DOC_XM || structuredDocType == StructuredDocType.MAIN_DOC_FJ) {
             return "list";
         }
@@ -294,7 +306,7 @@ public final class PolicyKnowledgeSupport {
         if (normalized == null) {
             return "GENERAL";
         }
-        if (List.of("process", "condition", "benefit", "faq", "routing", "list").contains(normalized)) {
+        if (List.of("process", "condition", "benefit", "service", "risk", "management_period", "payment", "faq", "routing", "route_help", "list").contains(normalized)) {
             return "MOBILE_POLICY_CONSULTANT";
         }
         return "AI_WORKBENCH";

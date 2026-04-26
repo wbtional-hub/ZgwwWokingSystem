@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AiPolicyRouteRuleMapper">
+    <resultMap id="AiPolicyRouteRuleMap" type="com.example.lecturesystem.modules.agent.entity.AiPolicyRouteRuleEntity">
+        <id property="id" column="id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="regionScope" column="region_scope"/>
+        <result property="questionType" column="question_type"/>
+        <result property="keywordPattern" column="keyword_pattern"/>
+        <result property="targetDocType" column="target_doc_type"/>
+        <result property="targetTopicType" column="target_topic_type"/>
+        <result property="priority" column="priority"/>
+        <result property="enabled" column="enabled"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="batchInsert">
+        INSERT INTO ai_policy_route_rule (
+            base_id, region_scope, question_type, keyword_pattern, target_doc_type,
+            target_topic_type, priority, enabled, created_at, updated_at
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+                #{item.baseId}, #{item.regionScope}, #{item.questionType}, #{item.keywordPattern}, #{item.targetDocType},
+                #{item.targetTopicType}, #{item.priority}, #{item.enabled}, #{item.createdAt}, #{item.updatedAt}
+            )
+        </foreach>
+    </insert>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.agent.entity.AiPolicyRouteRuleEntity"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO ai_policy_route_rule (
+            base_id, region_scope, question_type, keyword_pattern, target_doc_type,
+            target_topic_type, priority, enabled, created_at, updated_at
+        ) VALUES (
+            #{baseId}, #{regionScope}, #{questionType}, #{keywordPattern}, #{targetDocType},
+            #{targetTopicType}, #{priority}, #{enabled}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <delete id="deleteByBaseId">
+        DELETE FROM ai_policy_route_rule WHERE base_id = #{baseId}
+    </delete>
+
+    <select id="countByBaseId" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_policy_route_rule
+        WHERE base_id = #{baseId}
+    </select>
+
+    <select id="queryEnabledByBaseId" resultMap="AiPolicyRouteRuleMap">
+        SELECT id, base_id, region_scope, question_type, keyword_pattern, target_doc_type,
+               target_topic_type, priority, enabled, created_at, updated_at
+        FROM ai_policy_route_rule
+        WHERE base_id = #{baseId}
+          AND enabled = TRUE
+        ORDER BY priority DESC, id ASC
+    </select>
+</mapper>

@@ -27,6 +27,9 @@ public class WeeklyWorkListItemVO {
     private LocalDateTime approvedTime;
     private LocalDateTime createTime;
     private Boolean reviewedByCurrentUser;
+    private Boolean canApprove;
+    private Boolean readonlyMode;
+    private Boolean canViewCrossDept;
     private List<WeeklyWorkFlowNodeVO> flowNodes;
 
     public Long getId() {
@@ -211,6 +214,30 @@ public class WeeklyWorkListItemVO {
 
     public void setReviewedByCurrentUser(Boolean reviewedByCurrentUser) {
         this.reviewedByCurrentUser = reviewedByCurrentUser;
+    }
+
+    public Boolean getCanApprove() {
+        return canApprove;
+    }
+
+    public void setCanApprove(Boolean canApprove) {
+        this.canApprove = canApprove;
+    }
+
+    public Boolean getReadonlyMode() {
+        return readonlyMode;
+    }
+
+    public void setReadonlyMode(Boolean readonlyMode) {
+        this.readonlyMode = readonlyMode;
+    }
+
+    public Boolean getCanViewCrossDept() {
+        return canViewCrossDept;
+    }
+
+    public void setCanViewCrossDept(Boolean canViewCrossDept) {
+        this.canViewCrossDept = canViewCrossDept;
     }
 
     public List<WeeklyWorkFlowNodeVO> getFlowNodes() {

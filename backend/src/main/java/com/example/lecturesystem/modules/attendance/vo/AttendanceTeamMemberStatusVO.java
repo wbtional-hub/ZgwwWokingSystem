@@ -11,6 +11,8 @@ public class AttendanceTeamMemberStatusVO {
     private String unitName;
     private LocalDate attendanceDate;
     private LocalDateTime checkInTime;
+    private LocalDateTime amOffTime;
+    private LocalDateTime pmOnTime;
     private LocalDateTime checkOutTime;
     private Boolean hasRecord;
     private Boolean late;
@@ -32,6 +34,10 @@ public class AttendanceTeamMemberStatusVO {
     public void setAttendanceDate(LocalDate attendanceDate) { this.attendanceDate = attendanceDate; }
     public LocalDateTime getCheckInTime() { return checkInTime; }
     public void setCheckInTime(LocalDateTime checkInTime) { this.checkInTime = checkInTime; }
+    public LocalDateTime getAmOffTime() { return amOffTime; }
+    public void setAmOffTime(LocalDateTime amOffTime) { this.amOffTime = amOffTime; }
+    public LocalDateTime getPmOnTime() { return pmOnTime; }
+    public void setPmOnTime(LocalDateTime pmOnTime) { this.pmOnTime = pmOnTime; }
     public LocalDateTime getCheckOutTime() { return checkOutTime; }
     public void setCheckOutTime(LocalDateTime checkOutTime) { this.checkOutTime = checkOutTime; }
     public Boolean getHasRecord() { return hasRecord; }

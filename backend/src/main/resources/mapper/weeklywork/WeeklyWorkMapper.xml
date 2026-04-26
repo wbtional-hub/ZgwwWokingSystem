@@ -3,6 +3,24 @@
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.example.lecturesystem.modules.weeklywork.mapper.WeeklyWorkMapper">
+    <sql id="WeeklyWorkRequestVisibilityCondition">
+        <if test="request.treePathPrefix != null or (request.crossDeptVisibleUserIds != null and request.crossDeptVisibleUserIds.size() > 0)">
+            AND (
+                <if test="request.treePathPrefix != null">
+                    u.tree_path LIKE CONCAT(#{request.treePathPrefix}, '%')
+                </if>
+                <if test="request.treePathPrefix != null and request.crossDeptVisibleUserIds != null and request.crossDeptVisibleUserIds.size() > 0">
+                    OR
+                </if>
+                <if test="request.crossDeptVisibleUserIds != null and request.crossDeptVisibleUserIds.size() > 0">
+                    u.id IN
+                    <foreach item="item" collection="request.crossDeptVisibleUserIds" open="(" separator="," close=")">
+                        #{item}
+                    </foreach>
+                </if>
+            )
+        </if>
+    </sql>
 
     <resultMap id="WeeklyWorkEntityMap" type="com.example.lecturesystem.modules.weeklywork.entity.WeeklyWorkEntity">
         <id property="id" column="id"/>
@@ -219,9 +237,7 @@
             <if test="request.userId != null">
                 AND w.user_id = #{request.userId}
             </if>
-            <if test="request.treePathPrefix != null">
-                AND u.tree_path LIKE CONCAT(#{request.treePathPrefix}, '%')
-            </if>
+            <include refid="WeeklyWorkRequestVisibilityCondition"/>
         </where>
         ORDER BY w.week_no DESC, w.create_time DESC, w.id DESC
     </select>

@@ -2,8 +2,11 @@ package com.example.lecturesystem.modules.attendance.dto;
 
 import com.example.lecturesystem.modules.permission.support.TreePathScopedRequest;
 
+import java.util.List;
+
 public class AttendanceQueryRequest implements TreePathScopedRequest {
     private String treePathPrefix;
+    private List<Long> crossDeptVisibleUserIds;
     private String keywords;
     private String unitName;
     private String dateFrom;
@@ -20,6 +23,14 @@ public class AttendanceQueryRequest implements TreePathScopedRequest {
 
     public void setTreePathPrefix(String treePathPrefix) {
         this.treePathPrefix = treePathPrefix;
+    }
+
+    public List<Long> getCrossDeptVisibleUserIds() {
+        return crossDeptVisibleUserIds;
+    }
+
+    public void setCrossDeptVisibleUserIds(List<Long> crossDeptVisibleUserIds) {
+        this.crossDeptVisibleUserIds = crossDeptVisibleUserIds;
     }
 
     public String getKeywords() {

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AiPolicyRetrievalLogMapper">
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.agent.entity.AiPolicyRetrievalLogEntity"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO ai_policy_retrieval_log (
+            base_id, session_id, user_id, source_scene, raw_question, normalized_question,
+            region_scope, policy_key, question_type, route_plan, matched_intent_id,
+            matched_intent_code, suggested_intents, selected_intent_id, learning_signal_written,
+            candidate_generated, search_query, hit_chunk_ids, retrieval_summary, created_at
+        ) VALUES (
+            #{baseId}, #{sessionId}, #{userId}, #{sourceScene}, #{rawQuestion}, #{normalizedQuestion},
+            #{regionScope}, #{policyKey}, #{questionType}, #{routePlan}, #{matchedIntentId},
+            #{matchedIntentCode}, #{suggestedIntents}, #{selectedIntentId}, #{learningSignalWritten},
+            #{candidateGenerated}, #{searchQuery}, #{hitChunkIds}, #{retrievalSummary}, #{createdAt}
+        )
+    </insert>
+
+    <delete id="deleteByBaseId">
+        DELETE FROM ai_policy_retrieval_log WHERE base_id = #{baseId}
+    </delete>
+</mapper>

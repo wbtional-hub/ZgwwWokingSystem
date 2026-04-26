@@ -1,6 +1,7 @@
 package com.example.lecturesystem.modules.weeklywork.service.impl;
 
 import com.example.lecturesystem.modules.auth.security.LoginUser;
+import com.example.lecturesystem.modules.attendance.support.AttendanceWeeklyReadonlyScopeService;
 import com.example.lecturesystem.modules.operationlog.service.OperationLogService;
 import com.example.lecturesystem.modules.permission.service.PermissionService;
 import com.example.lecturesystem.modules.permission.support.CurrentUserFacade;
@@ -72,6 +73,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     private final CurrentUserFacade currentUserFacade;
     private final DataScopeService dataScopeService;
     private final DataSource dataSource;
+    private final AttendanceWeeklyReadonlyScopeService attendanceWeeklyReadonlyScopeService;
 
     public WeeklyWorkServiceImpl(WeeklyWorkMapper weeklyWorkMapper,
                                  PermissionService permissionService,
@@ -92,6 +94,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
                 },
                 null,
                 new DataScopeService(),
+                null,
                 null
         );
     }
@@ -103,6 +106,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
                                  OperationLogService operationLogService,
                                  CurrentUserFacade currentUserFacade,
                                  DataScopeService dataScopeService,
+                                 AttendanceWeeklyReadonlyScopeService attendanceWeeklyReadonlyScopeService,
                                  DataSource dataSource) {
         this.weeklyWorkMapper = weeklyWorkMapper;
         this.permissionService = permissionService;
@@ -110,6 +114,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         this.operationLogService = operationLogService;
         this.currentUserFacade = currentUserFacade;
         this.dataScopeService = dataScopeService;
+        this.attendanceWeeklyReadonlyScopeService = attendanceWeeklyReadonlyScopeService;
         this.dataSource = dataSource;
     }
 
@@ -194,12 +199,17 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
     public Object query(WeeklyWorkQueryRequest request) {
         WeeklyWorkQueryRequest normalizedRequest = request == null ? new WeeklyWorkQueryRequest() : request;
         LoginUser loginUser = currentLoginUser();
+        UserEntity currentUser = requireCurrentUser(loginUser.getUserId());
+        AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope = resolveReadonlyScope(currentUser);
 
         if (!permissionService.isSuperAdmin(loginUser.getUserId())) {
-            dataScopeService.injectTreePathScope(normalizedRequest, requireCurrentUser(loginUser.getUserId()));
+            dataScopeService.injectTreePathScope(normalizedRequest, currentUser);
+            normalizedRequest.setCrossDeptVisibleUserIds(readonlyScope.requestUserIds());
         }
 
-        if (!permissionService.isSuperAdmin(loginUser.getUserId()) && normalizedRequest.getUserId() != null) {
+        if (!permissionService.isSuperAdmin(loginUser.getUserId())
+                && normalizedRequest.getUserId() != null
+                && !readonlyScope.canViewCrossDeptUser(normalizedRequest.getUserId())) {
             UserEntity targetUser = requireCurrentUser(normalizedRequest.getUserId());
             dataScopeService.validateReadableUser(
                     requireCurrentUser(loginUser.getUserId()),
@@ -210,25 +220,31 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
 
         List<WeeklyWorkListItemVO> records = weeklyWorkMapper.queryList(normalizedRequest);
         for (WeeklyWorkListItemVO item : records) {
-            enrichListItem(item, loginUser.getUserId());
+            enrichListItem(item, currentUser, readonlyScope);
         }
         return records;
     }
 
-    @Override
     public Object detail(Long id) {
         LoginUser loginUser = currentLoginUser();
         WeeklyWorkEntity entity = requireWeeklyWork(id);
         validateReadable(loginUser, entity);
 
+        UserEntity currentUser = requireCurrentUser(loginUser.getUserId());
         UserEntity reporter = requireCurrentUser(entity.getUserId());
+        AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope = resolveReadonlyScope(currentUser);
         List<UserEntity> approvalChain = resolveApprovalChain(reporter);
+        boolean crossDeptReadonly = isCrossDeptReadonlyTarget(currentUser, reporter, readonlyScope);
 
         WeeklyWorkDetailVO detail = toDetailVO(entity);
         detail.setCurrentApprovalNode(resolveCurrentApprovalNode(entity, approvalChain));
         detail.setFlowNodes(buildFlowNodes(reporter, approvalChain));
-        detail.setAvailableReturnTargets(resolveReturnTargets(entity, approvalChain));
+        detail.setAvailableReturnTargets(crossDeptReadonly ? List.of() : resolveReturnTargets(entity, approvalChain));
         detail.setApprovalLogs(weeklyWorkMapper.queryApprovalLogs(entity.getId()));
+        detail.setReadonlyMode(crossDeptReadonly);
+        detail.setCanViewCrossDept(crossDeptReadonly);
+        detail.setCanApprove(!crossDeptReadonly
+                && canApproveWeeklyWork(currentUser.getId(), entity.getStatus(), detail.getCurrentApprovalNode()));
         return detail;
     }
 
@@ -239,6 +255,13 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         WeeklyWorkEntity entity = requireWeeklyWork(request.getId());
         validateReadable(loginUser, entity);
 
+        UserEntity currentUser = requireCurrentUser(loginUser.getUserId());
+        UserEntity reporter = requireCurrentUser(entity.getUserId());
+        AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope = resolveReadonlyScope(currentUser);
+        if (isCrossDeptReadonlyTarget(currentUser, reporter, readonlyScope)) {
+            throw new IllegalArgumentException("跨部门数据仅支持查看，不允许审批");
+        }
+
         if (loginUser.getUserId().equals(entity.getUserId())) {
             throw new IllegalArgumentException("不能审核自己的周报");
         }
@@ -247,7 +270,6 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         }
 
         String action = request.getAction() == null ? "" : request.getAction().trim().toUpperCase();
-        UserEntity reporter = requireCurrentUser(entity.getUserId());
         List<UserEntity> approvalChain = resolveApprovalChain(reporter);
         String currentNode = resolveCurrentApprovalNode(entity, approvalChain);
 
@@ -283,7 +305,7 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
                 "WEEKLY_WORK",
                 "REVIEW",
                 entity.getId(),
-                "审核周报：" + entity.getWeekNo() + "，用户ID=" + entity.getUserId() + "，结果=" + updateEntity.getStatus()
+                "审核周报，" + entity.getWeekNo() + "，用户ID=" + entity.getUserId() + "，结果=" + updateEntity.getStatus()
         );
         return "ok";
     }
@@ -416,9 +438,12 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         return detail;
     }
 
-    private void enrichListItem(WeeklyWorkListItemVO item, Long currentUserId) {
+    private void enrichListItem(WeeklyWorkListItemVO item,
+                                UserEntity currentUser,
+                                AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope) {
         UserEntity reporter = requireCurrentUser(item.getUserId());
         List<UserEntity> approvalChain = resolveApprovalChain(reporter);
+        boolean crossDeptReadonly = isCrossDeptReadonlyTarget(currentUser, reporter, readonlyScope);
 
         item.setCurrentApprovalNode(resolveCurrentApprovalNode(
                 item.getStatus(),
@@ -429,7 +454,10 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         item.setFlowNodes(buildFlowNodes(reporter, approvalChain));
 
         List<WeeklyWorkApprovalLogVO> logs = weeklyWorkMapper.queryApprovalLogs(item.getId());
-        item.setReviewedByCurrentUser(logs.stream().anyMatch(log -> currentUserId != null && currentUserId.equals(log.getReviewerUserId())));
+        item.setReviewedByCurrentUser(logs.stream().anyMatch(log -> currentUser.getId() != null && currentUser.getId().equals(log.getReviewerUserId())));
+        item.setReadonlyMode(crossDeptReadonly);
+        item.setCanViewCrossDept(crossDeptReadonly);
+        item.setCanApprove(!crossDeptReadonly && canApproveWeeklyWork(currentUser.getId(), item.getStatus(), item.getCurrentApprovalNode()));
     }
 
     private ApprovalSnapshot buildSubmitSnapshot(UserEntity reporter, List<UserEntity> approvalChain) {
@@ -781,7 +809,56 @@ public class WeeklyWorkServiceImpl implements WeeklyWorkService {
         }
         UserEntity currentUser = requireCurrentUser(loginUser.getUserId());
         UserEntity targetUser = requireCurrentUser(entity.getUserId());
-        dataScopeService.validateReadableUser(currentUser, targetUser, "无权查看该周报");
+        if (!canReadWeeklyWork(currentUser, targetUser, resolveReadonlyScope(currentUser))) {
+            throw new IllegalArgumentException("无权查看该周报");
+        }
+    }
+
+    private AttendanceWeeklyReadonlyScopeService.ReadonlyScope resolveReadonlyScope(UserEntity currentUser) {
+        if (attendanceWeeklyReadonlyScopeService == null) {
+            return AttendanceWeeklyReadonlyScopeService.ReadonlyScope.disabled();
+        }
+        return attendanceWeeklyReadonlyScopeService.resolve(currentUser);
+    }
+
+    private boolean canReadWeeklyWork(UserEntity currentUser,
+                                      UserEntity targetUser,
+                                      AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope) {
+        String treePathPrefix = dataScopeService.buildTreePathPrefix(currentUser);
+        if (dataScopeService.isReadableTreePath(treePathPrefix, targetUser.getTreePath())) {
+            return true;
+        }
+        return readonlyScope.canViewCrossDeptUser(targetUser.getId());
+    }
+
+    private boolean isCrossDeptReadonlyTarget(UserEntity currentUser,
+                                              UserEntity targetUser,
+                                              AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope) {
+        if (targetUser == null) {
+            return false;
+        }
+        String treePathPrefix = dataScopeService.buildTreePathPrefix(currentUser);
+        boolean ownTree = dataScopeService.isReadableTreePath(treePathPrefix, targetUser.getTreePath());
+        return !ownTree && readonlyScope.canViewCrossDeptUser(targetUser.getId());
+    }
+
+    private boolean canApproveWeeklyWork(Long currentUserId, String status, String currentApprovalNode) {
+        if (currentUserId == null || currentApprovalNode == null) {
+            return false;
+        }
+        if (!List.of(
+                STATUS_SUBMITTED,
+                STATUS_PENDING_SECTION_CHIEF,
+                STATUS_PENDING_DEPUTY_LEADER,
+                STATUS_PENDING_LEGION_LEADER,
+                STATUS_RETURNED
+        ).contains(status)) {
+            return false;
+        }
+        if (STATUS_RETURNED.equals(status) && NODE_STAFF.equals(currentApprovalNode)) {
+            return false;
+        }
+        return matchesApprovalNode(currentUserId, currentApprovalNode);
     }
 
     private LoginUser currentLoginUser() {

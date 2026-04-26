@@ -11,13 +11,13 @@ import java.util.List;
 public class KnowledgeChunkBuilder {
     private static final int GENERIC_CHUNK_SIZE = 800;
     private static final int GENERIC_OVERLAP = 100;
-    private static final int MAIN_MIN = 600;
-    private static final int MAIN_MAX = 1200;
-    private static final int MAIN_OVERLAP = 120;
-    private static final int TOPIC_MIN = 400;
-    private static final int TOPIC_MAX = 900;
-    private static final int TOPIC_PROCESS_MAX = 1200;
-    private static final int TOPIC_OVERLAP = 100;
+    private static final int MAIN_MIN = 320;
+    private static final int MAIN_MAX = 520;
+    private static final int MAIN_OVERLAP = 80;
+    private static final int TOPIC_MIN = 180;
+    private static final int TOPIC_MAX = 320;
+    private static final int TOPIC_PROCESS_MAX = 420;
+    private static final int TOPIC_OVERLAP = 60;
 
     public List<KnowledgeChunkEntity> build(Long documentId,
                                             Long baseId,

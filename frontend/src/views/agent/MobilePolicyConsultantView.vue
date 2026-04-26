@@ -14,7 +14,7 @@
           <div class="summary-title">政策咨询最小闭环</div>
           <div class="summary-row">
             <span class="summary-chip">{{ permissionFlags.canUseAi ? 'AI 优先' : '知识库兜底' }}</span>
-            <span class="summary-chip">{{ currentSkillLabel }}</span>
+            <span class="summary-chip">{{ currentExpertLabel }}</span>
             <span class="summary-chip">{{ currentRouteLabel }}</span>
             <span class="summary-chip">{{ state.sessionInfo?.id ? `会话 #${state.sessionInfo.id}` : '未创建会话' }}</span>
           </div>
@@ -63,31 +63,37 @@
 
         <section class="panel">
           <div class="panel-title">提问区</div>
+          <div class="active-skill-bar">
+            <div class="active-skill-text">
+              <span class="active-skill-label">当前专家</span>
+              <span class="active-skill-name">{{ currentExpertName }}</span>
+            </div>
+          </div>
           <textarea
             v-model="state.question"
             class="question-input"
             rows="4"
             maxlength="500"
-            placeholder="输入问题，或使用 @技能名 指定 Skill"
+            placeholder="直接输入政策问题，例如“双百计划怎么申请？”"
             :disabled="state.asking || !permissionFlags.canUseAgent"
             @input="handleQuestionInput"
             @keydown.enter.exact.prevent="handleSend"
           ></textarea>
-          <div v-if="mentionSuggestions.length" class="mention-list">
+          <div v-if="policySuggestions.length" class="intent-suggest-list">
             <button
-              v-for="item in mentionSuggestions"
-              :key="item.id"
+              v-for="item in policySuggestions"
+              :key="item.intentId"
               type="button"
-              class="mention-item"
-              @click="applyMention(item)"
+              class="intent-suggest-item"
+              @click="applyPolicySuggestion(item)"
             >
-              <span>{{ item.skillName }}</span>
-              <small>@{{ item.skillCode }}</small>
+              <span class="intent-suggest-item__title">{{ item.intentName }}</span>
+              <small class="intent-suggest-item__question">{{ item.standardQuestion }}</small>
             </button>
           </div>
           <div class="composer-footer">
             <div class="composer-hint">
-              输入 `@` 会提示可用 Skills；不写 `@` 时后端会自动路由到默认政策咨询链路。
+              当前页面已默认绑定人才政策咨询专家，直接提问即可。
             </div>
             <button type="button" class="primary-button" :disabled="!canSend" @click="handleSend">
               {{ state.asking ? '发送中...' : '发送' }}
@@ -136,12 +142,15 @@ import {
   createAgentSession,
   queryAgentMessages,
   queryAgentSessions,
+  selectPolicyIntentSuggestion,
   sendAgentQuestion,
+  suggestPolicyIntents,
   streamAgentQuestion
 } from '@/api/agent'
 import { queryCurrentAiPermission } from '@/api/ai'
 import { querySkillList } from '@/api/skill'
 import { useUserStore } from '@/stores/user'
+import { getAgentFunctionBinding } from '@/constants/agent-function-bindings'
 import { buildAccessContext } from '@/constants/modules'
 import { resolveMobileWorkspaceItems } from '@/constants/mobile-workspace'
 import { isMobileClient } from '@/utils/device'
@@ -152,13 +161,22 @@ const messageListRef = ref(null)
 const activeStreamContext = ref(null)
 const sendRunId = ref(0)
 const isComponentUnmounted = ref(false)
+const FUNCTION_BINDING = getAgentFunctionBinding('talent_policy_consult')
 const SOURCE_SCENE = 'MOBILE_POLICY_CONSULTANT'
+const POLICY_BASE_ID = FUNCTION_BINDING?.defaultBaseId ?? 1
+const POLICY_SUGGEST_MIN_LENGTH = 2
+const POLICY_SUGGEST_MAX_LENGTH = 6
+let policySuggestTimer = null
+let policySuggestSeq = 0
 
 const state = reactive({
   loading: false,
   asking: false,
   errorMessage: '',
   question: '',
+  activeSkillId: null,
+  activeSkillCode: '',
+  activeSkillName: '',
   permissionInfo: null,
   sessionInfo: null,
   sessionPinned: false,
@@ -166,7 +184,10 @@ const state = reactive({
   messageList: [],
   skillOptions: [],
   mentionKeyword: '',
-  lastChatMeta: null
+  lastChatMeta: null,
+  policySuggestLoading: false,
+  policySuggestLogId: null,
+  policySuggestItems: []
 })
 
 const hasToken = computed(() => Boolean(userStore.token || localStorage.getItem('token')))
@@ -190,22 +211,11 @@ const availableSkills = computed(() => {
   )
   return state.skillOptions.filter((item) => allowedIds.has(Number(item.id)))
 })
-const mentionSuggestions = computed(() => {
-  if (!state.mentionKeyword.startsWith('@')) {
-    return []
-  }
-  const keyword = state.mentionKeyword.slice(1).trim().toLowerCase()
-  return availableSkills.value
-    .filter((item) => {
-      if (!keyword) {
-        return true
-      }
-      return String(item.skillName || '').toLowerCase().includes(keyword)
-        || String(item.skillCode || '').toLowerCase().includes(keyword)
-    })
-    .slice(0, 6)
+const policySuggestions = computed(() => {
+  return state.policySuggestItems.slice(0, 6)
 })
-const currentSkillLabel = computed(() => state.lastChatMeta?.skillName || state.sessionInfo?.skillName || '自动选择 Skill')
+const currentExpertName = computed(() => state.activeSkillName || FUNCTION_BINDING?.expertName || '人才政策咨询专家')
+const currentExpertLabel = computed(() => `当前专家：${currentExpertName.value}`)
 const currentRouteLabel = computed(() => formatMatchMode(state.lastChatMeta?.skillMatchMode || state.sessionInfo?.skillMatchMode))
 const usageSummaryText = computed(() => {
   const meta = state.lastChatMeta || {}
@@ -239,9 +249,9 @@ const helperText = computed(() => {
   if (state.lastChatMeta?.skillName) {
     return `本次问题命中 ${state.lastChatMeta.skillName}，路由方式：${formatMatchMode(state.lastChatMeta.skillMatchMode)}。`
   }
-  return '当前链路已准备好，可直接发问；来源场景会自动标记为“手机端政策咨询”。'
+  return '当前链路已准备好，页面会默认使用人才政策咨询专家和政策知识库 baseId=1。'
 })
-const canSend = computed(() => permissionFlags.value.canUseAgent && Boolean(state.question.trim()) && !state.asking)
+const canSend = computed(() => permissionFlags.value.canUseAgent && Boolean(buildQuestionContent(state.question)) && !state.asking)
 
 function createIntentionalAbortReason(code) {
   const error = new Error(code || 'STREAM_ABORTED')
@@ -349,24 +359,159 @@ function formatCitations(message) {
   return []
 }
 
-function extractSkillHint(question) {
-  const match = String(question || '').match(/(?:^|\s)@([^\s@]+)/)
-  return match ? match[1] : ''
+function stripSkillMentions(question) {
+  return String(question || '').replace(/(?:^|\s)@[^\s@]*/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
 function normalizeQuestion(question) {
-  return String(question || '').replace(/(?:^|\s)@([^\s@]+)/, ' ').replace(/\s+/g, ' ').trim()
+  return stripSkillMentions(question)
+}
+
+function buildQuestionContent(question) {
+  return stripSkillMentions(question)
+}
+
+function buildSuggestQuery(question) {
+  return stripSkillMentions(question)
+}
+
+function resolveSkillByHint(skillHint) {
+  if (!skillHint) {
+    return null
+  }
+  const hint = String(skillHint).trim().toLowerCase()
+  return availableSkills.value.find((item) => {
+    return String(item.skillCode || '').toLowerCase() === hint
+      || String(item.skillName || '').toLowerCase() === hint
+  }) || null
+}
+
+function resolveFunctionBoundSkill() {
+  const boundSkillCode = String(FUNCTION_BINDING?.defaultSkillCode || '').trim().toLowerCase()
+  if (!boundSkillCode) {
+    return null
+  }
+  return availableSkills.value.find((item) => String(item.skillCode || '').trim().toLowerCase() === boundSkillCode) || null
+}
+
+function setActiveSkill(skill) {
+  state.activeSkillId = skill?.id ? Number(skill.id) : null
+  state.activeSkillCode = String(skill?.skillCode || '').trim()
+  state.activeSkillName = String(skill?.skillName || '').trim()
+}
+
+function syncActiveSkillFromSession(session, fallbackSkill = null) {
+  if (session?.skillId || session?.skillCode || session?.skillName) {
+    setActiveSkill({
+      id: session?.skillId ?? fallbackSkill?.id,
+      skillCode: session?.skillCode || fallbackSkill?.skillCode || '',
+      skillName: session?.skillName || fallbackSkill?.skillName || ''
+    })
+    return
+  }
+  if (fallbackSkill) {
+    setActiveSkill(fallbackSkill)
+    return
+  }
+  state.activeSkillId = null
+  state.activeSkillCode = ''
+  state.activeSkillName = ''
+}
+
+function clearPolicySuggestions() {
+  if (policySuggestTimer) {
+    window.clearTimeout(policySuggestTimer)
+    policySuggestTimer = null
+  }
+  state.policySuggestLoading = false
+  state.policySuggestLogId = null
+  state.policySuggestItems = []
+}
+
+function currentSuggestUserId() {
+  const rawUserId = userStore.userInfo?.id ?? userStore.userInfo?.userId ?? null
+  if (rawUserId === null || rawUserId === undefined || rawUserId === '') {
+    return undefined
+  }
+  const numericUserId = Number(rawUserId)
+  return Number.isFinite(numericUserId) ? numericUserId : undefined
+}
+
+function shouldRequestPolicySuggest(input) {
+  if (!hasToken.value || state.asking || !permissionFlags.value.canUseAgent) {
+    return false
+  }
+  const compact = String(buildSuggestQuery(input) || '').replace(/\s+/g, '')
+  return compact.length >= POLICY_SUGGEST_MIN_LENGTH && compact.length <= POLICY_SUGGEST_MAX_LENGTH
+}
+
+function schedulePolicySuggest() {
+  const rawInput = String(state.question || '').trim()
+  const suggestQuery = buildSuggestQuery(rawInput)
+  if (!shouldRequestPolicySuggest(suggestQuery)) {
+    clearPolicySuggestions()
+    return
+  }
+  if (policySuggestTimer) {
+    window.clearTimeout(policySuggestTimer)
+  }
+  const requestSeq = ++policySuggestSeq
+  policySuggestTimer = window.setTimeout(() => {
+    fetchPolicySuggestions(suggestQuery, requestSeq)
+  }, 180)
+}
+
+async function fetchPolicySuggestions(input, requestSeq) {
+  if (!shouldRequestPolicySuggest(input)) {
+    clearPolicySuggestions()
+    return
+  }
+  state.policySuggestLoading = true
+  try {
+    const data = ensureSuccess(await suggestPolicyIntents({
+      baseId: POLICY_BASE_ID,
+      q: input,
+      userId: currentSuggestUserId()
+    }), '获取联想推荐失败')
+    if (requestSeq !== policySuggestSeq || buildSuggestQuery(state.question) !== input.trim()) {
+      return
+    }
+    state.policySuggestLogId = data?.suggestLogId ?? null
+    state.policySuggestItems = Array.isArray(data?.items) ? data.items : []
+  } catch (error) {
+    if (requestSeq !== policySuggestSeq) {
+      return
+    }
+    state.policySuggestLogId = null
+    state.policySuggestItems = []
+  } finally {
+    if (requestSeq === policySuggestSeq) {
+      state.policySuggestLoading = false
+    }
+  }
 }
 
 function handleQuestionInput() {
-  const match = String(state.question || '').match(/(?:^|\s)(@[^\s@]*)$/)
-  state.mentionKeyword = match ? match[1] : ''
+  schedulePolicySuggest()
 }
 
-function applyMention(skill) {
-  const suffix = `@${skill.skillCode} `
-  state.question = String(state.question || '').replace(/(?:^|\s)(@[^\s@]*)$/, ` ${suffix}`).trimStart()
+async function applyPolicySuggestion(item) {
+  state.question = String(item?.standardQuestion || '').trim()
   state.mentionKeyword = ''
+  const suggestLogId = state.policySuggestLogId
+  const selectedIntentId = item?.intentId
+  clearPolicySuggestions()
+  if (!suggestLogId || !selectedIntentId) {
+    return
+  }
+  try {
+    await selectPolicyIntentSuggestion({
+      suggestLogId,
+      selectedIntentId
+    })
+  } catch (error) {
+    console.warn('policy suggest select failed', error)
+  }
 }
 
 function createLocalMessage({ id, messageRole, messageText, isStreaming = false, citedTitles = [] }) {
@@ -500,22 +645,27 @@ async function fetchMessages() {
 
 async function loadSessions() {
   const data = ensureSuccess(await queryAgentSessions({ sourceScene: SOURCE_SCENE, status: 'ACTIVE' }), '加载会话列表失败')
-  state.sessionList = Array.isArray(data) ? data : []
+  const sessionList = Array.isArray(data) ? data : []
+  const boundSkillId = state.activeSkillId ? Number(state.activeSkillId) : null
+  state.sessionList = boundSkillId
+    ? sessionList.filter((item) => Number(item?.skillId) === boundSkillId)
+    : sessionList
   if (!state.sessionPinned && !state.sessionInfo?.id && state.sessionList.length) {
     state.sessionInfo = state.sessionList[0]
+    syncActiveSkillFromSession(state.sessionInfo, resolveFunctionBoundSkill())
     state.messageList = []
   }
 }
 
 async function createOrReuseSession(payload) {
-  const explicitSkill = payload.skillHint
-    ? availableSkills.value.find((item) => {
-      const hint = payload.skillHint.toLowerCase()
-      return String(item.skillCode || '').toLowerCase() === hint || String(item.skillName || '').toLowerCase() === hint
-    })
-    : null
+  const explicitSkill = resolveFunctionBoundSkill()
+
+  if (!explicitSkill?.id) {
+    throw new Error(`当前功能缺少默认专家绑定，请确认 ${FUNCTION_BINDING?.defaultSkillCode || 'talent_policy_consultant'} 已发布且当前账号可用。`)
+  }
 
   if (state.sessionPinned && state.sessionInfo?.id && (!explicitSkill || Number(state.sessionInfo.skillId) === Number(explicitSkill.id))) {
+    syncActiveSkillFromSession(state.sessionInfo, explicitSkill)
     return state.sessionInfo
   }
 
@@ -523,18 +673,21 @@ async function createOrReuseSession(payload) {
     const existing = state.sessionList.find((item) => Number(item.skillId) === Number(explicitSkill.id))
     if (existing?.id && state.sessionPinned) {
       state.sessionInfo = existing
+      syncActiveSkillFromSession(existing, explicitSkill)
       return existing
     }
   }
 
   const session = ensureSuccess(await createAgentSession({
-    skillId: explicitSkill ? Number(explicitSkill.id) : undefined,
-    skillHint: payload.skillHint || undefined,
+    skillId: Number(explicitSkill.id),
+    baseId: POLICY_BASE_ID,
+    skillHint: explicitSkill?.skillCode || undefined,
     question: payload.question,
     sourceScene: SOURCE_SCENE
   }), '创建会话失败')
   state.sessionInfo = session
   state.sessionPinned = true
+  syncActiveSkillFromSession(session, explicitSkill)
   state.lastChatMeta = {
     skillName: session?.skillName || '',
     skillMatchMode: session?.skillMatchMode || ''
@@ -549,6 +702,7 @@ async function selectSession(item) {
   }
   state.sessionInfo = item
   state.sessionPinned = true
+  syncActiveSkillFromSession(item)
   state.lastChatMeta = {
     skillName: item?.skillName || '',
     skillMatchMode: 'SESSION_REUSE'
@@ -563,6 +717,8 @@ async function handleResetSession() {
   state.lastChatMeta = null
   state.messageList = []
   state.question = ''
+  syncActiveSkillFromSession(null, resolveFunctionBoundSkill())
+  clearPolicySuggestions()
 }
 
 async function handleSend() {
@@ -582,12 +738,12 @@ async function handleSend() {
     return
   }
 
-  const skillHint = extractSkillHint(rawQuestion)
-  const cleanQuestion = normalizeQuestion(rawQuestion)
+  const skillHint = state.activeSkillCode
+  const cleanQuestion = buildQuestionContent(rawQuestion)
   const runId = ++sendRunId.value
   const streamContext = createStreamContext(runId)
   state.question = ''
-  state.mentionKeyword = ''
+  clearPolicySuggestions()
 
   state.asking = true
   state.errorMessage = ''
@@ -633,7 +789,7 @@ async function handleSend() {
       return
     }
     state.question = ''
-    state.mentionKeyword = ''
+    clearPolicySuggestions()
     await Promise.all([fetchMessages(), loadSessions()])
   } catch (error) {
     clearActiveStream(streamContext)
@@ -674,7 +830,7 @@ async function handleSend() {
           assistant.citedTitles = Array.isArray(result?.citedTitles) ? result.citedTitles : []
         }
         state.question = ''
-        state.mentionKeyword = ''
+        clearPolicySuggestions()
         await Promise.all([fetchMessages(), loadSessions()])
         return
       } catch (fallbackError) {
@@ -706,6 +862,7 @@ async function handleSend() {
 onBeforeUnmount(() => {
   isComponentUnmounted.value = true
   abortActiveStream('COMPONENT_UNMOUNT')
+  clearPolicySuggestions()
 })
 
 onMounted(async () => {
@@ -724,6 +881,12 @@ onMounted(async () => {
       state.errorMessage = '当前账号还没有 AI 主链权限，请先到 AI 权限配置中开通。'
       return
     }
+    const boundSkill = resolveFunctionBoundSkill()
+    if (!boundSkill?.id) {
+      state.errorMessage = `当前功能缺少默认专家绑定，请确认 ${FUNCTION_BINDING?.defaultSkillCode || 'talent_policy_consultant'} 已发布且当前账号可用。`
+      return
+    }
+    setActiveSkill(boundSkill)
     await loadSessions()
   } catch (error) {
     state.errorMessage = error.message || '初始化手机端政策咨询失败'
@@ -883,7 +1046,51 @@ onMounted(async () => {
   background: #fff;
 }
 
+.active-skill-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #eff6ff;
+}
+
+.active-skill-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.active-skill-label {
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.active-skill-name {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.active-skill-action {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .mention-list,
+.intent-suggest-list,
 .session-list {
   display: grid;
   gap: 10px;
@@ -891,6 +1098,7 @@ onMounted(async () => {
 }
 
 .mention-item,
+.intent-suggest-item,
 .session-item {
   display: flex;
   align-items: center;
@@ -902,6 +1110,22 @@ onMounted(async () => {
   border-radius: 12px;
   background: #f8fafc;
   color: #0f172a;
+}
+
+.intent-suggest-item {
+  align-items: flex-start;
+  flex-direction: column;
+  text-align: left;
+}
+
+.intent-suggest-item__title {
+  font-weight: 700;
+}
+
+.intent-suggest-item__question {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .session-item--active {
@@ -966,6 +1190,7 @@ onMounted(async () => {
     padding: 12px;
   }
 
+  .active-skill-bar,
   .panel-head,
   .composer-footer {
     flex-direction: column;

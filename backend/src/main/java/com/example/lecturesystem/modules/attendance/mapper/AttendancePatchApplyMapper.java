@@ -20,6 +20,13 @@ public interface AttendancePatchApplyMapper {
                                                          @Param("attendanceDate") LocalDate attendanceDate,
                                                          @Param("patchType") String patchType);
 
+    List<AttendancePatchApplyEntity> queryByUserAndDate(@Param("userId") Long userId,
+                                                        @Param("attendanceDate") LocalDate attendanceDate);
+
+    List<AttendancePatchApplyEntity> queryByUserIdsAndDateRange(@Param("userIds") List<Long> userIds,
+                                                                @Param("startDate") LocalDate startDate,
+                                                                @Param("endDate") LocalDate endDate);
+
     long countMyPage(@Param("userId") Long userId,
                      @Param("request") AttendancePatchApplyQueryRequest request);
 
@@ -37,4 +44,6 @@ public interface AttendancePatchApplyMapper {
     AttendancePatchApplyDetailVO detailById(@Param("id") Long id);
 
     int updateReview(AttendancePatchApplyEntity entity);
+
+    int updateStatusAndReview(AttendancePatchApplyEntity entity);
 }

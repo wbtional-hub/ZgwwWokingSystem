@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.attendance.mapper.AttendanceWeeklyReadonlyScopeMapper">
+
+    <select id="findUnitNameById" resultType="string">
+        SELECT unit_name
+        FROM sys_org_unit
+        WHERE id = #{unitId}
+    </select>
+
+    <select id="queryCrossDeptReadonlyUserIds" resultType="long">
+        SELECT u.id
+        FROM sys_user u
+        WHERE u.is_deleted = FALSE
+          AND u.status = 1
+          AND u.id <![CDATA[ <> ]]> #{currentUserId}
+          AND u.unit_id IS NOT NULL
+          AND u.unit_id <![CDATA[ <> ]]> #{currentUnitId}
+          AND u.level_no IS NOT NULL
+          AND u.level_no > #{currentLevelNo}
+          AND u.tree_path IS NOT NULL
+          AND u.tree_path NOT LIKE CONCAT(#{treePathPrefix}, '%')
+        ORDER BY u.level_no ASC, u.id ASC
+    </select>
+</mapper>

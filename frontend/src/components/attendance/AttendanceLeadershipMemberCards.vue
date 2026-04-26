@@ -2,8 +2,8 @@
   <section ref="rootRef" class="leadership-members">
     <div class="leadership-members__toolbar">
       <div>
-        <p class="leadership-members__eyebrow">团队成员工作台</p>
-        <h3 class="leadership-members__title">在当前页查看下级考勤，不再来回跳转详情页</h3>
+        <p class="leadership-members__eyebrow">下级考勤</p>
+        <h3 class="leadership-members__title">卡片化查看下级今日状态与待审事项</h3>
       </div>
       <button type="button" class="leadership-members__refresh" @click="$emit('refresh')">
         刷新数据
@@ -46,7 +46,7 @@
     </div>
 
     <van-loading v-if="loading" class="leadership-members__loading" size="24px" vertical>
-      正在整理团队成员卡片...
+      正在整理下级考勤卡片...
     </van-loading>
 
     <van-empty v-else-if="!members.length" description="当前筛选下没有可展示的成员" />
@@ -57,59 +57,76 @@
         :key="member.userId"
         class="leadership-member-card"
         :data-member-id="member.userId"
-        :class="{
-          'leadership-member-card--active': selectedUserId === member.userId
-        }"
+        :class="{ 'leadership-member-card--active': selectedUserId === member.userId }"
       >
-        <button type="button" class="leadership-member-card__trigger" @click="$emit('select-member', member)">
-          <div class="leadership-member-card__identity">
-            <div class="leadership-member-card__identity-main">
-              <h4 class="leadership-member-card__name">{{ member.realName }}</h4>
-              <p class="leadership-member-card__meta">
-                {{ member.unitName || '未归属部门' }} / {{ member.jobTitle || '岗位未填写' }}
-              </p>
-            </div>
-            <div class="leadership-member-card__identity-side">
-              <span
-                class="leadership-member-card__status"
-                :class="`leadership-member-card__status--${member.statusTone}`"
-              >
-                {{ member.statusLabel }}
-              </span>
-              <span class="leadership-member-card__action">
-                {{ selectedUserId === member.userId ? '收起明细' : '查看明细' }}
-              </span>
-            </div>
+        <button type="button" class="leadership-member-card__header" @click="$emit('select-member', member)">
+          <div class="leadership-member-card__identity-main">
+            <h4 class="leadership-member-card__name">{{ member.realName }}</h4>
+            <p class="leadership-member-card__meta">
+              {{ member.unitName || '未归属部门' }} / {{ member.jobTitle || '岗位未填写' }}
+            </p>
           </div>
-
-          <div class="leadership-member-card__timeline">
-            <div class="leadership-member-card__time-item">
-              <span class="leadership-member-card__time-label">上班</span>
-              <strong>{{ member.checkInTimeText }}</strong>
-            </div>
-            <div class="leadership-member-card__time-item">
-              <span class="leadership-member-card__time-label">下班</span>
-              <strong>{{ member.checkOutTimeText }}</strong>
-            </div>
+          <div class="leadership-member-card__identity-side">
+            <span class="leadership-member-card__status" :class="`leadership-member-card__status--${member.statusTone}`">
+              {{ member.statusLabel }}
+            </span>
+            <span v-if="member.readonlyMode" class="leadership-member-card__readonly">跨部门只读</span>
+            <span v-else-if="member.pendingReviewCount" class="leadership-member-card__pending">
+              待审 {{ member.pendingReviewCount }}
+            </span>
           </div>
-
-          <div class="leadership-member-card__summary">
-            <span>本周出勤 {{ member.weekSummary.attendanceDays }} 天</span>
-            <span>迟到 {{ member.weekSummary.lateCount }} 次</span>
-            <span>异常 {{ member.weekSummary.abnormalCount }} 次</span>
-          </div>
-
-          <p class="leadership-member-card__hint">{{ member.statusSummary }}</p>
         </button>
 
-        <transition name="leadership-detail-expand">
-          <div
-            v-if="selectedUserId === member.userId"
-            class="leadership-member-card__detail leadership-member-card__detail--mobile"
+        <div class="leadership-member-card__node-grid">
+          <article
+            v-for="node in member.nodes"
+            :key="`${member.userId}-${node.nodeCode}`"
+            class="leadership-node-card"
+            :class="`leadership-node-card--${node.statusTone || 'pending'}`"
+            :style="nodeCardStyle(node)"
           >
-            <slot name="detail" :member="member" />
-          </div>
-        </transition>
+            <div class="leadership-node-card__top">
+              <span class="leadership-node-card__step" :style="nodePhaseStyle(node)">{{ node.stepLabel || '-' }}</span>
+              <span class="leadership-node-card__status">{{ node.statusLabel || '待处理' }}</span>
+            </div>
+            <div class="leadership-node-card__title">{{ node.nodeTitleShort || '-' }}</div>
+            <div class="leadership-node-card__range">{{ node.timeRangeText || '时间以规则为准' }}</div>
+            <div class="leadership-node-card__time">{{ node.actualPunchTime || '未打卡' }}</div>
+            <p class="leadership-node-card__remark">{{ node.simpleRemark || '暂无节点说明' }}</p>
+            <div v-if="node.actions?.length" class="leadership-node-card__actions">
+              <button
+                v-for="action in node.actions"
+                :key="`${member.userId}-${node.nodeCode}-${action.key}`"
+                type="button"
+                class="leadership-node-card__action"
+                :class="`leadership-node-card__action--${action.tone || 'secondary'}`"
+                :disabled="Boolean(reviewLoading)"
+                @click.stop="$emit('review-member', { member, node, action })"
+              >
+                {{ action.label }}
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <div class="leadership-member-card__summary">
+          <span>本周出勤 {{ member.weekSummary.attendanceDays }} 天</span>
+          <span>迟到 {{ member.weekSummary.lateCount }} 次</span>
+          <span>异常 {{ member.weekSummary.abnormalCount }} 次</span>
+        </div>
+
+        <p class="leadership-member-card__hint">{{ member.statusSummary }}</p>
+
+        <div v-if="member.canReviewPending" class="leadership-member-card__footer">
+          <button
+            type="button"
+            class="leadership-member-card__review"
+            :disabled="Boolean(reviewLoading)"
+            @click="$emit('review-member', { member, action: { key: 'review', tone: 'primary' } })"
+          >
+            {{ member.reviewActionLabel || '审核申请' }}
+          </button>
+        </div>
       </article>
     </div>
   </section>
@@ -124,6 +141,10 @@ const props = defineProps({
     default: () => []
   },
   loading: {
+    type: Boolean,
+    default: false
+  },
+  reviewLoading: {
     type: Boolean,
     default: false
   },
@@ -159,7 +180,8 @@ defineEmits([
   'update:status',
   'update:department',
   'clear-filters',
-  'refresh'
+  'refresh',
+  'review-member'
 ])
 
 const rootRef = ref(null)
@@ -178,6 +200,20 @@ watch(() => props.selectedUserId, async (selectedUserId) => {
     block: 'nearest'
   })
 })
+
+function nodeCardStyle(node) {
+  return {
+    borderColor: node?.accentBorder || 'rgba(148, 163, 184, 0.16)',
+    background: `linear-gradient(180deg, ${node?.accentSoft || 'rgba(248, 250, 252, 0.96)'}, rgba(255, 255, 255, 0.96))`
+  }
+}
+
+function nodePhaseStyle(node) {
+  return {
+    color: node?.accentColor || '#64748b',
+    background: node?.accentSoft || 'rgba(148, 163, 184, 0.14)'
+  }
+}
 </script>
 
 <style scoped>
@@ -209,7 +245,9 @@ watch(() => props.selectedUserId, async (selectedUserId) => {
 }
 
 .leadership-members__refresh,
-.leadership-members__clear {
+.leadership-members__clear,
+.leadership-member-card__review,
+.leadership-node-card__action {
   height: 40px;
   border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 999px;
@@ -222,7 +260,9 @@ watch(() => props.selectedUserId, async (selectedUserId) => {
 }
 
 .leadership-members__refresh:hover,
-.leadership-members__clear:hover {
+.leadership-members__clear:hover,
+.leadership-member-card__review:hover,
+.leadership-node-card__action:hover {
   transform: translateY(-1px);
   box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
 }
@@ -257,8 +297,8 @@ watch(() => props.selectedUserId, async (selectedUserId) => {
 
 .leadership-filter select:focus,
 .leadership-filter input:focus {
-  border-color: rgba(37, 99, 235, 0.45);
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.08);
+  border-color: rgba(79, 125, 243, 0.45);
+  box-shadow: 0 0 0 4px rgba(79, 125, 243, 0.08);
 }
 
 .leadership-members__loading {
@@ -273,35 +313,32 @@ watch(() => props.selectedUserId, async (selectedUserId) => {
 }
 
 .leadership-member-card {
-  border-radius: 22px;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 24px;
   border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(255, 255, 255, 0.9);
-  overflow: hidden;
+  background: rgba(255, 255, 255, 0.92);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
 }
 
 .leadership-member-card--active {
-  border-color: rgba(37, 99, 235, 0.28);
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.1);
+  border-color: rgba(79, 125, 243, 0.24);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 245, 249, 0.98));
 }
 
-.leadership-member-card__trigger {
-  width: 100%;
-  border: none;
-  background: transparent;
-  padding: 18px;
-  text-align: left;
-  display: grid;
-  gap: 16px;
-  cursor: pointer;
-}
-
-.leadership-member-card__identity {
+.leadership-member-card__header {
   display: flex;
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
 }
 
 .leadership-member-card__identity-main {
@@ -321,76 +358,137 @@ watch(() => props.selectedUserId, async (selectedUserId) => {
   color: #0f172a;
 }
 
-.leadership-member-card__meta {
-  margin: 6px 0 0;
+.leadership-member-card__meta,
+.leadership-member-card__hint,
+.leadership-node-card__range,
+.leadership-node-card__remark {
+  margin: 0;
   font-size: 13px;
+  line-height: 1.6;
   color: #64748b;
 }
 
-.leadership-member-card__status {
+.leadership-member-card__status,
+.leadership-member-card__readonly,
+.leadership-member-card__pending,
+.leadership-node-card__status {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: 72px;
-  padding: 8px 12px;
+  min-height: 30px;
+  padding: 0 12px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
 }
 
-.leadership-member-card__status--normal {
+.leadership-member-card__status--normal,
+.leadership-node-card--normal .leadership-node-card__status {
   background: rgba(16, 185, 129, 0.12);
   color: #047857;
 }
 
-.leadership-member-card__status--late {
+.leadership-member-card__status--late,
+.leadership-node-card--late .leadership-node-card__status,
+.leadership-node-card--makeup .leadership-node-card__status {
   background: rgba(245, 158, 11, 0.14);
   color: #b45309;
 }
 
-.leadership-member-card__status--missing,
-.leadership-member-card__status--abnormal {
-  background: rgba(248, 113, 113, 0.14);
-  color: #b91c1c;
-}
-
-.leadership-member-card__status--field {
+.leadership-member-card__status--field,
+.leadership-node-card--evidence .leadership-node-card__status {
   background: rgba(14, 165, 233, 0.14);
   color: #0369a1;
 }
 
-.leadership-member-card__status--pending {
+.leadership-member-card__status--missing,
+.leadership-member-card__status--abnormal,
+.leadership-node-card--missing .leadership-node-card__status,
+.leadership-node-card--rejected .leadership-node-card__status {
+  background: rgba(248, 113, 113, 0.14);
+  color: #b91c1c;
+}
+
+.leadership-member-card__status--pending,
+.leadership-node-card--pending .leadership-node-card__status {
   background: rgba(148, 163, 184, 0.16);
   color: #475569;
 }
 
-.leadership-member-card__action {
-  font-size: 12px;
-  color: #64748b;
+.leadership-node-card--approved .leadership-node-card__status {
+  background: rgba(34, 197, 94, 0.14);
+  color: #15803d;
 }
 
-.leadership-member-card__timeline {
+.leadership-member-card__readonly {
+  background: rgba(14, 165, 233, 0.1);
+  color: #0369a1;
+}
+
+.leadership-member-card__pending {
+  background: rgba(79, 125, 243, 0.12);
+  color: #315fd3;
+}
+
+.leadership-member-card__node-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 
-.leadership-member-card__time-item {
+.leadership-node-card {
   display: grid;
-  gap: 6px;
+  gap: 10px;
   padding: 14px;
-  border-radius: 16px;
-  background: #f8fafc;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
 }
 
-.leadership-member-card__time-label {
+.leadership-node-card__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.leadership-node-card__step {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
   font-size: 12px;
-  color: #64748b;
+  font-weight: 700;
 }
 
-.leadership-member-card__time-item strong {
-  font-size: 20px;
+.leadership-node-card__title {
+  font-size: 16px;
+  font-weight: 700;
   color: #0f172a;
+}
+
+.leadership-node-card__time {
+  font-size: 20px;
+  line-height: 1.1;
+  color: #0f172a;
+}
+
+.leadership-node-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.leadership-node-card__action--primary,
+.leadership-member-card__review {
+  border-color: rgba(79, 125, 243, 0.2);
+  background: rgba(79, 125, 243, 0.1);
+  color: #315fd3;
+}
+
+.leadership-node-card__action--warning {
+  border-color: rgba(231, 169, 59, 0.24);
+  background: rgba(231, 169, 59, 0.12);
+  color: #b7791f;
 }
 
 .leadership-member-card__summary {
@@ -411,81 +509,32 @@ watch(() => props.selectedUserId, async (selectedUserId) => {
   color: #334155;
 }
 
-.leadership-member-card__hint {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #64748b;
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.leadership-member-card__detail--mobile {
-  display: none;
-  padding: 0 18px 18px;
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.98));
-}
-
-.leadership-detail-expand-enter-active,
-.leadership-detail-expand-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.leadership-detail-expand-enter-from,
-.leadership-detail-expand-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
+.leadership-member-card__footer {
+  display: flex;
+  justify-content: flex-end;
 }
 
 @media (max-width: 960px) {
-  .leadership-members__toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .leadership-members__filters {
+  .leadership-members__filters,
+  .leadership-member-card__node-grid {
     grid-template-columns: 1fr;
-  }
-
-  .leadership-members__refresh,
-  .leadership-members__clear {
-    width: 100%;
-  }
-
-  .leadership-member-card__detail--mobile {
-    display: block;
   }
 }
 
 @media (max-width: 640px) {
-  .leadership-members {
-    gap: 14px;
-  }
-
-  .leadership-member-card__trigger {
-    gap: 14px;
+  .leadership-member-card {
     padding: 16px;
+    border-radius: 20px;
   }
 
-  .leadership-member-card__identity {
+  .leadership-members__toolbar,
+  .leadership-member-card__header {
     flex-direction: column;
-    gap: 10px;
+    align-items: stretch;
   }
 
   .leadership-member-card__identity-side {
-    width: 100%;
     justify-items: start;
-  }
-
-  .leadership-member-card__name {
-    font-size: 18px;
-  }
-
-  .leadership-member-card__timeline {
-    grid-template-columns: 1fr;
   }
 }
 </style>

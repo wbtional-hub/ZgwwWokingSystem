@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AiPolicyIntentSuggestLogMapper">
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.agent.entity.AiPolicyIntentSuggestLogEntity"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO ai_policy_intent_suggest_log (
+            base_id, user_id, raw_input, normalized_input, suggested_items, selected_intent_id, created_at
+        ) VALUES (
+            #{baseId}, #{userId}, #{rawInput}, #{normalizedInput}, #{suggestedItems}, #{selectedIntentId}, #{createdAt}
+        )
+    </insert>
+
+    <delete id="deleteByBaseId">
+        DELETE FROM ai_policy_intent_suggest_log WHERE base_id = #{baseId}
+    </delete>
+
+    <update id="updateSelectedIntent">
+        UPDATE ai_policy_intent_suggest_log
+        SET selected_intent_id = #{selectedIntentId}
+        WHERE id = #{id}
+    </update>
+
+    <select id="countByBaseId" resultType="int">
+        SELECT COUNT(1) FROM ai_policy_intent_suggest_log WHERE base_id = #{baseId}
+    </select>
+
+    <select id="countSelectedByBaseId" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_policy_intent_suggest_log
+        WHERE base_id = #{baseId}
+          AND selected_intent_id IS NOT NULL
+    </select>
+</mapper>

@@ -12,6 +12,19 @@ public final class AttendanceCheckInStatus {
     public static final String ALREADY_FINISHED = "ALREADY_FINISHED";
     public static final String CHECK_IN_SUCCESS = "CHECK_IN_SUCCESS";
     public static final String CHECK_OUT_SUCCESS = "CHECK_OUT_SUCCESS";
+    public static final String NORMAL = "NORMAL";
+    public static final String LATE = "LATE";
+    public static final String EARLY = "EARLY";
+    public static final String LATE_EARLY = "LATE_EARLY";
+    public static final String UNPUNCHED = "UNPUNCHED";
+    public static final String NEED_MAKEUP = "NEED_MAKEUP";
+    public static final String EVIDENCE_REQUIRED = "EVIDENCE_REQUIRED";
+    public static final String EVIDENCE_PENDING = "EVIDENCE_PENDING";
+    public static final String EVIDENCE_APPROVED = "EVIDENCE_APPROVED";
+    public static final String EVIDENCE_REJECTED = "EVIDENCE_REJECTED";
+    public static final String MAKEUP_PENDING = "MAKEUP_PENDING";
+    public static final String MAKEUP_APPROVED = "MAKEUP_APPROVED";
+    public static final String MAKEUP_REJECTED = "MAKEUP_REJECTED";
 
     private AttendanceCheckInStatus() {
     }

@@ -161,6 +161,19 @@ export function queryAgentMessages(sessionId) {
   })
 }
 
+export function suggestPolicyIntents(params) {
+  return request.get('/agent/policy-intent/suggest', {
+    params,
+    timeout: AI_SESSION_TIMEOUT
+  })
+}
+
+export function selectPolicyIntentSuggestion(data) {
+  return request.post('/agent/policy-intent/select', data, {
+    timeout: AI_SESSION_TIMEOUT
+  })
+}
+
 async function consumeSseBuffer(buffer, streamState, handlers) {
   let working = String(buffer || '').replace(/\r\n/g, '\n')
   let boundary = working.indexOf('\n\n')

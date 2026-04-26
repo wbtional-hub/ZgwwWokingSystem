@@ -25,6 +25,9 @@ public class WeeklyWorkDetailVO {
     private LocalDateTime submitTime;
     private LocalDateTime approvedTime;
     private LocalDateTime createTime;
+    private Boolean canApprove;
+    private Boolean readonlyMode;
+    private Boolean canViewCrossDept;
     private List<WeeklyWorkFlowNodeVO> flowNodes;
     private List<String> availableReturnTargets;
     private List<WeeklyWorkApprovalLogVO> approvalLogs;
@@ -195,6 +198,30 @@ public class WeeklyWorkDetailVO {
 
     public void setCreateTime(LocalDateTime createTime) {
         this.createTime = createTime;
+    }
+
+    public Boolean getCanApprove() {
+        return canApprove;
+    }
+
+    public void setCanApprove(Boolean canApprove) {
+        this.canApprove = canApprove;
+    }
+
+    public Boolean getReadonlyMode() {
+        return readonlyMode;
+    }
+
+    public void setReadonlyMode(Boolean readonlyMode) {
+        this.readonlyMode = readonlyMode;
+    }
+
+    public Boolean getCanViewCrossDept() {
+        return canViewCrossDept;
+    }
+
+    public void setCanViewCrossDept(Boolean canViewCrossDept) {
+        this.canViewCrossDept = canViewCrossDept;
     }
 
     public List<WeeklyWorkFlowNodeVO> getFlowNodes() {

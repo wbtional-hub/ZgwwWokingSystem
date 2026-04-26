@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.attendance.mapper.AttendanceReminderLogMapper">
+
+    <resultMap id="AttendanceReminderLogEntityMap" type="com.example.lecturesystem.modules.attendance.entity.AttendanceReminderLogEntity">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="openid" column="openid"/>
+        <result property="attendanceDate" column="attendance_date"/>
+        <result property="reminderType" column="reminder_type"/>
+        <result property="templateId" column="template_id"/>
+        <result property="templatePayload" column="template_payload"/>
+        <result property="targetUrl" column="target_url"/>
+        <result property="sendStatus" column="send_status"/>
+        <result property="wxErrCode" column="wx_err_code"/>
+        <result property="wxErrMsg" column="wx_err_msg"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.attendance.entity.AttendanceReminderLogEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO attendance_reminder_log (
+            user_id,
+            openid,
+            attendance_date,
+            reminder_type,
+            template_id,
+            template_payload,
+            target_url,
+            send_status,
+            wx_err_code,
+            wx_err_msg,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            #{userId},
+            #{openid},
+            #{attendanceDate},
+            #{reminderType},
+            #{templateId},
+            #{templatePayload},
+            #{targetUrl},
+            #{sendStatus},
+            #{wxErrCode},
+            #{wxErrMsg},
+            #{createdAt},
+            #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateSendResult" parameterType="com.example.lecturesystem.modules.attendance.entity.AttendanceReminderLogEntity">
+        UPDATE attendance_reminder_log
+        SET template_id = #{templateId},
+            template_payload = #{templatePayload},
+            target_url = #{targetUrl},
+            send_status = #{sendStatus},
+            wx_err_code = #{wxErrCode},
+            wx_err_msg = #{wxErrMsg},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="countByUserIdAndDateAndType" resultType="int">
+        SELECT COUNT(1)
+        FROM attendance_reminder_log
+        WHERE user_id = #{userId}
+          AND attendance_date = #{attendanceDate}
+          AND reminder_type = #{reminderType}
+    </select>
+</mapper>

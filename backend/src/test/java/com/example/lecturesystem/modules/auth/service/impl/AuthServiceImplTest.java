@@ -12,6 +12,7 @@ import com.example.lecturesystem.modules.auth.support.Sm3PasswordCodec;
 import com.example.lecturesystem.modules.auth.support.PasswordPolicyValidator;
 import com.example.lecturesystem.modules.auth.service.AuthService;
 import com.example.lecturesystem.modules.auth.service.WechatMpAuthService;
+import com.example.lecturesystem.modules.auth.service.WechatMpPendingBindService;
 import com.example.lecturesystem.modules.auth.vo.LoginVO;
 import com.example.lecturesystem.modules.auth.vo.MobileLoginOptionsVO;
 import com.example.lecturesystem.modules.permission.mapper.PermissionMapper;
@@ -452,6 +453,16 @@ public class AuthServiceImplTest {
                                 + "&wechatAuthCode=" + code
                                 + "&wechatAuthMessage=" + message;
                     }
+                    @Override
+                    public String buildPendingBindCallbackRedirect(WechatMpCallbackState callbackState, String openId, String unionId, String bindCode) {
+                        throw new UnsupportedOperationException("not used");
+                    }
+                },
+                new WechatMpPendingBindService() {
+                    @Override
+                    public com.example.lecturesystem.modules.auth.entity.WechatMpPendingBindEntity saveIfAbsent(String openId, String unionId, String requestIp, String userAgent, String remark) {
+                        throw new UnsupportedOperationException("not used");
+                    }
                 }
         );
 
@@ -603,6 +614,16 @@ public class AuthServiceImplTest {
 
                     @Override
                     public String buildFailureCallbackRedirect(WechatMpCallbackState callbackState, String message) {
+                        throw new UnsupportedOperationException("not used");
+                    }
+                    @Override
+                    public String buildPendingBindCallbackRedirect(WechatMpCallbackState callbackState, String openId, String unionId, String bindCode) {
+                        throw new UnsupportedOperationException("not used");
+                    }
+                },
+                new WechatMpPendingBindService() {
+                    @Override
+                    public com.example.lecturesystem.modules.auth.entity.WechatMpPendingBindEntity saveIfAbsent(String openId, String unionId, String requestIp, String userAgent, String remark) {
                         throw new UnsupportedOperationException("not used");
                     }
                 }

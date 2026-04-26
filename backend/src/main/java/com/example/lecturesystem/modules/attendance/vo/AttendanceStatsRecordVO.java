@@ -9,6 +9,8 @@ public class AttendanceStatsRecordVO {
     private Long userId;
     private LocalDate attendanceDate;
     private LocalDateTime checkInTime;
+    private LocalDateTime amOffTime;
+    private LocalDateTime pmOnTime;
     private LocalDateTime checkOutTime;
     private String checkInResult;
     private String checkInFailReason;
@@ -25,6 +27,10 @@ public class AttendanceStatsRecordVO {
     public void setAttendanceDate(LocalDate attendanceDate) { this.attendanceDate = attendanceDate; }
     public LocalDateTime getCheckInTime() { return checkInTime; }
     public void setCheckInTime(LocalDateTime checkInTime) { this.checkInTime = checkInTime; }
+    public LocalDateTime getAmOffTime() { return amOffTime; }
+    public void setAmOffTime(LocalDateTime amOffTime) { this.amOffTime = amOffTime; }
+    public LocalDateTime getPmOnTime() { return pmOnTime; }
+    public void setPmOnTime(LocalDateTime pmOnTime) { this.pmOnTime = pmOnTime; }
     public LocalDateTime getCheckOutTime() { return checkOutTime; }
     public void setCheckOutTime(LocalDateTime checkOutTime) { this.checkOutTime = checkOutTime; }
     public String getCheckInResult() { return checkInResult; }

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.attendance.mapper.AttendancePatchApplyNodeMapper">
+    <resultMap id="AttendancePatchApplyNodeEntityMap" type="com.example.lecturesystem.modules.attendance.entity.AttendancePatchApplyNodeEntity">
+        <id property="id" column="id"/>
+        <result property="applyId" column="apply_id"/>
+        <result property="nodeOrder" column="node_order"/>
+        <result property="nodeCode" column="node_code"/>
+        <result property="nodeName" column="node_name"/>
+        <result property="approverUserId" column="approver_user_id"/>
+        <result property="approverName" column="approver_name"/>
+        <result property="status" column="status"/>
+        <result property="approveTime" column="approve_time"/>
+        <result property="approveComment" column="approve_comment"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <insert id="batchInsert">
+        INSERT INTO attendance_patch_apply_node (
+            apply_id, node_order, node_code, node_name, approver_user_id, approver_name, status,
+            approve_time, approve_comment, create_time, update_time
+        )
+        VALUES
+        <foreach item="item" collection="list" separator=",">
+            (
+                #{item.applyId}, #{item.nodeOrder}, #{item.nodeCode}, #{item.nodeName},
+                #{item.approverUserId}, #{item.approverName}, #{item.status},
+                #{item.approveTime}, #{item.approveComment}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+        </foreach>
+    </insert>
+
+    <select id="queryByApplyId" resultMap="AttendancePatchApplyNodeEntityMap">
+        SELECT id, apply_id, node_order, node_code, node_name, approver_user_id, approver_name, status,
+               approve_time, approve_comment, create_time, update_time
+        FROM attendance_patch_apply_node
+        WHERE apply_id = #{applyId}
+        ORDER BY node_order ASC, id ASC
+    </select>
+
+    <select id="queryByApplyIds" resultMap="AttendancePatchApplyNodeEntityMap">
+        SELECT id, apply_id, node_order, node_code, node_name, approver_user_id, approver_name, status,
+               approve_time, approve_comment, create_time, update_time
+        FROM attendance_patch_apply_node
+        WHERE apply_id IN
+        <foreach item="item" collection="applyIds" open="(" separator="," close=")">
+            #{item}
+        </foreach>
+        ORDER BY apply_id ASC, node_order ASC, id ASC
+    </select>
+
+    <select id="findCurrentPendingNode" resultMap="AttendancePatchApplyNodeEntityMap">
+        SELECT id, apply_id, node_order, node_code, node_name, approver_user_id, approver_name, status,
+               approve_time, approve_comment, create_time, update_time
+        FROM attendance_patch_apply_node
+        WHERE apply_id = #{applyId}
+          AND status = 'PENDING'
+        ORDER BY node_order ASC, id ASC
+        LIMIT 1
+    </select>
+
+    <select id="findCurrentPendingNodeForApprover" resultMap="AttendancePatchApplyNodeEntityMap">
+        SELECT id, apply_id, node_order, node_code, node_name, approver_user_id, approver_name, status,
+               approve_time, approve_comment, create_time, update_time
+        FROM attendance_patch_apply_node
+        WHERE apply_id = #{applyId}
+          AND approver_user_id = #{approverUserId}
+          AND status = 'PENDING'
+        ORDER BY node_order ASC, id ASC
+        LIMIT 1
+    </select>
+
+    <update id="updateReview" parameterType="com.example.lecturesystem.modules.attendance.entity.AttendancePatchApplyNodeEntity">
+        UPDATE attendance_patch_apply_node
+        SET status = #{status},
+            approve_time = #{approveTime},
+            approve_comment = #{approveComment},
+            update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+    <update id="activateNode">
+        UPDATE attendance_patch_apply_node
+        SET status = 'PENDING',
+            update_time = #{updateTime}
+        WHERE id = #{id}
+          AND status = 'WAITING'
+    </update>
+
+    <update id="updateRemainingNodeStatus">
+        UPDATE attendance_patch_apply_node
+        SET status = #{targetStatus},
+            update_time = #{updateTime}
+        WHERE apply_id = #{applyId}
+          AND node_order <![CDATA[>=]]> #{minNodeOrder}
+          AND status = 'WAITING'
+    </update>
+</mapper>

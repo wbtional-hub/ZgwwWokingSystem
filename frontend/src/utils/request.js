@@ -7,6 +7,7 @@ import { TRACE_ID_HEADER, createTraceId } from '@/utils/trace'
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
 // FIX: wechat login recovery protection
 const WECHAT_LOGIN_RECOVERING_KEY = 'wechat_login_recovering'
+const WECHAT_MOBILE_AUTH_ENTRY_PATHS = new Set(['/mobile-workspace', '/attendance'])
 let authRedirecting = false
 
 const request = axios.create({
@@ -109,6 +110,69 @@ function isWechatLoginRecovering() {
   }
 }
 
+function setWechatLoginRecovering() {
+  if (typeof window === 'undefined') {
+    return
+  }
+  try {
+    window.sessionStorage.setItem(WECHAT_LOGIN_RECOVERING_KEY, '1')
+  } catch (error) {
+    // ignore sessionStorage access errors
+  }
+}
+
+function isWechatBrowser() {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+  return /micromessenger/i.test(navigator.userAgent || '')
+}
+
+function normalizeWechatRedirect(value) {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')) {
+    return '/mobile-workspace'
+  }
+  if (value === '/mobile' || value.startsWith('/mobile?') || value === '/login') {
+    return '/mobile-workspace'
+  }
+  return value
+}
+
+function isWechatMobileAuthEntryPath(path) {
+  return WECHAT_MOBILE_AUTH_ENTRY_PATHS.has(path)
+}
+
+function startWechatMobileAuthRecovery() {
+  if (
+    authRedirecting
+    || isWechatLoginRecovering()
+    || !isWechatBrowser()
+    || !isWechatMobileAuthEntryPath(router.currentRoute.value.path)
+  ) {
+    return false
+  }
+
+  authRedirecting = true
+  setWechatLoginRecovering()
+  localStorage.removeItem('token')
+  localStorage.removeItem('userInfo')
+  localStorage.removeItem('userAccessReady')
+  localStorage.removeItem('forcePasswordChange')
+
+  const redirect = normalizeWechatRedirect(router.currentRoute.value.fullPath || '/mobile-workspace')
+  router.replace({
+    path: '/mobile',
+    query: { redirect }
+  }).catch(() => {
+    authRedirecting = false
+  })
+  return true
+}
+
+function waitForWechatMobileAuthRecovery() {
+  return new Promise(() => {})
+}
+
 function isLoginRequest(config) {
   return typeof config?.url === 'string' && (
     config.url.includes('/auth/login')
@@ -158,11 +222,15 @@ request.interceptors.response.use(
     }
     const businessCode = response.data?.code
 
-    if (
+if (
   !isLoginRequest(response.config)
   && !authRedirecting
   && isBusinessAuthExpired(response.data)
 ) {
+  if (startWechatMobileAuthRecovery()) {
+    return waitForWechatMobileAuthRecovery()
+  }
+
   if (isWechatLoginRecovering()) {
     return response.data
   }
@@ -226,6 +294,9 @@ if (isAiTimeout) {
 }
 
 if ((status === 401 || status === 403) && !isLoginRequest(error.config) && !authRedirecting) {
+      if (startWechatMobileAuthRecovery()) {
+        return waitForWechatMobileAuthRecovery()
+      }
       // FIX: wechat login recovery protection
       if (isWechatLoginRecovering()) {
         return Promise.reject(error)

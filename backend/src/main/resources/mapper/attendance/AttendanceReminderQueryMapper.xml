@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.attendance.mapper.AttendanceReminderQueryMapper">
+
+    <resultMap id="AttendanceReminderCandidateMap" type="com.example.lecturesystem.modules.attendance.entity.AttendanceReminderCandidateEntity">
+        <result property="userId" column="user_id"/>
+        <result property="unitId" column="unit_id"/>
+        <result property="username" column="username"/>
+        <result property="realName" column="real_name"/>
+        <result property="openid" column="openid"/>
+        <result property="workStartTime" column="work_start_time"/>
+        <result property="amOffTime" column="am_off_time"/>
+        <result property="pmOnTime" column="pm_on_time"/>
+        <result property="workEndTime" column="work_end_time"/>
+    </resultMap>
+
+    <resultMap id="AttendanceRecordEntityMap" type="com.example.lecturesystem.modules.attendance.entity.AttendanceRecordEntity">
+        <id property="id" column="id"/>
+        <result property="unitId" column="unit_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="attendanceDate" column="attendance_date"/>
+        <result property="checkType" column="check_type"/>
+        <result property="checkTime" column="check_time"/>
+        <result property="checkInTime" column="check_in_time"/>
+        <result property="amOffTime" column="am_off_time"/>
+        <result property="pmOnTime" column="pm_on_time"/>
+        <result property="checkOutTime" column="check_out_time"/>
+        <result property="checkInAddress" column="check_in_address"/>
+        <result property="amOffAddress" column="am_off_address"/>
+        <result property="pmOnAddress" column="pm_on_address"/>
+        <result property="checkOutAddress" column="check_out_address"/>
+        <result property="checkInLatitude" column="check_in_latitude"/>
+        <result property="checkInLongitude" column="check_in_longitude"/>
+        <result property="checkInDistanceMeters" column="check_in_distance_meters"/>
+        <result property="amOffLatitude" column="am_off_latitude"/>
+        <result property="amOffLongitude" column="am_off_longitude"/>
+        <result property="amOffDistanceMeters" column="am_off_distance_meters"/>
+        <result property="pmOnLatitude" column="pm_on_latitude"/>
+        <result property="pmOnLongitude" column="pm_on_longitude"/>
+        <result property="pmOnDistanceMeters" column="pm_on_distance_meters"/>
+        <result property="checkOutLatitude" column="check_out_latitude"/>
+        <result property="checkOutLongitude" column="check_out_longitude"/>
+        <result property="checkOutDistanceMeters" column="check_out_distance_meters"/>
+        <result property="checkInResult" column="check_in_result"/>
+        <result property="checkInFailReason" column="check_in_fail_reason"/>
+        <result property="locationSource" column="location_source"/>
+        <result property="locationProvider" column="location_provider"/>
+        <result property="validFlag" column="valid_flag"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <select id="queryReminderCandidates" resultMap="AttendanceReminderCandidateMap">
+        SELECT DISTINCT
+            u.id AS user_id,
+            u.unit_id,
+            u.username,
+            u.real_name,
+            u.wechat_open_id AS openid,
+            r.work_start_time,
+            r.am_off_time,
+            r.pm_on_time,
+            r.work_end_time
+        FROM sys_user u
+        INNER JOIN attendance_rule r
+            ON r.unit_id = u.unit_id
+           AND r.status = 1
+           AND r.work_start_time IS NOT NULL
+           AND r.am_off_time IS NOT NULL
+           AND r.pm_on_time IS NOT NULL
+           AND r.work_end_time IS NOT NULL
+        INNER JOIN attendance_location l
+            ON l.unit_id = u.unit_id
+           AND l.status = '1'
+           AND l.latitude IS NOT NULL
+           AND l.longitude IS NOT NULL
+           AND l.radius_meters IS NOT NULL
+           AND l.radius_meters &gt; 0
+        INNER JOIN sys_user_module_permission p
+            ON p.user_id = u.id
+           AND p.module_code = 'attendance_workbench'
+        WHERE u.is_deleted = FALSE
+          AND u.status = 1
+          AND u.unit_id IS NOT NULL
+          AND u.wechat_open_id IS NOT NULL
+          AND TRIM(u.wechat_open_id) &lt;&gt; ''
+        ORDER BY u.id ASC
+    </select>
+
+    <select id="queryTodayRecordsByUserIds" resultMap="AttendanceRecordEntityMap">
+        SELECT id,
+               unit_id,
+               user_id,
+               attendance_date,
+               check_type,
+               check_time,
+               check_in_time,
+               am_off_time,
+               pm_on_time,
+               check_out_time,
+               check_in_address,
+               am_off_address,
+               pm_on_address,
+               check_out_address,
+               check_in_latitude,
+               check_in_longitude,
+               check_in_distance_meters,
+               am_off_latitude,
+               am_off_longitude,
+               am_off_distance_meters,
+               pm_on_latitude,
+               pm_on_longitude,
+               pm_on_distance_meters,
+               check_out_latitude,
+               check_out_longitude,
+               check_out_distance_meters,
+               check_in_result,
+               check_in_fail_reason,
+               location_source,
+               location_provider,
+               valid_flag,
+               create_time
+        FROM attendance_record
+        WHERE attendance_date = #{attendanceDate}
+          AND user_id IN
+          <foreach collection="userIds" item="item" open="(" separator="," close=")">
+              #{item}
+          </foreach>
+        ORDER BY user_id ASC, id DESC
+    </select>
+</mapper>

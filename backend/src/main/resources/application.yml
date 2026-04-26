@@ -52,3 +52,42 @@ wechat:
     enabled: ${WECHAT_MINI_ENABLED:false}
     app-id: ${WECHAT_MINI_APP_ID:}
     app-secret: ${WECHAT_MINI_APP_SECRET:}
+
+attendance:
+  reminder:
+    enabled: ${ATTENDANCE_REMINDER_ENABLED:false}
+    checkin-template-id: ${ATTENDANCE_REMINDER_CHECKIN_TEMPLATE_ID:${ATTENDANCE_REMINDER_TEMPLATE_CHECKIN:}}
+    checkout-template-id: ${ATTENDANCE_REMINDER_CHECKOUT_TEMPLATE_ID:${ATTENDANCE_REMINDER_TEMPLATE_CHECKOUT:}}
+    cron:
+      checkin: ${ATTENDANCE_REMINDER_CRON_CHECKIN:}
+      checkout: ${ATTENDANCE_REMINDER_CRON_CHECKOUT:}
+    checkin:
+      cron: ${ATTENDANCE_REMINDER_CHECKIN_CRON:}
+    checkout:
+      cron: ${ATTENDANCE_REMINDER_CHECKOUT_CRON:}
+    template:
+      checkin: ${ATTENDANCE_REMINDER_TEMPLATE_CHECKIN:}
+      checkout: ${ATTENDANCE_REMINDER_TEMPLATE_CHECKOUT:}
+    entry-url: ${ATTENDANCE_REMINDER_ENTRY_URL:}
+
+ai:
+  policy:
+    enabled: true
+    router:
+      enabled: true
+    faq:
+      enabled: true
+    evidence:
+      enabled: true
+      strict: true
+    answer:
+      enabled: true
+      strict: true
+    region:
+      enabled: true
+      strict: true
+    eval:
+      enabled: false
+    diagnosis:
+      panel:
+        enabled: true

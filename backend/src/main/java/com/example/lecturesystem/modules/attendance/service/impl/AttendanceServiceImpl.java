@@ -3,9 +3,12 @@ package com.example.lecturesystem.modules.attendance.service.impl;
 import com.example.lecturesystem.modules.attendance.dto.AttendanceQueryRequest;
 import com.example.lecturesystem.modules.attendance.dto.CheckInRequest;
 import com.example.lecturesystem.modules.attendance.dto.SaveAttendanceRequest;
+import com.example.lecturesystem.modules.attendance.entity.AttendancePatchApplyEntity;
 import com.example.lecturesystem.modules.attendance.entity.AttendanceRecordEntity;
 import com.example.lecturesystem.modules.attendance.mapper.AttendanceMapper;
+import com.example.lecturesystem.modules.attendance.mapper.AttendancePatchApplyMapper;
 import com.example.lecturesystem.modules.attendance.support.AttendanceCheckInStatus;
+import com.example.lecturesystem.modules.attendance.support.AttendanceNodeStateResolver;
 import com.example.lecturesystem.modules.attendance.service.AttendanceService;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalMonitorVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalReasonDistributionVO;
@@ -14,6 +17,7 @@ import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalTrendPo
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserRankVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserBehaviorPointVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserSummaryVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceNodeStatusVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendancePageVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceStatusCountVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceSummaryVO;
@@ -81,6 +85,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     private static final String TREND_STABLE = "STABLE";
 
  private final AttendanceMapper attendanceMapper;
+private final AttendancePatchApplyMapper attendancePatchApplyMapper;
 private final AttendanceRuleMapper attendanceRuleMapper;
 private final PermissionService permissionService;
 private final UserMapper userMapper;
@@ -94,6 +99,7 @@ private final ParamService paramService;
                              UserMapper userMapper) {
     this(
             attendanceMapper,
+            null,
             null,
             permissionService,
             userMapper,
@@ -143,6 +149,7 @@ private final ParamService paramService;
 
 @Autowired
 public AttendanceServiceImpl(AttendanceMapper attendanceMapper,
+                             AttendancePatchApplyMapper attendancePatchApplyMapper,
                              AttendanceRuleMapper attendanceRuleMapper,
                              PermissionService permissionService,
                              UserMapper userMapper,
@@ -151,6 +158,7 @@ public AttendanceServiceImpl(AttendanceMapper attendanceMapper,
                              DataScopeService dataScopeService,
                              ParamService paramService) {
     this.attendanceMapper = attendanceMapper;
+    this.attendancePatchApplyMapper = attendancePatchApplyMapper;
     this.attendanceRuleMapper = attendanceRuleMapper;
     this.permissionService = permissionService;
     this.userMapper = userMapper;
@@ -165,11 +173,15 @@ public Object queryCurrentAttendanceLocation() {
     LoginUser loginUser = currentLoginUser();
     UserEntity currentUser = requireCurrentUser(loginUser.getUserId());
     CheckInScope scope = resolveCheckInScope(currentUser);
-    AttendanceRecordEntity todayRecord = attendanceMapper.findByUserIdAndDate(currentUser.getId(), LocalDate.now());
-    TimeDrivenActionDecision actionDecision = resolveTimeDrivenActionDecision(
+    LocalDate today = LocalDate.now();
+    AttendanceRecordEntity todayRecord = attendanceMapper.findByUserIdAndDate(currentUser.getId(), today);
+    AttendanceNodeStateResolver.ResolvedAttendanceState resolvedState = resolveAttendanceState(
             currentUser.getUnitId(),
+            currentUser.getId(),
+            today,
             todayRecord,
-            LocalTime.now()
+            LocalTime.now(),
+            null
     );
 
     Map<String, Object> result = new LinkedHashMap<>();
@@ -190,11 +202,7 @@ public Object queryCurrentAttendanceLocation() {
         result.put("locationStatus", scope.location.getStatus());
     }
 
-    result.put("currentAction", actionDecision.action);
-    result.put("currentActionLabel", actionDecision.actionLabel);
-    result.put("currentActionAvailable", actionDecision.actionAvailable);
-    result.put("currentActionHint", actionDecision.hint);
-    result.put("finished", actionDecision.finished);
+    applyResolvedAttendanceState(result, resolvedState, null);
 
     if (todayRecord != null) {
         result.put("checkInTime", todayRecord.getCheckInTime());
@@ -207,8 +215,8 @@ public Object queryCurrentAttendanceLocation() {
         result.put("allowCheckIn", false);
         result.put("reason", scope.reason);
     } else {
-        result.put("allowCheckIn", actionDecision.actionAvailable);
-        result.put("reason", actionDecision.actionAvailable ? null : actionDecision.hint);
+        result.put("allowCheckIn", resolvedState.isCurrentActionAvailable());
+        result.put("reason", resolvedState.isCurrentActionAvailable() ? null : resolvedState.getHint());
     }
     return result;
 }
@@ -295,14 +303,23 @@ public Object queryCurrentAttendanceLocation() {
                 toleranceMeters
         );
         if (distanceMeters <= scope.location.getRadiusMeters()) {
-            return persistCheckInSuccess(currentUser, loginUser, today, now, request, scope, distanceMeters, accuracyMeters, false, "SUCCESS");
+            return persistCheckInSuccessStateDriven(currentUser, loginUser, today, now, request, scope, distanceMeters, accuracyMeters, false, "SUCCESS");
         }
         String outOfRangeReason = buildOutOfRangeReason(distanceMeters, scope.location.getRadiusMeters(), accuracyMeters);
+        AttendanceRecordEntity todayRecord = attendanceMapper.findByUserIdAndDate(loginUser.getUserId(), today);
+        String evidenceNodeCode = resolveEvidenceNodeCode(
+                currentUser.getUnitId(),
+                loginUser.getUserId(),
+                today,
+                todayRecord,
+                now.toLocalTime(),
+                resolveRequestedCheckAction(request)
+        );
         logCheckInFailureDiagnostic(
                 loginUser,
                 request,
                 "CHECK_IN_VALIDATE",
-                AttendanceCheckInStatus.OUT_OF_RANGE,
+                AttendanceCheckInStatus.EVIDENCE_REQUIRED,
                 distanceMeters,
                 scope.location.getRadiusMeters(),
                 outOfRangeReason
@@ -311,13 +328,26 @@ public Object queryCurrentAttendanceLocation() {
                 "attendance check-in rejected userId={} branch={} status={} distanceMeters={} radiusMeters={} accuracyMeters={} reason={}",
                 loginUser.getUserId(),
                 "OUT",
-                AttendanceCheckInStatus.OUT_OF_RANGE,
+                AttendanceCheckInStatus.EVIDENCE_REQUIRED,
                 distanceMeters,
                 scope.location.getRadiusMeters(),
                 accuracyMeters,
                 outOfRangeReason
         );
-        return buildCheckInResult(false, null, scope, distanceMeters, outOfRangeReason, AttendanceCheckInStatus.OUT_OF_RANGE, null, accuracyMeters, "OUT", false, toleranceMeters);
+        return buildCheckInResult(
+                false,
+                evidenceNodeCode,
+                scope,
+                distanceMeters,
+                outOfRangeReason,
+                AttendanceCheckInStatus.EVIDENCE_REQUIRED,
+                todayRecord,
+                accuracyMeters,
+                "OUT_OF_RANGE_EVIDENCE",
+                false,
+                toleranceMeters,
+                evidenceNodeCode
+        );
     }
 
     @Override
@@ -1011,6 +1041,34 @@ public Long saveAttendance(SaveAttendanceRequest request) {
                                                String decisionBranch,
                                                boolean weakToleranceApplied,
                                                Integer toleranceMeters) {
+        return buildCheckInResult(
+                success,
+                action,
+                scope,
+                distanceMeters,
+                reason,
+                status,
+                entity,
+                accuracyMeters,
+                decisionBranch,
+                weakToleranceApplied,
+                toleranceMeters,
+                null
+        );
+    }
+
+    private Map<String, Object> buildCheckInResult(boolean success,
+                                               String action,
+                                               CheckInScope scope,
+                                               Integer distanceMeters,
+                                               String reason,
+                                               String status,
+                                               AttendanceRecordEntity entity,
+                                               Integer accuracyMeters,
+                                               String decisionBranch,
+                                               boolean weakToleranceApplied,
+                                               Integer toleranceMeters,
+                                               String evidenceRequiredNodeCode) {
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("success", success);
     result.put("allowCheckIn", success);
@@ -1030,11 +1088,13 @@ public Long saveAttendance(SaveAttendanceRequest request) {
     result.put("locationName", scope.location == null ? null : scope.location.getLocationName());
     result.put("locationAddress", scope.location == null ? null : scope.location.getAddress());
 
-    Long unitId = resolveDecisionUnitId(entity);
-    TimeDrivenActionDecision actionDecision = resolveTimeDrivenActionDecision(
-            unitId,
+    AttendanceNodeStateResolver.ResolvedAttendanceState resolvedState = resolveAttendanceState(
+            resolveDecisionUnitId(entity),
+            resolveDecisionUserId(entity),
+            resolveDecisionAttendanceDate(entity),
             entity,
-            LocalTime.now()
+            LocalTime.now(),
+            evidenceRequiredNodeCode
     );
 
     if (entity != null) {
@@ -1050,11 +1110,7 @@ public Long saveAttendance(SaveAttendanceRequest request) {
         result.put("validFlag", entity.getValidFlag());
     }
 
-    result.put("nextAction", actionDecision.action);
-    result.put("nextActionLabel", actionDecision.actionLabel);
-    result.put("currentActionAvailable", actionDecision.actionAvailable);
-    result.put("currentActionHint", actionDecision.hint);
-    result.put("finished", actionDecision.finished);
+    applyResolvedAttendanceState(result, resolvedState, evidenceRequiredNodeCode);
 
     return result;
 }
@@ -1245,6 +1301,121 @@ public Long saveAttendance(SaveAttendanceRequest request) {
     );
 }
 
+    private Map<String, Object> persistCheckInSuccessStateDriven(UserEntity currentUser,
+                                                                 LoginUser loginUser,
+                                                                 LocalDate today,
+                                                                 LocalDateTime now,
+                                                                 CheckInRequest request,
+                                                                 CheckInScope scope,
+                                                                 Integer distanceMeters,
+                                                                 Integer accuracyMeters,
+                                                                 boolean weakToleranceApplied,
+                                                                 String decisionBranch) {
+        AttendanceRecordEntity entity = attendanceMapper.findByUserIdAndDate(loginUser.getUserId(), today);
+        String requestedAction = resolveRequestedCheckAction(request);
+        AttendanceNodeStateResolver.ResolvedAttendanceState resolvedState = resolveAttendanceState(
+                currentUser.getUnitId(),
+                loginUser.getUserId(),
+                today,
+                entity,
+                now.toLocalTime(),
+                null
+        );
+        AttendanceNodeStatusVO targetNode = resolveTargetNodeState(resolvedState, requestedAction);
+
+        if (targetNode == null) {
+            return buildCheckInResult(
+                    false,
+                    null,
+                    scope,
+                    distanceMeters,
+                    resolvedState.getHint(),
+                    resolvedState.isFinished() ? AttendanceCheckInStatus.ALREADY_FINISHED : resolvedState.getFinalStatusCode(),
+                    entity,
+                    accuracyMeters,
+                    resolvedState.isFinished() ? "FINISHED" : "NO_AVAILABLE_NODE",
+                    false,
+                    0
+            );
+        }
+
+        if (!Boolean.TRUE.equals(targetNode.getCanPunch())) {
+            return buildCheckInResult(
+                    false,
+                    targetNode.getNodeCode(),
+                    scope,
+                    distanceMeters,
+                    targetNode.getSimpleRemark(),
+                    targetNode.getStatusCode(),
+                    entity,
+                    accuracyMeters,
+                    "NODE_BLOCKED",
+                    false,
+                    0
+            );
+        }
+
+        String action = targetNode.getNodeCode();
+        if (entity == null) {
+            entity = buildEmptyAttendanceEntity(currentUser, loginUser, today);
+        }
+        if (isActionAlreadyCompleted(entity, action)) {
+            return buildDuplicateCheckInResult(scope, distanceMeters, accuracyMeters, entity, action + "_DUPLICATE");
+        }
+
+        applyCheckAction(entity, action, now, request, distanceMeters);
+        entity.setCheckType(action);
+        entity.setCheckTime(resolveCheckTime(action, entity));
+        entity.setCheckInResult(CHECK_ACTION_PM_OFF.equals(action)
+                ? AttendanceCheckInStatus.CHECK_OUT_SUCCESS
+                : AttendanceCheckInStatus.CHECK_IN_SUCCESS);
+        entity.setCheckInFailReason(null);
+        entity.setLocationSource(resolveLocationSource(request));
+        entity.setLocationProvider(resolveLocationProvider(request));
+
+        if (entity.getId() == null) {
+            try {
+                attendanceMapper.insert(entity);
+            } catch (DuplicateKeyException ex) {
+                log.warn("attendance check-in duplicate insert intercepted userId={} attendanceDate={}", loginUser.getUserId(), today, ex);
+                AttendanceRecordEntity latest = attendanceMapper.findByUserIdAndDate(loginUser.getUserId(), today);
+                if (latest == null) {
+                    throw ex;
+                }
+                return buildDuplicateCheckInResult(scope, distanceMeters, accuracyMeters, latest, "DUPLICATE_INSERT");
+            }
+        } else {
+            attendanceMapper.update(entity);
+        }
+
+        log.info(
+                "attendance check-in accepted userId={} branch={} action={} distanceMeters={} radiusMeters={} accuracyMeters={} weakToleranceApplied={}",
+                loginUser.getUserId(),
+                decisionBranch,
+                action,
+                distanceMeters,
+                scope.location.getRadiusMeters(),
+                accuracyMeters,
+                weakToleranceApplied
+        );
+
+        return buildCheckInResult(
+                true,
+                action,
+                scope,
+                distanceMeters,
+                null,
+                CHECK_ACTION_PM_OFF.equals(action)
+                        ? AttendanceCheckInStatus.CHECK_OUT_SUCCESS
+                        : AttendanceCheckInStatus.CHECK_IN_SUCCESS,
+                entity,
+                accuracyMeters,
+                decisionBranch,
+                weakToleranceApplied,
+                resolveWeakToleranceMeters(accuracyMeters)
+        );
+    }
+
     private AttendanceRecordEntity buildCheckInEntity(UserEntity currentUser,
                                                   LoginUser loginUser,
                                                   LocalDate today,
@@ -1269,6 +1440,74 @@ public Long saveAttendance(SaveAttendanceRequest request) {
     entity.setValidFlag(1);
     return entity;
 }
+
+    private AttendanceRecordEntity buildEmptyAttendanceEntity(UserEntity currentUser,
+                                                              LoginUser loginUser,
+                                                              LocalDate today) {
+        AttendanceRecordEntity entity = new AttendanceRecordEntity();
+        entity.setUnitId(currentUser.getUnitId());
+        entity.setUserId(loginUser.getUserId());
+        entity.setAttendanceDate(today);
+        entity.setValidFlag(1);
+        return entity;
+    }
+
+    private boolean isActionAlreadyCompleted(AttendanceRecordEntity entity, String action) {
+        if (entity == null || action == null) {
+            return false;
+        }
+        if (CHECK_ACTION_AM_ON.equals(action)) {
+            return entity.getCheckInTime() != null;
+        }
+        if (CHECK_ACTION_AM_OFF.equals(action)) {
+            return entity.getAmOffTime() != null;
+        }
+        if (CHECK_ACTION_PM_ON.equals(action)) {
+            return entity.getPmOnTime() != null;
+        }
+        if (CHECK_ACTION_PM_OFF.equals(action)) {
+            return entity.getCheckOutTime() != null;
+        }
+        return false;
+    }
+
+    private void applyCheckAction(AttendanceRecordEntity entity,
+                                  String action,
+                                  LocalDateTime now,
+                                  CheckInRequest request,
+                                  Integer distanceMeters) {
+        if (CHECK_ACTION_AM_ON.equals(action)) {
+            entity.setCheckInTime(now);
+            entity.setCheckInAddress(normalizeText(request.getAddress()));
+            entity.setCheckInLatitude(request.getLatitude());
+            entity.setCheckInLongitude(request.getLongitude());
+            entity.setCheckInDistanceMeters(distanceMeters);
+            return;
+        }
+        if (CHECK_ACTION_AM_OFF.equals(action)) {
+            entity.setAmOffTime(now);
+            entity.setAmOffAddress(normalizeText(request.getAddress()));
+            entity.setAmOffLatitude(request.getLatitude());
+            entity.setAmOffLongitude(request.getLongitude());
+            entity.setAmOffDistanceMeters(distanceMeters);
+            return;
+        }
+        if (CHECK_ACTION_PM_ON.equals(action)) {
+            entity.setPmOnTime(now);
+            entity.setPmOnAddress(normalizeText(request.getAddress()));
+            entity.setPmOnLatitude(request.getLatitude());
+            entity.setPmOnLongitude(request.getLongitude());
+            entity.setPmOnDistanceMeters(distanceMeters);
+            return;
+        }
+        if (CHECK_ACTION_PM_OFF.equals(action)) {
+            entity.setCheckOutTime(now);
+            entity.setCheckOutAddress(normalizeText(request.getAddress()));
+            entity.setCheckOutLatitude(request.getLatitude());
+            entity.setCheckOutLongitude(request.getLongitude());
+            entity.setCheckOutDistanceMeters(distanceMeters);
+        }
+    }
 
     private String resolveRequestedCheckAction(CheckInRequest request) {
     String action = normalizeText(request == null ? null : request.getAction());
@@ -1411,19 +1650,15 @@ private LocalDateTime resolveCheckTimeForFourSteps(String checkType,
     }
 
     private String resolveNextCheckAction(AttendanceRecordEntity entity) {
-    if (entity == null || entity.getCheckInTime() == null) {
-        return CHECK_ACTION_AM_ON;
-    }
-    if (entity.getAmOffTime() == null) {
-        return CHECK_ACTION_AM_OFF;
-    }
-    if (entity.getPmOnTime() == null) {
-        return CHECK_ACTION_PM_ON;
-    }
-    if (entity.getCheckOutTime() == null) {
-        return CHECK_ACTION_PM_OFF;
-    }
-    return null;
+    AttendanceNodeStateResolver.ResolvedAttendanceState resolvedState = resolveAttendanceState(
+            resolveDecisionUnitId(entity),
+            resolveDecisionUserId(entity),
+            resolveDecisionAttendanceDate(entity),
+            entity,
+            LocalTime.now(),
+            null
+    );
+    return resolvedState.getCurrentAction();
 }
 
 private String resolveActionLabel(String action) {
@@ -1501,6 +1736,122 @@ private Long resolveDecisionUnitId(AttendanceRecordEntity entity) {
         return currentUser.getUnitId();
     } catch (Exception ignore) {
         return null;
+    }
+}
+
+private Long resolveDecisionUserId(AttendanceRecordEntity entity) {
+    if (entity != null && entity.getUserId() != null) {
+        return entity.getUserId();
+    }
+    try {
+        return currentLoginUser().getUserId();
+    } catch (Exception ignore) {
+        return null;
+    }
+}
+
+private LocalDate resolveDecisionAttendanceDate(AttendanceRecordEntity entity) {
+    if (entity != null && entity.getAttendanceDate() != null) {
+        return entity.getAttendanceDate();
+    }
+    return LocalDate.now();
+}
+
+private AttendanceNodeStateResolver.ResolvedAttendanceState resolveAttendanceState(Long unitId,
+                                                                                   Long userId,
+                                                                                   LocalDate attendanceDate,
+                                                                                   AttendanceRecordEntity entity,
+                                                                                   LocalTime nowTime,
+                                                                                   String evidenceRequiredNodeCode) {
+    AttendanceRuleEntity rule = findActiveAttendanceRule(unitId);
+    List<AttendancePatchApplyEntity> patchApplies = resolvePatchApplies(userId, attendanceDate);
+    return AttendanceNodeStateResolver.resolve(rule, entity, patchApplies, nowTime, evidenceRequiredNodeCode);
+}
+
+private List<AttendancePatchApplyEntity> resolvePatchApplies(Long userId, LocalDate attendanceDate) {
+    if (attendancePatchApplyMapper == null || userId == null || attendanceDate == null) {
+        return List.of();
+    }
+    try {
+        List<AttendancePatchApplyEntity> items = attendancePatchApplyMapper.queryByUserAndDate(userId, attendanceDate);
+        return items == null ? List.of() : items;
+    } catch (Exception ex) {
+        log.warn("attendance patch apply query failed userId={} attendanceDate={}", userId, attendanceDate, ex);
+        return List.of();
+    }
+}
+
+private AttendanceNodeStatusVO resolveTargetNodeState(AttendanceNodeStateResolver.ResolvedAttendanceState resolvedState,
+                                                      String requestedAction) {
+    if (resolvedState == null) {
+        return null;
+    }
+    AttendanceNodeStatusVO requestedNode = findNodeState(resolvedState.getNodeStates(), requestedAction);
+    if (requestedNode != null) {
+        return requestedNode;
+    }
+    AttendanceNodeStatusVO currentNode = findNodeState(resolvedState.getNodeStates(), resolvedState.getCurrentAction());
+    if (currentNode != null) {
+        return currentNode;
+    }
+    for (AttendanceNodeStatusVO nodeState : resolvedState.getNodeStates()) {
+        if (Boolean.TRUE.equals(nodeState.getCanPunch())) {
+            return nodeState;
+        }
+    }
+    return null;
+}
+
+private AttendanceNodeStatusVO findNodeState(List<AttendanceNodeStatusVO> nodeStates, String nodeCode) {
+    if (nodeStates == null || nodeCode == null) {
+        return null;
+    }
+    for (AttendanceNodeStatusVO nodeState : nodeStates) {
+        if (nodeCode.equals(nodeState.getNodeCode())) {
+            return nodeState;
+        }
+    }
+    return null;
+}
+
+private String resolveEvidenceNodeCode(Long unitId,
+                                       Long userId,
+                                       LocalDate attendanceDate,
+                                       AttendanceRecordEntity entity,
+                                       LocalTime nowTime,
+                                       String requestedAction) {
+    AttendanceNodeStateResolver.ResolvedAttendanceState resolvedState = resolveAttendanceState(
+            unitId,
+            userId,
+            attendanceDate,
+            entity,
+            nowTime,
+            null
+    );
+    AttendanceNodeStatusVO targetNode = resolveTargetNodeState(resolvedState, requestedAction);
+    if (targetNode != null) {
+        return targetNode.getNodeCode();
+    }
+    return requestedAction;
+}
+
+private void applyResolvedAttendanceState(Map<String, Object> result,
+                                          AttendanceNodeStateResolver.ResolvedAttendanceState resolvedState,
+                                          String evidenceRequiredNodeCode) {
+    result.put("nextAction", resolvedState.getCurrentAction());
+    result.put("nextActionLabel", resolvedState.getCurrentActionLabel());
+    result.put("currentAction", resolvedState.getCurrentAction());
+    result.put("currentActionLabel", resolvedState.getCurrentActionLabel());
+    result.put("currentActionAvailable", resolvedState.isCurrentActionAvailable());
+    result.put("currentActionHint", resolvedState.getHint());
+    result.put("finished", resolvedState.isFinished());
+    result.put("nodeStates", resolvedState.getNodeStates());
+    result.put("attendanceStatusCode", resolvedState.getFinalStatusCode());
+    result.put("attendanceFinalResolved", resolvedState.isFinalResolved());
+    result.put("attendanceLate", resolvedState.isLate());
+    result.put("attendanceEarly", resolvedState.isEarly());
+    if (evidenceRequiredNodeCode != null) {
+        result.put("evidenceNodeCode", evidenceRequiredNodeCode);
     }
 }
 

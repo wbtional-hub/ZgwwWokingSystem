@@ -5,6 +5,7 @@ import com.example.lecturesystem.modules.attendance.entity.AttendanceRuleEntity;
 import com.example.lecturesystem.modules.attendance.mapper.AttendanceRuleMapper;
 import com.example.lecturesystem.modules.attendance.mapper.AttendanceStatisticsMapper;
 import com.example.lecturesystem.modules.attendance.service.AttendanceStatisticsService;
+import com.example.lecturesystem.modules.attendance.support.AttendanceWeeklyReadonlyScopeService;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceScopedUserVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceStatsRecordVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceTeamMemberStatusVO;
@@ -34,22 +35,26 @@ public class AttendanceStatisticsServiceImpl implements AttendanceStatisticsServ
     private final AttendanceRuleMapper attendanceRuleMapper;
     private final CurrentUserFacade currentUserFacade;
     private final DataScopeService dataScopeService;
+    private final AttendanceWeeklyReadonlyScopeService attendanceWeeklyReadonlyScopeService;
 
     public AttendanceStatisticsServiceImpl(AttendanceStatisticsMapper attendanceStatisticsMapper,
                                            AttendanceRuleMapper attendanceRuleMapper,
                                            CurrentUserFacade currentUserFacade,
-                                           DataScopeService dataScopeService) {
+                                           DataScopeService dataScopeService,
+                                           AttendanceWeeklyReadonlyScopeService attendanceWeeklyReadonlyScopeService) {
         this.attendanceStatisticsMapper = attendanceStatisticsMapper;
         this.attendanceRuleMapper = attendanceRuleMapper;
         this.currentUserFacade = currentUserFacade;
         this.dataScopeService = dataScopeService;
+        this.attendanceWeeklyReadonlyScopeService = attendanceWeeklyReadonlyScopeService;
     }
 
     @Override
     public Object queryTeamStatistics(AttendanceStatsQueryRequest request) {
         UserEntity currentUser = currentUserFacade.currentUserEntity();
         LocalDate targetDate = resolveTargetDate(request);
-        List<AttendanceScopedUserVO> scopedUsers = queryScopedUsers(currentUser);
+        AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope = resolveReadonlyScope(currentUser);
+        List<AttendanceScopedUserVO> scopedUsers = queryScopedUsers(currentUser, readonlyScope);
         Map<Long, AttendanceRuleEntity> ruleMap = queryRuleMap(scopedUsers);
         LocalDate weekStart = targetDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         LocalDate weekEnd = weekStart.plusDays(6);
@@ -59,7 +64,7 @@ public class AttendanceStatisticsServiceImpl implements AttendanceStatisticsServ
         result.setDate(targetDate);
         result.setWorkday(isWorkday(targetDate));
         result.setScopeUserCount((long) scopedUsers.size());
-        result.setScopeDescription(dataScopeService.describeScope(currentUser, scopedUsers.size()));
+        result.setScopeDescription(resolveScopeDescription(currentUser, scopedUsers.size(), readonlyScope));
         result.setWeeklyOverview(buildWeeklyOverview(scopedUsers, ruleMap, recordMap, weekStart));
 
         List<AttendanceTeamMemberStatusVO> missingUsers = new ArrayList<>();
@@ -77,7 +82,7 @@ public class AttendanceStatisticsServiceImpl implements AttendanceStatisticsServ
             AttendanceStatsRecordVO todayRecord = recordMap.getOrDefault(user.getUserId(), Map.of()).get(targetDate);
             AttendanceStatsRecordVO latestRecord = findLatestRecord(recordMap.get(user.getUserId()));
             AttendanceRuleEntity rule = ruleMap.get(user.getUnitId());
-            boolean hasTodayRecord = todayRecord != null && (todayRecord.getCheckInTime() != null || todayRecord.getCheckOutTime() != null);
+            boolean hasTodayRecord = hasAnyCheckRecord(todayRecord);
             boolean late = result.getWorkday() && isLate(todayRecord, rule);
             boolean earlyLeave = result.getWorkday() && isEarlyLeave(todayRecord, rule);
 
@@ -125,15 +130,46 @@ public class AttendanceStatisticsServiceImpl implements AttendanceStatisticsServ
         return result;
     }
 
-    private List<AttendanceScopedUserVO> queryScopedUsers(UserEntity currentUser) {
+    private List<AttendanceScopedUserVO> queryScopedUsers(UserEntity currentUser,
+                                                          AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope) {
         String treePathPrefix = dataScopeService.buildTreePathPrefix(currentUser);
         List<AttendanceScopedUserVO> users = treePathPrefix == null
                 ? attendanceStatisticsMapper.queryAllScopedUsers()
                 : attendanceStatisticsMapper.queryScopedUsers(treePathPrefix);
+        if (readonlyScope.crossDeptUserCount() > 0) {
+            Map<Long, AttendanceScopedUserVO> merged = new LinkedHashMap<>();
+            for (AttendanceScopedUserVO item : users) {
+                merged.put(item.getUserId(), item);
+            }
+            for (AttendanceScopedUserVO item : attendanceStatisticsMapper.queryUsersByIds(readonlyScope.requestUserIds())) {
+                merged.putIfAbsent(item.getUserId(), item);
+            }
+            users = new ArrayList<>(merged.values());
+        }
         users.sort(Comparator.comparing(AttendanceScopedUserVO::getRealName, Comparator.nullsLast(String::compareTo))
                 .thenComparing(AttendanceScopedUserVO::getUsername, Comparator.nullsLast(String::compareTo))
                 .thenComparing(AttendanceScopedUserVO::getUserId));
         return users;
+    }
+
+    private AttendanceWeeklyReadonlyScopeService.ReadonlyScope resolveReadonlyScope(UserEntity currentUser) {
+        if (attendanceWeeklyReadonlyScopeService == null) {
+            return AttendanceWeeklyReadonlyScopeService.ReadonlyScope.disabled();
+        }
+        return attendanceWeeklyReadonlyScopeService.resolve(currentUser);
+    }
+
+    private String resolveScopeDescription(UserEntity currentUser,
+                                           int scopedUserCount,
+                                           AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope) {
+        if (readonlyScope.crossDeptUserCount() > 0 && attendanceWeeklyReadonlyScopeService != null) {
+            return attendanceWeeklyReadonlyScopeService.buildScopeDescription(
+                    currentUser,
+                    scopedUserCount,
+                    readonlyScope.crossDeptUserCount()
+            );
+        }
+        return dataScopeService.describeScope(currentUser, scopedUserCount);
     }
 
     private Map<Long, AttendanceRuleEntity> queryRuleMap(List<AttendanceScopedUserVO> scopedUsers) {
@@ -184,7 +220,7 @@ public class AttendanceStatisticsServiceImpl implements AttendanceStatisticsServ
             int overtimeCount = 0;
             for (AttendanceScopedUserVO user : scopedUsers) {
                 AttendanceStatsRecordVO record = recordMap.getOrDefault(user.getUserId(), Map.of()).get(date);
-                if (record == null || (record.getCheckInTime() == null && record.getCheckOutTime() == null)) {
+                if (!hasAnyCheckRecord(record)) {
                     continue;
                 }
                 if (workday) {
@@ -266,25 +302,65 @@ public class AttendanceStatisticsServiceImpl implements AttendanceStatisticsServ
         if (record != null) {
             item.setAttendanceDate(record.getAttendanceDate());
             item.setCheckInTime(record.getCheckInTime());
+            item.setAmOffTime(record.getAmOffTime());
+            item.setPmOnTime(record.getPmOnTime());
             item.setCheckOutTime(record.getCheckOutTime());
         }
         return item;
     }
 
     private boolean isLate(AttendanceStatsRecordVO record, AttendanceRuleEntity rule) {
-        if (record == null || record.getCheckInTime() == null || rule == null || rule.getWorkStartTime() == null) {
-            return false;
-        }
-        LocalTime threshold = rule.getWorkStartTime().plusMinutes(rule.getLateGraceMinutes() == null ? 0 : rule.getLateGraceMinutes());
-        return record.getCheckInTime().toLocalTime().isAfter(threshold);
+        return isMorningLate(record, rule) || isAfternoonLate(record, rule);
     }
 
     private boolean isEarlyLeave(AttendanceStatsRecordVO record, AttendanceRuleEntity rule) {
+        return isMorningEarlyLeave(record, rule) || isAfternoonEarlyLeave(record, rule);
+    }
+
+    private boolean hasAnyCheckRecord(AttendanceStatsRecordVO record) {
+        if (record == null) {
+            return false;
+        }
+        return record.getCheckInTime() != null
+                || record.getAmOffTime() != null
+                || record.getPmOnTime() != null
+                || record.getCheckOutTime() != null;
+    }
+
+    private boolean isMorningLate(AttendanceStatsRecordVO record, AttendanceRuleEntity rule) {
+        if (record == null || record.getCheckInTime() == null || rule == null || rule.getWorkStartTime() == null) {
+            return false;
+        }
+        LocalTime threshold = rule.getWorkStartTime().plusMinutes(resolveNonNegativeMinutes(rule.getLateGraceMinutes()));
+        return record.getCheckInTime().toLocalTime().isAfter(threshold);
+    }
+
+    private boolean isAfternoonLate(AttendanceStatsRecordVO record, AttendanceRuleEntity rule) {
+        if (record == null || record.getPmOnTime() == null || rule == null || rule.getPmOnTime() == null) {
+            return false;
+        }
+        LocalTime threshold = rule.getPmOnTime().plusMinutes(resolveNonNegativeMinutes(rule.getLateGraceMinutes()));
+        return record.getPmOnTime().toLocalTime().isAfter(threshold);
+    }
+
+    private boolean isMorningEarlyLeave(AttendanceStatsRecordVO record, AttendanceRuleEntity rule) {
+        if (record == null || record.getAmOffTime() == null || rule == null || rule.getAmOffTime() == null) {
+            return false;
+        }
+        LocalTime threshold = rule.getAmOffTime().minusMinutes(resolveNonNegativeMinutes(rule.getEarlyLeaveGraceMinutes()));
+        return record.getAmOffTime().toLocalTime().isBefore(threshold);
+    }
+
+    private boolean isAfternoonEarlyLeave(AttendanceStatsRecordVO record, AttendanceRuleEntity rule) {
         if (record == null || record.getCheckOutTime() == null || rule == null || rule.getWorkEndTime() == null) {
             return false;
         }
-        LocalTime threshold = rule.getWorkEndTime().minusMinutes(rule.getEarlyLeaveGraceMinutes() == null ? 0 : rule.getEarlyLeaveGraceMinutes());
+        LocalTime threshold = rule.getWorkEndTime().minusMinutes(resolveNonNegativeMinutes(rule.getEarlyLeaveGraceMinutes()));
         return record.getCheckOutTime().toLocalTime().isBefore(threshold);
+    }
+
+    private int resolveNonNegativeMinutes(Integer minutes) {
+        return minutes == null ? 0 : Math.max(minutes, 0);
     }
 
     private String resolveAbnormalLabel(boolean late, boolean earlyLeave) {

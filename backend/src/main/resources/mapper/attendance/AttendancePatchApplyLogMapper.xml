@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.attendance.mapper.AttendancePatchApplyLogMapper">
+    <resultMap id="AttendancePatchApplyLogEntityMap" type="com.example.lecturesystem.modules.attendance.entity.AttendancePatchApplyLogEntity">
+        <id property="id" column="id"/>
+        <result property="applyId" column="apply_id"/>
+        <result property="actionType" column="action_type"/>
+        <result property="operatorUserId" column="operator_user_id"/>
+        <result property="operatorName" column="operator_name"/>
+        <result property="nodeCode" column="node_code"/>
+        <result property="nodeName" column="node_name"/>
+        <result property="comment" column="comment"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.attendance.entity.AttendancePatchApplyLogEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO attendance_patch_apply_log (
+            apply_id, action_type, operator_user_id, operator_name, node_code, node_name, comment, create_time
+        )
+        VALUES (
+            #{applyId}, #{actionType}, #{operatorUserId}, #{operatorName}, #{nodeCode}, #{nodeName}, #{comment}, CURRENT_TIMESTAMP
+        )
+    </insert>
+
+    <select id="queryByApplyId" resultMap="AttendancePatchApplyLogEntityMap">
+        SELECT id, apply_id, action_type, operator_user_id, operator_name, node_code, node_name, comment, create_time
+        FROM attendance_patch_apply_log
+        WHERE apply_id = #{applyId}
+        ORDER BY create_time DESC, id DESC
+    </select>
+
+    <select id="queryLatestByApplyIds" resultMap="AttendancePatchApplyLogEntityMap">
+        SELECT DISTINCT ON (apply_id)
+               id, apply_id, action_type, operator_user_id, operator_name, node_code, node_name, comment, create_time
+        FROM attendance_patch_apply_log
+        WHERE apply_id IN
+        <foreach item="item" collection="applyIds" open="(" separator="," close=")">
+            #{item}
+        </foreach>
+        ORDER BY apply_id ASC, create_time DESC, id DESC
+    </select>
+</mapper>

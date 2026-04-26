@@ -4,13 +4,21 @@ import com.example.lecturesystem.modules.attendance.dto.AttendancePatchApplyQuer
 import com.example.lecturesystem.modules.attendance.dto.ReviewAttendancePatchApplyRequest;
 import com.example.lecturesystem.modules.attendance.dto.SubmitAttendancePatchApplyRequest;
 import com.example.lecturesystem.modules.attendance.entity.AttendancePatchApplyEntity;
+import com.example.lecturesystem.modules.attendance.entity.AttendancePatchApplyLogEntity;
+import com.example.lecturesystem.modules.attendance.entity.AttendancePatchApplyNodeEntity;
 import com.example.lecturesystem.modules.attendance.entity.AttendanceRecordEntity;
 import com.example.lecturesystem.modules.attendance.mapper.AttendanceMapper;
+import com.example.lecturesystem.modules.attendance.mapper.AttendancePatchApplyLogMapper;
 import com.example.lecturesystem.modules.attendance.mapper.AttendancePatchApplyMapper;
+import com.example.lecturesystem.modules.attendance.mapper.AttendancePatchApplyNodeMapper;
 import com.example.lecturesystem.modules.attendance.service.AttendancePatchApplyService;
+import com.example.lecturesystem.modules.attendance.support.AttendanceApplyType;
 import com.example.lecturesystem.modules.attendance.support.AttendanceCheckInStatus;
+import com.example.lecturesystem.modules.attendance.support.AttendanceWeeklyReadonlyScopeService;
 import com.example.lecturesystem.modules.attendance.vo.AttendancePatchApplyDetailVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendancePatchApplyListItemVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendancePatchApplyPageVO;
+import com.example.lecturesystem.modules.permission.service.PermissionService;
 import com.example.lecturesystem.modules.permission.support.CurrentUserFacade;
 import com.example.lecturesystem.modules.permission.support.DataScopeService;
 import com.example.lecturesystem.modules.user.entity.UserEntity;
@@ -21,6 +29,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyService {
@@ -33,24 +48,61 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
     private static final String PATCH_STATUS_APPROVED = "APPROVED";
     private static final String PATCH_STATUS_REJECTED = "REJECTED";
     private static final String PATCH_ADDRESS_TEXT = "补打卡审批";
+    private static final String APPLY_TYPE_TEXT_MAKEUP = "补打卡";
+    private static final String APPLY_TYPE_TEXT_EVIDENCE = "取证";
+
+    private static final String NODE_STATUS_WAITING = "WAITING";
+    private static final String NODE_STATUS_PENDING = "PENDING";
+    private static final String NODE_STATUS_APPROVED = "APPROVED";
+    private static final String NODE_STATUS_REJECTED = "REJECTED";
+    private static final String NODE_STATUS_SKIPPED = "SKIPPED";
+
+    private static final String ACTION_TYPE_SUBMIT = "SUBMIT";
+    private static final String ACTION_TYPE_APPROVE = "APPROVE";
+    private static final String ACTION_TYPE_REJECT = "REJECT";
+    private static final String ACTION_TYPE_FORWARD = "FORWARD";
+    private static final String ACTION_TYPE_SYSTEM = "SYSTEM";
+
+    private static final String NODE_CODE_DIRECT_LEADER = "DIRECT_LEADER";
+    private static final String NODE_CODE_FINAL_LEADER = "FINAL_LEADER";
+    private static final String NODE_NAME_DIRECT_LEADER = "分管审核";
+    private static final String NODE_NAME_UPPER_LEADER = "上级审核";
+    private static final String NODE_NAME_FINAL_LEADER = "团长终审";
+    private static final String NODE_NAME_PENDING_CONFIG = "待配置审批人";
+    private static final String NODE_NAME_FINISHED = "审批完成";
+    private static final String NODE_NAME_REJECTED = "审批驳回";
+
+    private static final int MAX_APPROVER_COUNT = 2;
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final AttendancePatchApplyMapper attendancePatchApplyMapper;
+    private final AttendancePatchApplyNodeMapper attendancePatchApplyNodeMapper;
+    private final AttendancePatchApplyLogMapper attendancePatchApplyLogMapper;
     private final AttendanceMapper attendanceMapper;
     private final CurrentUserFacade currentUserFacade;
     private final DataScopeService dataScopeService;
     private final UserMapper userMapper;
+    private final PermissionService permissionService;
+    private final AttendanceWeeklyReadonlyScopeService attendanceWeeklyReadonlyScopeService;
 
     public AttendancePatchApplyServiceImpl(AttendancePatchApplyMapper attendancePatchApplyMapper,
+                                           AttendancePatchApplyNodeMapper attendancePatchApplyNodeMapper,
+                                           AttendancePatchApplyLogMapper attendancePatchApplyLogMapper,
                                            AttendanceMapper attendanceMapper,
                                            CurrentUserFacade currentUserFacade,
                                            DataScopeService dataScopeService,
-                                           UserMapper userMapper) {
+                                           UserMapper userMapper,
+                                           PermissionService permissionService,
+                                           AttendanceWeeklyReadonlyScopeService attendanceWeeklyReadonlyScopeService) {
         this.attendancePatchApplyMapper = attendancePatchApplyMapper;
+        this.attendancePatchApplyNodeMapper = attendancePatchApplyNodeMapper;
+        this.attendancePatchApplyLogMapper = attendancePatchApplyLogMapper;
         this.attendanceMapper = attendanceMapper;
         this.currentUserFacade = currentUserFacade;
         this.dataScopeService = dataScopeService;
         this.userMapper = userMapper;
+        this.permissionService = permissionService;
+        this.attendanceWeeklyReadonlyScopeService = attendanceWeeklyReadonlyScopeService;
     }
 
     @Override
@@ -58,12 +110,13 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
     public Long submitApply(SubmitAttendancePatchApplyRequest request) {
         UserEntity currentUser = currentUserFacade.currentUserEntity();
         if (currentUser.getUnitId() == null) {
-            throw new IllegalArgumentException("当前用户未绑定单位，无法提交补卡申请");
+            throw new IllegalArgumentException("当前用户未绑定单位，无法提交补打卡申请");
         }
 
         LocalDate attendanceDate = parseDate(request.getAttendanceDate());
         LocalDateTime patchTime = parseDateTime(request.getPatchTime());
         String patchType = normalizePatchType(request.getPatchType());
+        String applyType = AttendanceApplyType.normalize(request == null ? null : request.getApplyType());
         String reason = normalizeText(request.getReason());
         if (reason == null) {
             throw new IllegalArgumentException("补卡原因不能为空");
@@ -73,7 +126,7 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
         }
 
         if (attendancePatchApplyMapper.findPendingByUserDateType(currentUser.getId(), attendanceDate, patchType) != null) {
-            throw new IllegalArgumentException("当天该类型补卡申请已存在待审批记录，请勿重复提交");
+            throw new IllegalArgumentException("当天该节点已存在待审批记录，请勿重复提交");
         }
 
         AttendanceRecordEntity existedRecord = attendanceMapper.findByUserIdAndDate(currentUser.getId(), attendanceDate);
@@ -84,11 +137,50 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
         entity.setUnitId(currentUser.getUnitId());
         entity.setAttendanceDate(attendanceDate);
         entity.setPatchType(patchType);
+        entity.setApplyType(applyType);
         entity.setPatchTime(patchTime);
         entity.setReason(reason);
+        entity.setAttachmentsJson(normalizeText(request.getAttachmentsJson()));
         entity.setStatus(PATCH_STATUS_PENDING);
         entity.setValidFlag(1);
         attendancePatchApplyMapper.insert(entity);
+
+        List<UserEntity> approvalChain = resolveApprovalChain(currentUser);
+        List<AttendancePatchApplyNodeEntity> nodes = buildApprovalNodes(entity.getId(), approvalChain);
+        if (!nodes.isEmpty()) {
+            attendancePatchApplyNodeMapper.batchInsert(nodes);
+        }
+        insertLog(buildLog(
+                entity.getId(),
+                ACTION_TYPE_SUBMIT,
+                currentUser.getId(),
+                resolveDisplayName(currentUser),
+                null,
+                null,
+                "提交" + resolveApplyTypeText(applyType) + "申请"
+        ));
+        if (nodes.isEmpty()) {
+            insertLog(buildLog(
+                    entity.getId(),
+                    ACTION_TYPE_SYSTEM,
+                    null,
+                    "SYSTEM",
+                    null,
+                    NODE_NAME_PENDING_CONFIG,
+                    "未找到可用审批人，请联系管理员配置审批链"
+            ));
+        } else {
+            AttendancePatchApplyNodeEntity firstNode = nodes.get(0);
+            insertLog(buildLog(
+                    entity.getId(),
+                    ACTION_TYPE_FORWARD,
+                    null,
+                    "SYSTEM",
+                    firstNode.getNodeCode(),
+                    firstNode.getNodeName(),
+                    "流转至" + firstNode.getApproverName()
+            ));
+        }
         return entity.getId();
     }
 
@@ -100,7 +192,9 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
         page.setPageNo(normalized.getPageNo());
         page.setPageSize(normalized.getPageSize());
         page.setTotal(attendancePatchApplyMapper.countMyPage(currentUser.getId(), normalized));
-        page.setList(attendancePatchApplyMapper.queryMyPage(currentUser.getId(), normalized));
+        List<AttendancePatchApplyListItemVO> list = attendancePatchApplyMapper.queryMyPage(currentUser.getId(), normalized);
+        enrichMyPageItems(list);
+        page.setList(list);
         return page;
     }
 
@@ -108,15 +202,13 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
     public Object queryPendingPage(AttendancePatchApplyQueryRequest request) {
         UserEntity currentUser = currentUserFacade.currentUserEntity();
         AttendancePatchApplyQueryRequest normalized = normalizeQueryRequest(request);
-        if (normalizeText(normalized.getStatus()) == null) {
-            normalized.setStatus(PATCH_STATUS_PENDING);
-        }
-        String treePathPrefix = dataScopeService.buildTreePathPrefix(currentUser);
         AttendancePatchApplyPageVO page = new AttendancePatchApplyPageVO();
         page.setPageNo(normalized.getPageNo());
         page.setPageSize(normalized.getPageSize());
-        page.setTotal(attendancePatchApplyMapper.countPendingPage(treePathPrefix, currentUser.getId(), normalized));
-        page.setList(attendancePatchApplyMapper.queryPendingPage(treePathPrefix, currentUser.getId(), normalized));
+        page.setTotal(attendancePatchApplyMapper.countPendingPage(null, currentUser.getId(), normalized));
+        List<AttendancePatchApplyListItemVO> list = attendancePatchApplyMapper.queryPendingPage(null, currentUser.getId(), normalized);
+        enrichPendingPageItems(list, currentUser, normalizeText(normalized.getStatus()));
+        page.setList(list);
         return page;
     }
 
@@ -124,11 +216,14 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
     public Object detail(Long id) {
         AttendancePatchApplyEntity entity = requirePatchApply(id);
         UserEntity currentUser = currentUserFacade.currentUserEntity();
-        validateReadableApply(currentUser, entity);
+        UserEntity targetUser = requireUser(entity.getUserId());
+        AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope = resolveReadonlyScope(currentUser);
+        validateReadableApply(currentUser, targetUser, readonlyScope);
         AttendancePatchApplyDetailVO detail = attendancePatchApplyMapper.detailById(id);
         if (detail == null) {
-            throw new IllegalArgumentException("补卡申请不存在");
+            throw new IllegalArgumentException("补打卡申请不存在");
         }
+        enrichDetailItem(detail, currentUser, targetUser, readonlyScope);
         return detail;
     }
 
@@ -139,14 +234,51 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
         UserEntity currentUser = currentUserFacade.currentUserEntity();
         validateReviewableApply(currentUser, entity);
 
-        applyApprovedAttendance(entity);
+        AttendancePatchApplyNodeEntity currentNode = requireCurrentPendingNodeForApprover(entity.getId(), currentUser.getId());
+        LocalDateTime now = LocalDateTime.now();
+        String comment = normalizeText(request == null ? null : request.getApproveComment());
 
-        entity.setStatus(PATCH_STATUS_APPROVED);
+        currentNode.setStatus(NODE_STATUS_APPROVED);
+        currentNode.setApproveTime(now);
+        currentNode.setApproveComment(comment);
+        currentNode.setUpdateTime(now);
+        attendancePatchApplyNodeMapper.updateReview(currentNode);
+
+        AttendancePatchApplyNodeEntity nextNode = findNextWaitingNode(entity.getId(), currentNode.getNodeOrder());
         entity.setApproveUserId(currentUser.getId());
-        entity.setApproveTime(LocalDateTime.now());
-        entity.setApproveComment(normalizeText(request == null ? null : request.getApproveComment()));
-        entity.setUpdateTime(LocalDateTime.now());
-        attendancePatchApplyMapper.updateReview(entity);
+        entity.setApproveTime(now);
+        entity.setApproveComment(comment);
+        entity.setUpdateTime(now);
+
+        insertLog(buildLog(
+                entity.getId(),
+                ACTION_TYPE_APPROVE,
+                currentUser.getId(),
+                resolveDisplayName(currentUser),
+                currentNode.getNodeCode(),
+                currentNode.getNodeName(),
+                comment
+        ));
+
+        if (nextNode != null) {
+            attendancePatchApplyNodeMapper.activateNode(nextNode.getId(), now);
+            entity.setStatus(PATCH_STATUS_PENDING);
+            attendancePatchApplyMapper.updateStatusAndReview(entity);
+            insertLog(buildLog(
+                    entity.getId(),
+                    ACTION_TYPE_FORWARD,
+                    null,
+                    "SYSTEM",
+                    nextNode.getNodeCode(),
+                    nextNode.getNodeName(),
+                    "流转至" + nextNode.getApproverName()
+            ));
+            return;
+        }
+
+        applyApprovedAttendance(entity);
+        entity.setStatus(PATCH_STATUS_APPROVED);
+        attendancePatchApplyMapper.updateStatusAndReview(entity);
     }
 
     @Override
@@ -157,14 +289,322 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
         validateReviewableApply(currentUser, entity);
         String comment = normalizeText(request == null ? null : request.getApproveComment());
         if (comment == null) {
-            throw new IllegalArgumentException("拒绝补卡时请填写审批意见");
+            throw new IllegalArgumentException("拒绝补打卡时请填写审批意见");
         }
+
+        AttendancePatchApplyNodeEntity currentNode = requireCurrentPendingNodeForApprover(entity.getId(), currentUser.getId());
+        LocalDateTime now = LocalDateTime.now();
+        currentNode.setStatus(NODE_STATUS_REJECTED);
+        currentNode.setApproveTime(now);
+        currentNode.setApproveComment(comment);
+        currentNode.setUpdateTime(now);
+        attendancePatchApplyNodeMapper.updateReview(currentNode);
+        attendancePatchApplyNodeMapper.updateRemainingNodeStatus(
+                entity.getId(),
+                currentNode.getNodeOrder() + 1,
+                NODE_STATUS_SKIPPED,
+                now
+        );
+
         entity.setStatus(PATCH_STATUS_REJECTED);
         entity.setApproveUserId(currentUser.getId());
-        entity.setApproveTime(LocalDateTime.now());
+        entity.setApproveTime(now);
         entity.setApproveComment(comment);
-        entity.setUpdateTime(LocalDateTime.now());
-        attendancePatchApplyMapper.updateReview(entity);
+        entity.setUpdateTime(now);
+        attendancePatchApplyMapper.updateStatusAndReview(entity);
+
+        insertLog(buildLog(
+                entity.getId(),
+                ACTION_TYPE_REJECT,
+                currentUser.getId(),
+                resolveDisplayName(currentUser),
+                currentNode.getNodeCode(),
+                currentNode.getNodeName(),
+                comment
+        ));
+    }
+
+    private void enrichMyPageItems(List<AttendancePatchApplyListItemVO> list) {
+        Map<Long, List<AttendancePatchApplyNodeEntity>> nodeMap = queryNodeMap(list);
+        Map<Long, AttendancePatchApplyLogEntity> latestLogMap = queryLatestLogMap(list);
+        for (AttendancePatchApplyListItemVO item : list) {
+            AttendancePatchApplyNodeEntity currentNode = resolveCurrentNode(nodeMap.get(item.getId()), item.getStatus());
+            AttendancePatchApplyLogEntity latestLog = latestLogMap.get(item.getId());
+            applyItemContext(item, currentNode, latestLog, false, false);
+        }
+    }
+
+    private void enrichPendingPageItems(List<AttendancePatchApplyListItemVO> list,
+                                        UserEntity currentUser,
+                                        String requestedStatus) {
+        Map<Long, List<AttendancePatchApplyNodeEntity>> nodeMap = queryNodeMap(list);
+        Map<Long, AttendancePatchApplyLogEntity> latestLogMap = queryLatestLogMap(list);
+        for (AttendancePatchApplyListItemVO item : list) {
+            List<AttendancePatchApplyNodeEntity> nodes = nodeMap.get(item.getId());
+            AttendancePatchApplyNodeEntity currentNode = resolveCurrentNode(nodes, item.getStatus());
+            AttendancePatchApplyNodeEntity reviewerNode = resolveReviewerNode(nodes, currentUser.getId(), requestedStatus);
+            boolean canApprove = reviewerNode != null
+                    && NODE_STATUS_PENDING.equals(reviewerNode.getStatus())
+                    && currentUser.getId() != null
+                    && currentUser.getId().equals(reviewerNode.getApproverUserId());
+            applyItemContext(item, currentNode, latestLogMap.get(item.getId()), canApprove, false);
+            applyReviewerResultContext(item, reviewerNode);
+        }
+    }
+
+    private void enrichDetailItem(AttendancePatchApplyListItemVO item,
+                                  UserEntity currentUser,
+                                  UserEntity targetUser,
+                                  AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope) {
+        List<AttendancePatchApplyNodeEntity> nodes = attendancePatchApplyNodeMapper.queryByApplyId(item.getId());
+        AttendancePatchApplyNodeEntity currentNode = resolveCurrentNode(nodes, item.getStatus());
+        AttendancePatchApplyLogEntity latestLog = firstOrNull(attendancePatchApplyLogMapper.queryByApplyId(item.getId()));
+        boolean canApprove = currentNode != null
+                && NODE_STATUS_PENDING.equals(currentNode.getStatus())
+                && currentUser.getId() != null
+                && currentUser.getId().equals(currentNode.getApproverUserId())
+                && !currentUser.getId().equals(targetUser.getId())
+                && !isCrossDeptReadonlyTarget(currentUser, targetUser, readonlyScope);
+        boolean readonlyMode = !currentUser.getId().equals(targetUser.getId()) && !canApprove;
+        applyItemContext(item, currentNode, latestLog, canApprove, readonlyMode);
+    }
+
+    private void applyItemContext(AttendancePatchApplyListItemVO item,
+                                  AttendancePatchApplyNodeEntity currentNode,
+                                  AttendancePatchApplyLogEntity latestLog,
+                                  boolean canApprove,
+                                  boolean readonlyMode) {
+        item.setApplyTypeText(resolveApplyTypeText(item.getApplyType()));
+        item.setCanApprove(canApprove);
+        item.setReadonlyMode(readonlyMode);
+        if (currentNode != null) {
+            item.setCurrentNodeCode(currentNode.getNodeCode());
+            item.setCurrentNodeName(currentNode.getNodeName());
+            item.setCurrentApproverUserId(currentNode.getApproverUserId());
+            item.setCurrentApproverName(currentNode.getApproverName());
+        } else if (PATCH_STATUS_PENDING.equals(item.getStatus())) {
+            item.setCurrentNodeCode("CONFIG_PENDING");
+            item.setCurrentNodeName(NODE_NAME_PENDING_CONFIG);
+            item.setCurrentApproverUserId(null);
+            item.setCurrentApproverName(null);
+        } else if (PATCH_STATUS_APPROVED.equals(item.getStatus())) {
+            item.setCurrentNodeCode("FINISHED");
+            item.setCurrentNodeName(NODE_NAME_FINISHED);
+            item.setCurrentApproverUserId(item.getApproveUserId());
+            item.setCurrentApproverName(resolveApproveDisplayName(item));
+        } else if (PATCH_STATUS_REJECTED.equals(item.getStatus())) {
+            item.setCurrentNodeCode("REJECTED");
+            item.setCurrentNodeName(NODE_NAME_REJECTED);
+            item.setCurrentApproverUserId(item.getApproveUserId());
+            item.setCurrentApproverName(resolveApproveDisplayName(item));
+        }
+
+        if (latestLog != null) {
+            item.setLatestActionType(latestLog.getActionType());
+            item.setLatestActionComment(latestLog.getComment());
+            item.setLatestActionTime(latestLog.getCreateTime());
+        }
+    }
+
+    private AttendancePatchApplyNodeEntity resolveCurrentNode(List<AttendancePatchApplyNodeEntity> nodes, String applyStatus) {
+        if (nodes == null || nodes.isEmpty()) {
+            return null;
+        }
+        AttendancePatchApplyNodeEntity pendingNode = nodes.stream()
+                .filter(node -> NODE_STATUS_PENDING.equals(node.getStatus()))
+                .min(Comparator.comparing(AttendancePatchApplyNodeEntity::getNodeOrder))
+                .orElse(null);
+        if (pendingNode != null) {
+            return pendingNode;
+        }
+        if (PATCH_STATUS_REJECTED.equals(applyStatus)) {
+            return nodes.stream()
+                    .filter(node -> NODE_STATUS_REJECTED.equals(node.getStatus()))
+                    .max(Comparator.comparing(AttendancePatchApplyNodeEntity::getNodeOrder))
+                    .orElse(null);
+        }
+        if (PATCH_STATUS_APPROVED.equals(applyStatus)) {
+            return nodes.stream()
+                    .filter(node -> NODE_STATUS_APPROVED.equals(node.getStatus()))
+                    .max(Comparator.comparing(AttendancePatchApplyNodeEntity::getNodeOrder))
+                    .orElse(null);
+        }
+        return nodes.stream()
+                .filter(node -> !NODE_STATUS_SKIPPED.equals(node.getStatus()))
+                .max(Comparator.comparing(AttendancePatchApplyNodeEntity::getNodeOrder))
+                .orElse(null);
+    }
+
+    private AttendancePatchApplyNodeEntity resolveReviewerNode(List<AttendancePatchApplyNodeEntity> nodes,
+                                                               Long approverUserId,
+                                                               String requestedStatus) {
+        if (nodes == null || nodes.isEmpty() || approverUserId == null) {
+            return null;
+        }
+        List<AttendancePatchApplyNodeEntity> ownedNodes = nodes.stream()
+                .filter(node -> approverUserId.equals(node.getApproverUserId()))
+                .toList();
+        if (ownedNodes.isEmpty()) {
+            return null;
+        }
+        if (PATCH_STATUS_PENDING.equals(requestedStatus)) {
+            return ownedNodes.stream()
+                    .filter(node -> NODE_STATUS_PENDING.equals(node.getStatus()))
+                    .min(Comparator.comparing(AttendancePatchApplyNodeEntity::getNodeOrder))
+                    .orElse(null);
+        }
+        if (PATCH_STATUS_APPROVED.equals(requestedStatus)) {
+            return ownedNodes.stream()
+                    .filter(node -> NODE_STATUS_APPROVED.equals(node.getStatus()))
+                    .max(Comparator.comparing(AttendancePatchApplyNodeEntity::getNodeOrder))
+                    .orElse(null);
+        }
+        if (PATCH_STATUS_REJECTED.equals(requestedStatus)) {
+            return ownedNodes.stream()
+                    .filter(node -> NODE_STATUS_REJECTED.equals(node.getStatus()))
+                    .max(Comparator.comparing(AttendancePatchApplyNodeEntity::getNodeOrder))
+                    .orElse(null);
+        }
+        AttendancePatchApplyNodeEntity pendingNode = ownedNodes.stream()
+                .filter(node -> NODE_STATUS_PENDING.equals(node.getStatus()))
+                .min(Comparator.comparing(AttendancePatchApplyNodeEntity::getNodeOrder))
+                .orElse(null);
+        if (pendingNode != null) {
+            return pendingNode;
+        }
+        return ownedNodes.stream()
+                .filter(node -> NODE_STATUS_APPROVED.equals(node.getStatus()) || NODE_STATUS_REJECTED.equals(node.getStatus()))
+                .max(Comparator
+                        .comparing(AttendancePatchApplyNodeEntity::getApproveTime, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(AttendancePatchApplyNodeEntity::getNodeOrder))
+                .orElse(null);
+    }
+
+    private void applyReviewerResultContext(AttendancePatchApplyListItemVO item,
+                                            AttendancePatchApplyNodeEntity reviewerNode) {
+        if (item == null || reviewerNode == null) {
+            return;
+        }
+        if (NODE_STATUS_APPROVED.equals(reviewerNode.getStatus()) || NODE_STATUS_REJECTED.equals(reviewerNode.getStatus())) {
+            item.setApproveUserId(reviewerNode.getApproverUserId());
+            item.setApproveRealName(reviewerNode.getApproverName());
+            item.setApproveUsername(null);
+            item.setApproveTime(reviewerNode.getApproveTime());
+            item.setApproveComment(reviewerNode.getApproveComment());
+        }
+    }
+
+    private Map<Long, List<AttendancePatchApplyNodeEntity>> queryNodeMap(List<AttendancePatchApplyListItemVO> list) {
+        Map<Long, List<AttendancePatchApplyNodeEntity>> nodeMap = new HashMap<>();
+        List<Long> applyIds = collectApplyIds(list);
+        if (applyIds.isEmpty()) {
+            return nodeMap;
+        }
+        for (AttendancePatchApplyNodeEntity node : attendancePatchApplyNodeMapper.queryByApplyIds(applyIds)) {
+            nodeMap.computeIfAbsent(node.getApplyId(), key -> new ArrayList<>()).add(node);
+        }
+        return nodeMap;
+    }
+
+    private Map<Long, AttendancePatchApplyLogEntity> queryLatestLogMap(List<AttendancePatchApplyListItemVO> list) {
+        Map<Long, AttendancePatchApplyLogEntity> logMap = new HashMap<>();
+        List<Long> applyIds = collectApplyIds(list);
+        if (applyIds.isEmpty()) {
+            return logMap;
+        }
+        for (AttendancePatchApplyLogEntity log : attendancePatchApplyLogMapper.queryLatestByApplyIds(applyIds)) {
+            logMap.put(log.getApplyId(), log);
+        }
+        return logMap;
+    }
+
+    private List<Long> collectApplyIds(List<AttendancePatchApplyListItemVO> list) {
+        List<Long> applyIds = new ArrayList<>();
+        if (list == null) {
+            return applyIds;
+        }
+        for (AttendancePatchApplyListItemVO item : list) {
+            if (item != null && item.getId() != null) {
+                applyIds.add(item.getId());
+            }
+        }
+        return applyIds;
+    }
+
+    private AttendancePatchApplyNodeEntity requireCurrentPendingNodeForApprover(Long applyId, Long approverUserId) {
+        AttendancePatchApplyNodeEntity node = attendancePatchApplyNodeMapper.findCurrentPendingNodeForApprover(applyId, approverUserId);
+        if (node == null) {
+            throw new IllegalArgumentException("当前用户不是该申请的有效审批人");
+        }
+        return node;
+    }
+
+    private AttendancePatchApplyNodeEntity findNextWaitingNode(Long applyId, Integer currentNodeOrder) {
+        List<AttendancePatchApplyNodeEntity> nodes = attendancePatchApplyNodeMapper.queryByApplyId(applyId);
+        return nodes.stream()
+                .filter(node -> NODE_STATUS_WAITING.equals(node.getStatus()))
+                .filter(node -> currentNodeOrder == null || node.getNodeOrder() > currentNodeOrder)
+                .min(Comparator.comparing(AttendancePatchApplyNodeEntity::getNodeOrder))
+                .orElse(null);
+    }
+
+    private List<AttendancePatchApplyNodeEntity> buildApprovalNodes(Long applyId, List<UserEntity> approvalChain) {
+        List<AttendancePatchApplyNodeEntity> nodes = new ArrayList<>();
+        for (int index = 0; index < approvalChain.size(); index += 1) {
+            UserEntity approver = approvalChain.get(index);
+            AttendancePatchApplyNodeEntity node = new AttendancePatchApplyNodeEntity();
+            node.setApplyId(applyId);
+            node.setNodeOrder(index + 1);
+            node.setNodeCode(index == 0 ? NODE_CODE_DIRECT_LEADER : NODE_CODE_FINAL_LEADER);
+            if (approvalChain.size() == 1) {
+                node.setNodeName(NODE_NAME_UPPER_LEADER);
+            } else {
+                node.setNodeName(index == 0 ? NODE_NAME_DIRECT_LEADER : NODE_NAME_FINAL_LEADER);
+            }
+            node.setApproverUserId(approver.getId());
+            node.setApproverName(buildApproverName(approver));
+            node.setStatus(index == 0 ? NODE_STATUS_PENDING : NODE_STATUS_WAITING);
+            nodes.add(node);
+        }
+        return nodes;
+    }
+
+    private List<UserEntity> resolveApprovalChain(UserEntity applicant) {
+        List<UserEntity> chain = new ArrayList<>();
+        Set<Long> visitedUserIds = new HashSet<>();
+        Long currentParentUserId = applicant == null ? null : applicant.getParentUserId();
+        while (currentParentUserId != null
+                && visitedUserIds.add(currentParentUserId)
+                && chain.size() < MAX_APPROVER_COUNT) {
+            UserEntity parentUser = requireUser(currentParentUserId);
+            if (!permissionService.isSuperAdmin(parentUser.getId())) {
+                chain.add(parentUser);
+            }
+            currentParentUserId = parentUser.getParentUserId();
+        }
+        return chain;
+    }
+
+    private AttendancePatchApplyLogEntity buildLog(Long applyId,
+                                                   String actionType,
+                                                   Long operatorUserId,
+                                                   String operatorName,
+                                                   String nodeCode,
+                                                   String nodeName,
+                                                   String comment) {
+        AttendancePatchApplyLogEntity log = new AttendancePatchApplyLogEntity();
+        log.setApplyId(applyId);
+        log.setActionType(actionType);
+        log.setOperatorUserId(operatorUserId);
+        log.setOperatorName(operatorName);
+        log.setNodeCode(nodeCode);
+        log.setNodeName(nodeName);
+        log.setComment(comment);
+        return log;
+    }
+
+    private void insertLog(AttendancePatchApplyLogEntity log) {
+        attendancePatchApplyLogMapper.insert(log);
     }
 
     private void applyApprovedAttendance(AttendancePatchApplyEntity applyEntity) {
@@ -205,85 +645,83 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
                                                   String patchType,
                                                   LocalDateTime patchTime) {
         if (PATCH_TYPE_AM_ON.equals(patchType)) {
-            validateAmOnPatch(record, patchTime);
+            validateNodePatch(record, patchTime, patchType, null, record == null ? null : record.getAmOffTime(), "上午上班");
             return;
         }
         if (PATCH_TYPE_AM_OFF.equals(patchType)) {
-            validateAmOffPatch(record, patchTime);
+            validateNodePatch(record, patchTime, patchType, record == null ? null : latestBefore(record, PATCH_TYPE_AM_OFF),
+                    record == null ? null : record.getPmOnTime(), "上午下班");
             return;
         }
         if (PATCH_TYPE_PM_ON.equals(patchType)) {
-            validatePmOnPatch(record, patchTime);
+            validateNodePatch(record, patchTime, patchType, record == null ? null : latestBefore(record, PATCH_TYPE_PM_ON),
+                    record == null ? null : record.getCheckOutTime(), "下午上班");
             return;
         }
         if (PATCH_TYPE_PM_OFF.equals(patchType)) {
-            validatePmOffPatch(record, patchTime);
+            validateNodePatch(record, patchTime, patchType, record == null ? null : latestBefore(record, PATCH_TYPE_PM_OFF),
+                    null, "下午下班");
             return;
         }
-        throw new IllegalArgumentException("补卡类型不合法");
+        throw new IllegalArgumentException("补打卡类型不合法");
     }
 
-    private void validateAmOnPatch(AttendanceRecordEntity record, LocalDateTime patchTime) {
+    private void validateNodePatch(AttendanceRecordEntity record,
+                                   LocalDateTime patchTime,
+                                   String patchType,
+                                   LocalDateTime previousTime,
+                                   LocalDateTime nextTime,
+                                   String label) {
+        if (record != null && resolveNodeTime(record, patchType) != null) {
+            throw new IllegalArgumentException(label + "节点已存在记录，无需重复申请");
+        }
+        if (previousTime != null && !patchTime.isAfter(previousTime)) {
+            throw new IllegalArgumentException(label + "补卡时间必须晚于已存在的前序节点时间");
+        }
+        if (nextTime != null && !patchTime.isBefore(nextTime)) {
+            throw new IllegalArgumentException(label + "补卡时间必须早于已存在的后续节点时间");
+        }
+    }
+
+    private LocalDateTime latestBefore(AttendanceRecordEntity record, String patchType) {
+        if (PATCH_TYPE_AM_OFF.equals(patchType)) {
+            return record.getCheckInTime();
+        }
+        if (PATCH_TYPE_PM_ON.equals(patchType)) {
+            if (record.getAmOffTime() != null) {
+                return record.getAmOffTime();
+            }
+            return record.getCheckInTime();
+        }
+        if (PATCH_TYPE_PM_OFF.equals(patchType)) {
+            if (record.getPmOnTime() != null) {
+                return record.getPmOnTime();
+            }
+            if (record.getAmOffTime() != null) {
+                return record.getAmOffTime();
+            }
+            return record.getCheckInTime();
+        }
+        return null;
+    }
+
+    private LocalDateTime resolveNodeTime(AttendanceRecordEntity record, String patchType) {
         if (record == null) {
-            return;
+            return null;
         }
-        if (record.getCheckInTime() != null) {
-            throw new IllegalArgumentException("当天已存在上午上班打卡记录，无需补上午上班卡");
+        if (PATCH_TYPE_AM_ON.equals(patchType)) {
+            return record.getCheckInTime();
         }
-        if (record.getAmOffTime() != null && !patchTime.isBefore(record.getAmOffTime())) {
-            throw new IllegalArgumentException("上午上班补卡时间必须早于上午下班时间");
+        if (PATCH_TYPE_AM_OFF.equals(patchType)) {
+            return record.getAmOffTime();
         }
-        if (record.getPmOnTime() != null && !patchTime.isBefore(record.getPmOnTime())) {
-            throw new IllegalArgumentException("上午上班补卡时间必须早于下午上班时间");
+        if (PATCH_TYPE_PM_ON.equals(patchType)) {
+            return record.getPmOnTime();
         }
-        if (record.getCheckOutTime() != null && !patchTime.isBefore(record.getCheckOutTime())) {
-            throw new IllegalArgumentException("上午上班补卡时间必须早于下午下班时间");
+        if (PATCH_TYPE_PM_OFF.equals(patchType)) {
+            return record.getCheckOutTime();
         }
-    }
-
-    private void validateAmOffPatch(AttendanceRecordEntity record, LocalDateTime patchTime) {
-        if (record == null || record.getCheckInTime() == null) {
-            throw new IllegalArgumentException("请先有上午上班记录，或先补上午上班卡");
-        }
-        if (record.getAmOffTime() != null) {
-            throw new IllegalArgumentException("当天已存在上午下班打卡记录，无需补上午下班卡");
-        }
-        if (!patchTime.isAfter(record.getCheckInTime())) {
-            throw new IllegalArgumentException("上午下班补卡时间必须晚于上午上班时间");
-        }
-        if (record.getPmOnTime() != null && !patchTime.isBefore(record.getPmOnTime())) {
-            throw new IllegalArgumentException("上午下班补卡时间必须早于下午上班时间");
-        }
-        if (record.getCheckOutTime() != null && !patchTime.isBefore(record.getCheckOutTime())) {
-            throw new IllegalArgumentException("上午下班补卡时间必须早于下午下班时间");
-        }
-    }
-
-    private void validatePmOnPatch(AttendanceRecordEntity record, LocalDateTime patchTime) {
-        if (record == null || record.getAmOffTime() == null) {
-            throw new IllegalArgumentException("请先有上午下班记录，或先补上午下班卡");
-        }
-        if (record.getPmOnTime() != null) {
-            throw new IllegalArgumentException("当天已存在下午上班打卡记录，无需补下午上班卡");
-        }
-        if (!patchTime.isAfter(record.getAmOffTime())) {
-            throw new IllegalArgumentException("下午上班补卡时间必须晚于上午下班时间");
-        }
-        if (record.getCheckOutTime() != null && !patchTime.isBefore(record.getCheckOutTime())) {
-            throw new IllegalArgumentException("下午上班补卡时间必须早于下午下班时间");
-        }
-    }
-
-    private void validatePmOffPatch(AttendanceRecordEntity record, LocalDateTime patchTime) {
-        if (record == null || record.getPmOnTime() == null) {
-            throw new IllegalArgumentException("请先有下午上班记录，或先补下午上班卡");
-        }
-        if (record.getCheckOutTime() != null) {
-            throw new IllegalArgumentException("当天已存在下午下班打卡记录，无需补下午下班卡");
-        }
-        if (!patchTime.isAfter(record.getPmOnTime())) {
-            throw new IllegalArgumentException("下午下班补卡时间必须晚于下午上班时间");
-        }
+        return null;
     }
 
     private void applyPatchTimeToRecord(AttendanceRecordEntity record,
@@ -305,7 +743,7 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
             record.setCheckOutTime(patchTime);
             return;
         }
-        throw new IllegalArgumentException("补卡类型不合法");
+        throw new IllegalArgumentException("补打卡类型不合法");
     }
 
     private void applyPatchAddressToRecord(AttendanceRecordEntity record, String patchType) {
@@ -327,10 +765,8 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
             }
             return;
         }
-        if (PATCH_TYPE_PM_OFF.equals(patchType)) {
-            if (normalizeText(record.getCheckOutAddress()) == null) {
-                record.setCheckOutAddress(PATCH_ADDRESS_TEXT);
-            }
+        if (PATCH_TYPE_PM_OFF.equals(patchType) && normalizeText(record.getCheckOutAddress()) == null) {
+            record.setCheckOutAddress(PATCH_ADDRESS_TEXT);
         }
     }
 
@@ -372,28 +808,58 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
     private AttendancePatchApplyEntity requirePatchApply(Long id) {
         AttendancePatchApplyEntity entity = attendancePatchApplyMapper.findById(id);
         if (entity == null || entity.getValidFlag() == null || entity.getValidFlag() != 1) {
-            throw new IllegalArgumentException("补卡申请不存在");
+            throw new IllegalArgumentException("补打卡申请不存在");
         }
         return entity;
     }
 
-    private void validateReadableApply(UserEntity currentUser, AttendancePatchApplyEntity entity) {
-        if (currentUser.getId().equals(entity.getUserId())) {
+    private void validateReadableApply(UserEntity currentUser,
+                                       UserEntity targetUser,
+                                       AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope) {
+        if (currentUser.getId().equals(targetUser.getId())) {
             return;
         }
-        UserEntity targetUser = requireUser(entity.getUserId());
-        dataScopeService.validateReadableUser(currentUser, targetUser, "无权查看该补卡申请");
+        String treePathPrefix = dataScopeService.buildTreePathPrefix(currentUser);
+        if (dataScopeService.isReadableTreePath(treePathPrefix, targetUser.getTreePath())) {
+            return;
+        }
+        if (readonlyScope.canViewCrossDeptUser(targetUser.getId())) {
+            return;
+        }
+        throw new IllegalArgumentException("无权查看该补打卡申请");
     }
 
     private void validateReviewableApply(UserEntity currentUser, AttendancePatchApplyEntity entity) {
         if (!PATCH_STATUS_PENDING.equals(entity.getStatus())) {
-            throw new IllegalArgumentException("该补卡申请已处理，请勿重复审批");
+            throw new IllegalArgumentException("该补打卡申请已处理，请勿重复审批");
         }
         if (currentUser.getId().equals(entity.getUserId())) {
-            throw new IllegalArgumentException("不能审批自己的补卡申请");
+            throw new IllegalArgumentException("不能审批自己的补打卡申请");
         }
         UserEntity targetUser = requireUser(entity.getUserId());
-        dataScopeService.validateReadableUser(currentUser, targetUser, "无权审批该补卡申请");
+        AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope = resolveReadonlyScope(currentUser);
+        if (isCrossDeptReadonlyTarget(currentUser, targetUser, readonlyScope)) {
+            throw new IllegalArgumentException("跨部门只读监管仅支持查看，不允许审批");
+        }
+        requireCurrentPendingNodeForApprover(entity.getId(), currentUser.getId());
+    }
+
+    private AttendanceWeeklyReadonlyScopeService.ReadonlyScope resolveReadonlyScope(UserEntity currentUser) {
+        if (attendanceWeeklyReadonlyScopeService == null) {
+            return AttendanceWeeklyReadonlyScopeService.ReadonlyScope.disabled();
+        }
+        return attendanceWeeklyReadonlyScopeService.resolve(currentUser);
+    }
+
+    private boolean isCrossDeptReadonlyTarget(UserEntity currentUser,
+                                              UserEntity targetUser,
+                                              AttendanceWeeklyReadonlyScopeService.ReadonlyScope readonlyScope) {
+        if (targetUser == null || currentUser == null) {
+            return false;
+        }
+        String treePathPrefix = dataScopeService.buildTreePathPrefix(currentUser);
+        boolean ownTree = dataScopeService.isReadableTreePath(treePathPrefix, targetUser.getTreePath());
+        return !ownTree && readonlyScope.canViewCrossDeptUser(targetUser.getId());
     }
 
     private UserEntity requireUser(Long userId) {
@@ -456,6 +922,47 @@ public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyServ
             throw new IllegalArgumentException("补卡类型不合法");
         }
         return upper;
+    }
+
+    private String resolveApplyTypeText(String applyType) {
+        return AttendanceApplyType.EVIDENCE.equals(AttendanceApplyType.normalize(applyType))
+                ? APPLY_TYPE_TEXT_EVIDENCE
+                : APPLY_TYPE_TEXT_MAKEUP;
+    }
+
+    private String resolveDisplayName(UserEntity user) {
+        if (user == null) {
+            return null;
+        }
+        String realName = normalizeText(user.getRealName());
+        if (realName != null) {
+            return realName;
+        }
+        return normalizeText(user.getUsername());
+    }
+
+    private String buildApproverName(UserEntity user) {
+        String displayName = resolveDisplayName(user);
+        String jobTitle = normalizeText(user == null ? null : user.getJobTitle());
+        if (displayName == null) {
+            return jobTitle;
+        }
+        if (jobTitle == null) {
+            return displayName;
+        }
+        return displayName + "（" + jobTitle + "）";
+    }
+
+    private String resolveApproveDisplayName(AttendancePatchApplyListItemVO item) {
+        String realName = normalizeText(item.getApproveRealName());
+        if (realName != null) {
+            return realName;
+        }
+        return normalizeText(item.getApproveUsername());
+    }
+
+    private <T> T firstOrNull(List<T> list) {
+        return list == null || list.isEmpty() ? null : list.get(0);
     }
 
     private String normalizeText(String text) {

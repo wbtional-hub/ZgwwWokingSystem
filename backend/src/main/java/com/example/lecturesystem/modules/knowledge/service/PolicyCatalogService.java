@@ -20,6 +20,17 @@ import java.util.Map;
 @Service
 public class PolicyCatalogService {
     private static final String SOURCE_SCENE_MOBILE_POLICY_CONSULTANT = "MOBILE_POLICY_CONSULTANT";
+    private static final List<String> APPLY_FLOW_HINTS = List.of(
+        "申请流程",
+        "申报流程",
+        "遴选与申请流程",
+        "五步流程",
+        "组织申报",
+        "资格核查",
+        "部门联审",
+        "综合评审",
+        "研究确认"
+);
 
     private final AiPolicyCatalogMapper aiPolicyCatalogMapper;
     private final KnowledgeChunkMapper knowledgeChunkMapper;
@@ -76,10 +87,19 @@ public class PolicyCatalogService {
             }
         }
         if (terms.isEmpty()) {
-            terms.addAll(intent.getFormalPolicyNames());
-            terms.addAll(intent.getTopicTags());
-        }
-        return terms.stream().filter(this::hasText).limit(Math.max(limit, 1) * 3L).toList();
+    terms.addAll(intent.getFormalPolicyNames());
+    terms.addAll(intent.getTopicTags());
+}
+
+if (isDoubleHundredApplyFlowIntent(intent)) {
+    terms.addAll(APPLY_FLOW_HINTS);
+}
+
+return terms.stream()
+        .filter(this::hasText)
+        .distinct()
+        .limit(Math.max(limit, 1) * 3L)
+        .toList();
     }
 
     public boolean hasCatalogData(Long baseId) {
@@ -324,6 +344,37 @@ public class PolicyCatalogService {
     private boolean hasText(String text) {
         return text != null && !text.trim().isEmpty();
     }
+
+    private boolean isDoubleHundredApplyFlowIntent(PolicyRouteIntent intent) {
+    if (intent == null || intent.getQuestionType() != PolicyKnowledgeSupport.PolicyQuestionType.PROCESS) {
+        return false;
+    }
+    return containsAnyText(intent.getFormalPolicyNames(),
+            "双百计划",
+            "厦门市引进高层次创新创业人才“双百计划”实施意见",
+            "创新团队",
+            "创业人才");
+}
+
+private boolean containsAnyText(List<String> values, String... targets) {
+    if (values == null || values.isEmpty() || targets == null || targets.length == 0) {
+        return false;
+    }
+    for (String value : values) {
+        if (!hasText(value)) {
+            continue;
+        }
+        for (String target : targets) {
+            if (!hasText(target)) {
+                continue;
+            }
+            if (value.contains(target) || target.contains(value)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
     private String valueOrDefault(String value, String defaultValue) {
         return hasText(value) ? value : defaultValue;

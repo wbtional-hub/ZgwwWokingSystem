@@ -333,6 +333,7 @@ async function startWechatOauth() {
     }
   } catch (error) {
     const message = resolveErrorMessage(error, '微信登录暂时不可用')
+    clearWechatLoginRecoveryFlag()
     state.wechatError = message
     showFailToast(message)
   } finally {
@@ -498,6 +499,7 @@ async function tryConsumeWechatLoginCallback() {
     clearWechatHash()
 
     if (payload?.needBind === true) {
+      clearWechatLoginRecoveryFlag()
       state.needBind = true
       state.bindCode = payload?.bindCode || ''
       state.openId = payload?.openId || ''
@@ -513,7 +515,7 @@ async function tryConsumeWechatLoginCallback() {
     await applyLoginResult(
       payload.loginInfo,
       payload.loginInfo.forcePasswordChange ? 'FORCE_PASSWORD_CHANGE' : 'success',
-      payload.returnUrl || resolvePostLoginPath(),
+      resolvePostLoginPath(payload.returnUrl),
       { wechatRecoveryProtection: true }
     )
     showSuccessToast('微信登录成功')
@@ -522,6 +524,7 @@ async function tryConsumeWechatLoginCallback() {
     state.wechatError = message
     showFailToast(message)
   } finally {
+    clearWechatLoginRecoveryFlag()
     state.wechatLoading = false
   }
 }
@@ -530,6 +533,7 @@ function consumeWechatFailureNotice() {
   if (route.query[WECHAT_FAILURE_FLAG] !== '1') {
     return
   }
+  clearWechatLoginRecoveryFlag()
   const message = typeof route.query.wechatAuthMessage === 'string'
     ? route.query.wechatAuthMessage
     : '微信登录失败，请稍后重试'
@@ -608,12 +612,23 @@ function clearWechatLoginRecoveryFlag() {
   }
 }
 
-function resolvePostLoginPath() {
+function resolvePostLoginPath(fallbackPath = '/') {
   const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-  if (redirect && redirect !== '/login' && redirect.startsWith('/')) {
+  if (isSafeRedirectPath(redirect)) {
     return redirect
   }
+  if (isSafeRedirectPath(fallbackPath)) {
+    return fallbackPath
+  }
   return '/'
+}
+
+function isSafeRedirectPath(path) {
+  return typeof path === 'string'
+    && path.startsWith('/')
+    && !path.startsWith('//')
+    && path !== '/login'
+    && path !== '/mobile'
 }
 
 function extractWechatPayload() {

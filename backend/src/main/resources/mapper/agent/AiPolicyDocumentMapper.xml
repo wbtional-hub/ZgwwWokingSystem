@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AiPolicyDocumentMapper">
+    <resultMap id="AiPolicyDocumentMap" type="com.example.lecturesystem.modules.agent.entity.AiPolicyDocumentEntity">
+        <id property="id" column="id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="name" column="name"/>
+        <result property="regionScope" column="region_scope"/>
+        <result property="policyKey" column="policy_key"/>
+        <result property="policyName" column="policy_name"/>
+        <result property="docType" column="doc_type"/>
+        <result property="sourceType" column="source_type"/>
+        <result property="sourceFileName" column="source_file_name"/>
+        <result property="enabled" column="enabled"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.agent.entity.AiPolicyDocumentEntity"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO ai_policy_document (
+            base_id, name, region_scope, policy_key, policy_name, doc_type, source_type,
+            source_file_name, enabled, created_at, updated_at
+        ) VALUES (
+            #{baseId}, #{name}, #{regionScope}, #{policyKey}, #{policyName}, #{docType}, #{sourceType},
+            #{sourceFileName}, #{enabled}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <delete id="deleteByBaseId">
+        DELETE FROM ai_policy_document WHERE base_id = #{baseId}
+    </delete>
+
+    <select id="countByBaseId" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_policy_document
+        WHERE base_id = #{baseId}
+    </select>
+
+    <select id="queryByBaseId" resultMap="AiPolicyDocumentMap">
+        SELECT id, base_id, name, region_scope, policy_key, policy_name, doc_type, source_type,
+               source_file_name, enabled, created_at, updated_at
+        FROM ai_policy_document
+        WHERE base_id = #{baseId}
+        ORDER BY updated_at DESC, id DESC
+    </select>
+</mapper>

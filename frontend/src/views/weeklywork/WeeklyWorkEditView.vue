@@ -1256,7 +1256,15 @@ const pendingReviewRecords = computed(() => {
   return list.value.filter((item) => canReview(item))
 })
 const processedReviewRecords = computed(() => {
-  return list.value.filter((item) => Number(item.userId) !== currentUserId.value && Boolean(item.reviewedByCurrentUser) && !canReview(item))
+  return list.value.filter((item) => {
+    if (Number(item.userId) === currentUserId.value) {
+      return false
+    }
+    if (item?.readonlyMode) {
+      return true
+    }
+    return Boolean(item.reviewedByCurrentUser) && !canReview(item)
+  })
 })
 
 const recordTabs = computed(() => {
@@ -1280,11 +1288,11 @@ const recordTabs = computed(() => {
       },
       {
         key: 'processed',
-        label: '我已审核',
-        title: '我已审核',
-        desc: '已处理记录',
-        emptyTitle: '暂无已审核',
-        emptyDesc: '还没有已处理记录',
+        label: '已处理/查看',
+        title: '已处理/查看',
+        desc: '已处理或只读查看记录',
+        emptyTitle: '暂无已处理/查看',
+        emptyDesc: '还没有已处理或只读查看记录',
         count: processedReviewRecords.value.length
       }
     )
@@ -3137,6 +3145,9 @@ function resolveCurrentReviewerUserIdByLegacyNode(record) {
 function canReview(item) {
   if (!item) {
     return false
+  }
+  if (typeof item.canApprove === 'boolean') {
+    return item.canApprove
   }
   if (Number(item.userId) === currentUserId.value) {
     return false

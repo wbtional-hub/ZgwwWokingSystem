@@ -60,6 +60,9 @@ public class AttendanceRecordListItemVO {
     private String locationProvider;
     private Integer validFlag;
     private LocalDateTime createTime;
+    private Boolean canManage;
+    private Boolean readonlyMode;
+    private Boolean canViewCrossDept;
 
     public Long getId() {
         return id;
@@ -323,5 +326,29 @@ public class AttendanceRecordListItemVO {
 
     public void setCreateTime(LocalDateTime createTime) {
         this.createTime = createTime;
+    }
+
+    public Boolean getCanManage() {
+        return canManage;
+    }
+
+    public void setCanManage(Boolean canManage) {
+        this.canManage = canManage;
+    }
+
+    public Boolean getReadonlyMode() {
+        return readonlyMode;
+    }
+
+    public void setReadonlyMode(Boolean readonlyMode) {
+        this.readonlyMode = readonlyMode;
+    }
+
+    public Boolean getCanViewCrossDept() {
+        return canViewCrossDept;
+    }
+
+    public void setCanViewCrossDept(Boolean canViewCrossDept) {
+        this.canViewCrossDept = canViewCrossDept;
     }
 }

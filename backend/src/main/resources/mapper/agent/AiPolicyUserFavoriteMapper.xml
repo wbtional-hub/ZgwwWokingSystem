@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AiPolicyUserFavoriteMapper">
+    <resultMap id="AiPolicyUserFavoriteMap" type="com.example.lecturesystem.modules.agent.entity.AiPolicyUserFavoriteEntity">
+        <id property="id" column="id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="sessionId" column="session_id"/>
+        <result property="rawQuestion" column="raw_question"/>
+        <result property="normalizedQuestion" column="normalized_question"/>
+        <result property="policyKey" column="policy_key"/>
+        <result property="intentId" column="intent_id"/>
+        <result property="finalAnswer" column="final_answer"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.agent.entity.AiPolicyUserFavoriteEntity"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO ai_policy_user_favorite (
+            base_id, user_id, session_id, raw_question, normalized_question, policy_key,
+            intent_id, final_answer, created_at
+        ) VALUES (
+            #{baseId}, #{userId}, #{sessionId}, #{rawQuestion}, #{normalizedQuestion}, #{policyKey},
+            #{intentId}, #{finalAnswer}, #{createdAt}
+        )
+    </insert>
+
+    <delete id="deleteByBaseId">
+        DELETE FROM ai_policy_user_favorite WHERE base_id = #{baseId}
+    </delete>
+
+    <select id="countByBaseId" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_policy_user_favorite
+        WHERE base_id = #{baseId}
+    </select>
+
+    <select id="countByBaseIdWithIntent" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_policy_user_favorite
+        WHERE base_id = #{baseId}
+          AND intent_id IS NOT NULL
+    </select>
+
+    <select id="countByIntentId" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_policy_user_favorite
+        WHERE base_id = #{baseId}
+          AND intent_id = #{intentId}
+    </select>
+
+    <select id="countByUserAndIntentId" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_policy_user_favorite
+        WHERE base_id = #{baseId}
+          AND user_id = #{userId}
+          AND intent_id = #{intentId}
+    </select>
+
+    <select id="queryRecentByBaseId" resultMap="AiPolicyUserFavoriteMap">
+        SELECT *
+        FROM ai_policy_user_favorite
+        WHERE base_id = #{baseId}
+        ORDER BY created_at DESC, id DESC
+        LIMIT 100
+    </select>
+</mapper>

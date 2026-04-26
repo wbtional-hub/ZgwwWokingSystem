@@ -14,6 +14,8 @@ public interface AttendanceStatisticsMapper {
 
     List<AttendanceScopedUserVO> queryScopedUsers(@Param("treePathPrefix") String treePathPrefix);
 
+    List<AttendanceScopedUserVO> queryUsersByIds(@Param("userIds") List<Long> userIds);
+
     List<AttendanceStatsRecordVO> queryRecordsByUserIdsAndDateRange(@Param("userIds") List<Long> userIds,
                                                                     @Param("startDate") LocalDate startDate,
                                                                     @Param("endDate") LocalDate endDate);
