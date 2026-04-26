@@ -1,8 +1,12 @@
 <template>
-  <div class="policy-page" :class="{ 'policy-page--with-tabbar': showMobileTabbar }">
+  <div
+  class="policy-page"
+  :class="{
+    'policy-page--with-tabbar': showBottomTabbar,
+    'policy-page--keyboard': state.composerFocused
+  }"
+>
     <div class="policy-shell">
-      <AIPageGuideCard guide-key="policyConsultant" />
-
       <section v-if="!hasToken" class="panel panel--empty">
         <h1>手机端政策咨询</h1>
         <p>需要先登录后再进入问答链路。</p>
@@ -10,125 +14,170 @@
       </section>
 
       <template v-else>
-        <section class="panel panel--summary">
-          <div class="summary-title">政策咨询最小闭环</div>
-          <div class="summary-row">
-            <span class="summary-chip">{{ permissionFlags.canUseAi ? 'AI 优先' : '知识库兜底' }}</span>
-            <span class="summary-chip">{{ currentExpertLabel }}</span>
-            <span class="summary-chip">{{ currentRouteLabel }}</span>
-            <span class="summary-chip">{{ state.sessionInfo?.id ? `会话 #${state.sessionInfo.id}` : '未创建会话' }}</span>
-          </div>
-          <div class="summary-text">{{ helperText }}</div>
-          <div v-if="usageSummaryText" class="usage-strip">{{ usageSummaryText }}</div>
-        </section>
+  <section class="mobile-policy-header">
+    <div>
+      <div class="mobile-policy-title">政策咨询</div>
+      <div class="mobile-policy-subtitle">人才政策智能问答</div>
+    </div>
+    <div class="mobile-policy-actions">
+      <button type="button" class="mobile-icon-button" @click="openHistoryDrawer">历史</button>
+      <button type="button" class="mobile-icon-button mobile-icon-button--primary" :disabled="state.asking" @click="handleResetSession">
+        新会话
+      </button>
+    </div>
+  </section>
 
-        <section class="panel">
-          <div class="panel-head">
-            <div>
-              <div class="panel-title">对话区</div>
-              <div class="panel-subtitle">查询到什么内容，就即时展示什么内容。优先走流式返回，失败后再回退原有接口。</div>
-            </div>
-            <button type="button" class="ghost-button" :disabled="state.asking" @click="handleResetSession">新会话</button>
+  <section class="mobile-token-card">
+    <div class="mobile-token-item">
+      <span>本次</span>
+      <strong>{{ currentTotalTokensText }}</strong>
+      <small>Token</small>
+    </div>
+    <div class="mobile-token-divider"></div>
+    <div class="mobile-token-item">
+      <span>本月</span>
+      <strong>{{ monthTotalTokensText }}</strong>
+      <small>Token</small>
+    </div>
+    <div class="mobile-token-divider"></div>
+    <div class="mobile-token-item mobile-token-item--model">
+      <span>模型</span>
+      <strong>{{ currentModelText }}</strong>
+    </div>
+  </section>
+
+  <section class="mobile-chat-card">
+    <div ref="messageListRef" class="mobile-message-list">
+      <div v-if="state.loading" class="mobile-empty-state">
+        正在准备会话...
+      </div>
+
+      <div v-else-if="state.errorMessage" class="mobile-empty-state mobile-empty-state--warning">
+        {{ state.errorMessage }}
+      </div>
+
+      <template v-else-if="state.messageList.length">
+        <article
+          v-for="item in state.messageList"
+          :key="item.id"
+          class="mobile-message"
+          :class="item.messageRole === 'user' ? 'mobile-message--user' : 'mobile-message--assistant'"
+        >
+          <div class="mobile-message__role">
+            {{ item.messageRole === 'user' ? '我' : '政策咨询助手' }}
           </div>
 
-          <div ref="messageListRef" class="message-list">
-            <div v-if="state.loading" class="empty-state">正在准备会话...</div>
-            <div v-else-if="state.errorMessage" class="empty-state empty-state--warning">{{ state.errorMessage }}</div>
-            <template v-else-if="state.messageList.length">
-              <article
-                v-for="item in state.messageList"
-                :key="item.id"
-                class="message-bubble"
-                :class="item.messageRole === 'user' ? 'message-bubble--user' : 'message-bubble--assistant'"
-              >
-                <div class="message-bubble__role">{{ item.messageRole === 'user' ? '我' : '政策咨询助手' }}</div>
-                <div class="message-bubble__text">
-                  <span>{{ item.messageText }}</span>
-                  <span v-if="item.isStreaming" class="stream-cursor"></span>
-                </div>
-                <div v-if="item.messageRole !== 'user' && formatCitations(item).length" class="message-bubble__meta">
-                  引用：{{ formatCitations(item).join(' / ') }}
-                </div>
-              </article>
-            </template>
-            <div v-else class="empty-state">
-              先直接问一个具体问题，例如“厦门市高层次人才住房补贴怎么申请？”
+          <div class="mobile-message__bubble">
+            <div class="mobile-message__text">
+              <span>{{ item.messageText }}</span>
+              <span v-if="item.isStreaming" class="stream-cursor"></span>
             </div>
-            <article v-if="state.asking && !hasStreamingMessage" class="message-bubble message-bubble--assistant">
-              <div class="message-bubble__role">政策咨询助手</div>
-              <div class="message-bubble__text">正在整理政策依据，请稍候...</div>
-            </article>
-          </div>
-        </section>
 
-        <section class="panel">
-          <div class="panel-title">提问区</div>
-          <div class="active-skill-bar">
-            <div class="active-skill-text">
-              <span class="active-skill-label">当前专家</span>
-              <span class="active-skill-name">{{ currentExpertName }}</span>
+            <div v-if="item.messageRole !== 'user' && formatCitations(item).length" class="mobile-message__meta">
+              依据：{{ formatCitations(item).join(' / ') }}
             </div>
           </div>
-          <textarea
-            v-model="state.question"
-            class="question-input"
-            rows="4"
-            maxlength="500"
-            placeholder="直接输入政策问题，例如“双百计划怎么申请？”"
-            :disabled="state.asking || !permissionFlags.canUseAgent"
-            @input="handleQuestionInput"
-            @keydown.enter.exact.prevent="handleSend"
-          ></textarea>
-          <div v-if="policySuggestions.length" class="intent-suggest-list">
-            <button
-              v-for="item in policySuggestions"
-              :key="item.intentId"
-              type="button"
-              class="intent-suggest-item"
-              @click="applyPolicySuggestion(item)"
-            >
-              <span class="intent-suggest-item__title">{{ item.intentName }}</span>
-              <small class="intent-suggest-item__question">{{ item.standardQuestion }}</small>
-            </button>
-          </div>
-          <div class="composer-footer">
-            <div class="composer-hint">
-              当前页面已默认绑定人才政策咨询专家，直接提问即可。
-            </div>
-            <button type="button" class="primary-button" :disabled="!canSend" @click="handleSend">
-              {{ state.asking ? '发送中...' : '发送' }}
-            </button>
-          </div>
-        </section>
+        </article>
+      </template>
 
-        <section class="panel">
-          <div class="panel-head">
-            <div>
-              <div class="panel-title">会话入口</div>
-              <div class="panel-subtitle">点击已有会话继续追问；不点击则默认按新问题重新路由。</div>
-            </div>
-            <button type="button" class="ghost-button" :disabled="state.loading" @click="loadSessions">刷新</button>
-          </div>
-          <div v-if="state.sessionList.length" class="session-list">
-            <button
-              v-for="item in state.sessionList"
-              :key="item.id"
-              type="button"
-              class="session-item"
-              :disabled="state.asking"
-              :class="{ 'session-item--active': state.sessionInfo?.id === item.id && state.sessionPinned }"
-              @click="selectSession(item)"
-            >
-              <div class="session-item__title">{{ item.sessionTitle || `会话 #${item.id}` }}</div>
-              <div class="session-item__meta">{{ item.skillName || '-' }} / {{ formatDateTime(item.lastMessageTime || item.createTime) }}</div>
-            </button>
-          </div>
-          <div v-else class="empty-state">当前还没有手机端会话，首次发送问题时会自动创建。</div>
-        </section>
+      <div v-else class="mobile-welcome">
+        <div class="mobile-welcome__title">您好，我可以帮您查询人才政策</div>
+        <div class="mobile-welcome__text">
+          可以直接咨询补助标准、申报条件、办理流程、材料清单和政策依据。
+        </div>
+        <div class="quick-question-list">
+          <button
+            v-for="item in quickQuestions"
+            :key="item"
+            type="button"
+            class="quick-question"
+            @click="handleQuickQuestion(item)"
+          >
+            {{ item }}
+          </button>
+        </div>
+      </div>
+
+      <article v-if="state.asking && !hasStreamingMessage" class="mobile-message mobile-message--assistant">
+        <div class="mobile-message__role">政策咨询助手</div>
+        <div class="mobile-message__bubble">
+          <div class="mobile-message__text">正在查询政策依据...</div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <div class="mobile-composer-wrap">
+    <div v-if="policySuggestions.length" class="mobile-suggest-list">
+      <button
+        v-for="item in policySuggestions"
+        :key="item.intentId"
+        type="button"
+        class="mobile-suggest-chip"
+        @click="applyPolicySuggestion(item)"
+      >
+        {{ item.standardQuestion || item.intentName }}
+      </button>
+    </div>
+
+    <div class="mobile-composer">
+      <textarea
+  v-model="state.question"
+  class="mobile-question-input"
+  rows="1"
+  maxlength="500"
+  placeholder="请输入人才政策问题"
+  :disabled="state.asking || !permissionFlags.canUseAgent"
+  @focus="handleComposerFocus"
+  @blur="handleComposerBlur"
+  @input="handleQuestionInput"
+  @keydown.enter.exact.prevent="handleSend"
+></textarea>
+
+      <button type="button" class="mobile-send-button" :disabled="!canSend" @click="handleSend">
+        {{ state.asking ? '中...' : '发送' }}
+      </button>
+    </div>
+  </div>
+
+  <div v-if="state.showHistoryDrawer" class="mobile-history-mask" @click.self="closeHistoryDrawer">
+    <section class="mobile-history-panel">
+      <div class="mobile-history-head">
+        <div>
+          <div class="mobile-history-title">历史主题</div>
+          <div class="mobile-history-subtitle">点击后继续查看之前的问答</div>
+        </div>
+        <button type="button" class="mobile-history-close" @click="closeHistoryDrawer">关闭</button>
+      </div>
+
+      <div v-if="state.sessionList.length" class="mobile-history-list">
+        <button
+          v-for="item in state.sessionList"
+          :key="item.id"
+          type="button"
+          class="mobile-history-item"
+          :disabled="state.asking"
+          :class="{ 'mobile-history-item--active': state.sessionInfo?.id === item.id && state.sessionPinned }"
+          @click="selectSession(item)"
+        >
+          <span>{{ item.sessionTitle || `会话 #${item.id}` }}</span>
+          <small>{{ formatDateTime(item.lastMessageTime || item.createTime) }}</small>
+        </button>
+      </div>
+
+      <div v-else class="mobile-empty-state">
+        暂无历史主题
+      </div>
+    </section>
+    </div>
+
       </template>
     </div>
 
-    <MobileTabBar v-if="showMobileTabbar" :items="mobileNavItems" />
+    <MobileTabBar
+  v-if="showBottomTabbar"
+  :items="mobileNavItems"
+/>
   </div>
 </template>
 
@@ -136,7 +185,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { showToast } from 'vant'
 import { useRouter } from 'vue-router'
-import AIPageGuideCard from '@/components/ai/AIPageGuideCard.vue'
+
 import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 import {
   createAgentSession,
@@ -158,14 +207,15 @@ import { isMobileClient } from '@/utils/device'
 const router = useRouter()
 const userStore = useUserStore()
 const messageListRef = ref(null)
+const questionInputRef = ref(null)
 const activeStreamContext = ref(null)
 const sendRunId = ref(0)
 const isComponentUnmounted = ref(false)
 const FUNCTION_BINDING = getAgentFunctionBinding('talent_policy_consult')
 const SOURCE_SCENE = 'MOBILE_POLICY_CONSULTANT'
 const POLICY_BASE_ID = FUNCTION_BINDING?.defaultBaseId ?? 1
-const POLICY_SUGGEST_MIN_LENGTH = 2
-const POLICY_SUGGEST_MAX_LENGTH = 6
+const POLICY_SUGGEST_MIN_LENGTH = 1
+const POLICY_SUGGEST_MAX_LENGTH = 30
 let policySuggestTimer = null
 let policySuggestSeq = 0
 
@@ -174,6 +224,9 @@ const state = reactive({
   asking: false,
   errorMessage: '',
   question: '',
+  showHistoryDrawer: false,
+  composerFocused: false,
+  selectedPolicySuggestion: null,
   activeSkillId: null,
   activeSkillCode: '',
   activeSkillName: '',
@@ -192,6 +245,7 @@ const state = reactive({
 
 const hasToken = computed(() => Boolean(userStore.token || localStorage.getItem('token')))
 const showMobileTabbar = computed(() => hasToken.value && isMobileClient())
+const showBottomTabbar = computed(() => showMobileTabbar.value && !state.composerFocused)
 const mobileNavItems = computed(() => resolveMobileWorkspaceItems(buildAccessContext(userStore.userInfo)))
 const permissionFlags = computed(() => {
   const aiPermissions = state.permissionInfo?.aiPermissions || []
@@ -233,6 +287,30 @@ const usageSummaryText = computed(() => {
     `${Number(meta.durationMs || 0)} ms`
   ].join(' / ')
 })
+const currentTotalTokensText = computed(() => {
+  const meta = state.lastChatMeta || {}
+  const total = Number(meta.totalTokens || 0)
+  return total > 0 ? `${total}` : '0'
+})
+
+const monthTotalTokensText = computed(() => {
+  const meta = state.lastChatMeta || {}
+  const total = Number(meta.monthTotalTokens || 0)
+  return total > 0 ? `${total}` : '0'
+})
+
+const currentModelText = computed(() => {
+  const meta = state.lastChatMeta || {}
+  return meta.modelCode || state.sessionInfo?.modelCode || '未配置'
+})
+
+const quickQuestions = computed(() => [
+  '双百计划补助标准是什么',
+  '住房补贴怎么申请',
+  '福建省百人计划补助多少',
+  '人工智能人才有什么支持',
+  '人才服务保障包括什么'
+])
 const helperText = computed(() => {
   if (state.errorMessage) {
     return state.errorMessage
@@ -370,9 +448,53 @@ function normalizeQuestion(question) {
 function buildQuestionContent(question) {
   return stripSkillMentions(question)
 }
-
 function buildSuggestQuery(question) {
-  return stripSkillMentions(question)
+  return stripSkillMentions(question).trim()
+}
+
+function compactQuestionText(value) {
+  return String(value || '')
+    .replace(/\s+/g, '')
+    .replace(/[？?。！!，,、；;]/g, '')
+    .trim()
+}
+
+function clearSelectedPolicySuggestion() {
+  state.selectedPolicySuggestion = null
+}
+
+function getSuggestionStandardQuestion(item) {
+  return String(
+    item?.standardQuestion ||
+    item?.standard_question ||
+    item?.intentName ||
+    item?.question ||
+    ''
+  ).trim()
+}
+
+function isSelectedPolicySuggestionStillValid(question) {
+  if (!state.selectedPolicySuggestion) {
+    return false
+  }
+  const currentQuestion = compactQuestionText(question)
+  const selectedQuestion = compactQuestionText(getSuggestionStandardQuestion(state.selectedPolicySuggestion))
+  return Boolean(currentQuestion && selectedQuestion && currentQuestion === selectedQuestion)
+}
+
+function buildPolicyIntentPayload(question) {
+  if (!isSelectedPolicySuggestionStillValid(question)) {
+    clearSelectedPolicySuggestion()
+    return {}
+  }
+
+  const item = state.selectedPolicySuggestion
+  return {
+    intentId: item?.intentId || item?.intent_id || item?.id || undefined,
+    policyKey: item?.policyKey || item?.policy_key || undefined,
+    topicType: item?.topicType || item?.topic_type || undefined,
+    regionScope: item?.regionScope || item?.region_scope || undefined
+  }
 }
 
 function resolveSkillByHint(skillHint) {
@@ -490,20 +612,64 @@ async function fetchPolicySuggestions(input, requestSeq) {
     }
   }
 }
+async function openHistoryDrawer() {
+  state.showHistoryDrawer = true
+  try {
+    await loadSessions()
+  } catch (error) {
+    console.warn('load history failed', error)
+  }
+}
 
+function closeHistoryDrawer() {
+  state.showHistoryDrawer = false
+}
+
+async function handleQuickQuestion(text) {
+  state.question = text
+  clearSelectedPolicySuggestion()
+  clearPolicySuggestions()
+  schedulePolicySuggest()
+  await nextTick()
+  questionInputRef.value?.focus?.()
+}
+function handleComposerFocus() {
+  state.composerFocused = true
+  schedulePolicySuggest()
+  window.setTimeout(() => {
+    scrollToBottom()
+  }, 120)
+}
+
+function handleComposerBlur() {
+  window.setTimeout(() => {
+    state.composerFocused = false
+  }, 180)
+}
 function handleQuestionInput() {
+  if (state.selectedPolicySuggestion && !isSelectedPolicySuggestionStillValid(state.question)) {
+    clearSelectedPolicySuggestion()
+  }
   schedulePolicySuggest()
 }
 
 async function applyPolicySuggestion(item) {
-  state.question = String(item?.standardQuestion || '').trim()
+  const standardQuestion = getSuggestionStandardQuestion(item)
+  state.question = standardQuestion
   state.mentionKeyword = ''
+  state.selectedPolicySuggestion = {
+    ...item,
+    standardQuestion
+  }
+
   const suggestLogId = state.policySuggestLogId
-  const selectedIntentId = item?.intentId
+  const selectedIntentId = item?.intentId || item?.intent_id || item?.id
   clearPolicySuggestions()
+
   if (!suggestLogId || !selectedIntentId) {
     return
   }
+
   try {
     await selectPolicyIntentSuggestion({
       suggestLogId,
@@ -678,16 +844,21 @@ async function createOrReuseSession(payload) {
     }
   }
 
-  const session = ensureSuccess(await createAgentSession({
-    skillId: Number(explicitSkill.id),
-    baseId: POLICY_BASE_ID,
-    skillHint: explicitSkill?.skillCode || undefined,
-    question: payload.question,
-    sourceScene: SOURCE_SCENE
-  }), '创建会话失败')
-  state.sessionInfo = session
-  state.sessionPinned = true
-  syncActiveSkillFromSession(session, explicitSkill)
+const session = ensureSuccess(await createAgentSession({
+  skillId: Number(explicitSkill.id),
+  baseId: POLICY_BASE_ID,
+  skillHint: explicitSkill?.skillCode || undefined,
+  question: payload.question,
+  sourceScene: SOURCE_SCENE
+}), '创建会话失败')
+state.sessionInfo = session
+
+// 注意：新问题自动创建的会话不要默认 pin。
+// 只有用户点击“会话入口”里的已有会话，才表示继续追问。
+// 否则下一次提问应按新问题重新路由，避免复用上一轮政策意图。
+state.sessionPinned = false
+
+syncActiveSkillFromSession(session, explicitSkill)
   state.lastChatMeta = {
     skillName: session?.skillName || '',
     skillMatchMode: session?.skillMatchMode || ''
@@ -702,6 +873,7 @@ async function selectSession(item) {
   }
   state.sessionInfo = item
   state.sessionPinned = true
+  state.showHistoryDrawer = false
   syncActiveSkillFromSession(item)
   state.lastChatMeta = {
     skillName: item?.skillName || '',
@@ -717,6 +889,8 @@ async function handleResetSession() {
   state.lastChatMeta = null
   state.messageList = []
   state.question = ''
+  clearSelectedPolicySuggestion()
+  
   syncActiveSkillFromSession(null, resolveFunctionBoundSkill())
   clearPolicySuggestions()
 }
@@ -738,9 +912,10 @@ async function handleSend() {
     return
   }
 
-  const skillHint = state.activeSkillCode
-  const cleanQuestion = buildQuestionContent(rawQuestion)
-  const runId = ++sendRunId.value
+const skillHint = state.activeSkillCode
+const cleanQuestion = buildQuestionContent(rawQuestion)
+const policyIntentPayload = buildPolicyIntentPayload(cleanQuestion)
+const runId = ++sendRunId.value
   const streamContext = createStreamContext(runId)
   state.question = ''
   clearPolicySuggestions()
@@ -751,15 +926,16 @@ async function handleSend() {
   activeStreamContext.value = streamContext
 
   try {
-    await createOrReuseSession({ question: cleanQuestion, skillHint })
+    await createOrReuseSession({ question: cleanQuestion, skillHint, ...policyIntentPayload })
     localIds = appendLocalConversation(cleanQuestion)
     await scrollToBottom()
     await streamAgentQuestion({
-      sessionId: state.sessionInfo.id,
-      question: cleanQuestion,
-      sourceScene: SOURCE_SCENE,
-      skillHint: skillHint || undefined
-    }, {
+  sessionId: state.sessionInfo.id,
+  question: cleanQuestion,
+  sourceScene: SOURCE_SCENE,
+  skillHint: skillHint || undefined,
+  ...policyIntentPayload
+}, {
       signal: streamContext.controller.signal,
       onStart(payload) {
         streamContext.receivedStart = true
@@ -789,8 +965,9 @@ async function handleSend() {
       return
     }
     state.question = ''
-    clearPolicySuggestions()
-    await Promise.all([fetchMessages(), loadSessions()])
+clearSelectedPolicySuggestion()
+clearPolicySuggestions()
+await Promise.all([fetchMessages(), loadSessions()])
   } catch (error) {
     clearActiveStream(streamContext)
     if (isExpectedStreamAbort(error)) {
@@ -808,11 +985,12 @@ async function handleSend() {
     if (!streamContext.receivedStart && !streamContext.receivedDelta && localIds) {
       try {
         const result = ensureSuccess(await sendAgentQuestion({
-          sessionId: state.sessionInfo.id,
-          question: cleanQuestion,
-          sourceScene: SOURCE_SCENE,
-          skillHint: skillHint || undefined
-        }), '发送问题失败')
+  sessionId: state.sessionInfo.id,
+  question: cleanQuestion,
+  sourceScene: SOURCE_SCENE,
+  skillHint: skillHint || undefined,
+  ...policyIntentPayload
+}), '发送问题失败')
         state.lastChatMeta = {
           skillName: result?.skillName || state.sessionInfo?.skillName || '',
           skillMatchMode: result?.skillMatchMode || state.sessionInfo?.skillMatchMode || '',
@@ -831,6 +1009,7 @@ async function handleSend() {
         }
         state.question = ''
         clearPolicySuggestions()
+        clearSelectedPolicySuggestion()
         await Promise.all([fetchMessages(), loadSessions()])
         return
       } catch (fallbackError) {
@@ -898,18 +1077,35 @@ onMounted(async () => {
 
 <style scoped>
 .policy-page {
+  --tabbar-space: 0px;
+  --composer-bottom: env(safe-area-inset-bottom);
+  height: 100vh;
+  height: 100dvh;
   min-height: 100vh;
-  padding: 16px;
+  padding: 10px 12px 0;
+  overflow: hidden;
+  box-sizing: border-box;
   background: linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
 }
 
 .policy-page--with-tabbar {
-  padding-bottom: 0;
+  --tabbar-space: 84px;
+  --composer-bottom: calc(84px + env(safe-area-inset-bottom));
 }
 
+.policy-page--keyboard {
+  --tabbar-space: 0px;
+  --composer-bottom: env(safe-area-inset-bottom);
+}
+
+
 .policy-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   max-width: 920px;
   margin: 0 auto;
+  overflow: hidden;
 }
 
 .panel {
@@ -1195,6 +1391,411 @@ onMounted(async () => {
   .composer-footer {
     flex-direction: column;
     align-items: stretch;
+  }
+}
+.mobile-policy-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 4px 10px;
+  background: linear-gradient(180deg, #f8fafc 0%, rgba(248, 250, 252, 0.92) 100%);
+  backdrop-filter: blur(12px);
+}
+
+.mobile-policy-title {
+  color: #0f172a;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.mobile-policy-subtitle {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.mobile-policy-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobile-icon-button {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #dbe4f0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mobile-icon-button--primary {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+.mobile-token-card {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1.2fr;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 10px 28px rgba(37, 99, 235, 0.08);
+}
+
+.mobile-token-item {
+  min-width: 0;
+  text-align: center;
+}
+
+.mobile-token-item span,
+.mobile-token-item small {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.mobile-token-item strong {
+  display: block;
+  margin: 3px 0;
+  color: #1d4ed8;
+  font-size: 15px;
+  font-weight: 800;
+  word-break: break-all;
+}
+
+.mobile-token-item--model strong {
+  font-size: 12px;
+}
+
+.mobile-token-divider {
+  width: 1px;
+  height: 28px;
+  background: #e2e8f0;
+}
+
+.mobile-chat-card {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: calc(92px + var(--tabbar-space));
+}
+
+.mobile-message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  padding: 4px 0 20px;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-message {
+  display: flex;
+  flex-direction: column;
+  max-width: 86%;
+}
+
+.mobile-message--user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.mobile-message--assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.mobile-message__role {
+  margin: 0 8px 5px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mobile-message__bubble {
+  padding: 12px 14px;
+  border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.mobile-message--user .mobile-message__bubble {
+  border-bottom-right-radius: 6px;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #fff;
+}
+
+.mobile-message--assistant .mobile-message__bubble {
+  border: 1px solid #e2e8f0;
+  border-bottom-left-radius: 6px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+}
+
+.mobile-message__text {
+  white-space: pre-wrap;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.mobile-message__meta {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #dbe4f0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mobile-empty-state,
+.mobile-welcome {
+  margin: auto 0;
+  padding: 24px 18px;
+  border: 1px solid #dbeafe;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #64748b;
+  text-align: center;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.05);
+}
+
+.mobile-empty-state--warning {
+  border-color: #fecaca;
+  background: #fff7f7;
+  color: #b91c1c;
+}
+
+.mobile-welcome__title {
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.mobile-welcome__text {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.quick-question-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.quick-question {
+  padding: 8px 11px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mobile-composer-wrap {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--composer-bottom);
+  z-index: 40;
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+  background: rgba(248, 250, 252, 0.96);
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 -8px 28px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(16px);
+}
+
+.mobile-suggest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 32vh;
+  margin-bottom: 8px;
+  padding: 10px;
+  overflow-y: auto;
+  border: 1px solid #dbeafe;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.08);
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-suggest-chip {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e0ecff;
+  border-radius: 14px;
+  background: #f8fbff;
+  color: #1d4ed8;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.mobile-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.mobile-question-input {
+  flex: 1;
+  min-height: 46px;
+  max-height: 92px;
+  padding: 12px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 20px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 1.45;
+  resize: none;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.mobile-question-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.mobile-send-button {
+  width: 66px;
+  min-width: 66px;
+  height: 46px;
+  border: none;
+  border-radius: 20px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.mobile-send-button:disabled {
+  background: #cbd5e1;
+  color: #f8fafc;
+}
+
+
+.mobile-history-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.mobile-history-panel {
+  width: 100%;
+  max-height: 72vh;
+  padding: 16px 16px calc(18px + env(safe-area-inset-bottom));
+  border-radius: 24px 24px 0 0;
+  background: #fff;
+  box-shadow: 0 -18px 48px rgba(15, 23, 42, 0.16);
+  overflow-y: auto;
+}
+
+.mobile-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mobile-history-title {
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.mobile-history-subtitle {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.mobile-history-close {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mobile-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mobile-history-item {
+  width: 100%;
+  padding: 12px 13px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #f8fafc;
+  text-align: left;
+}
+
+.mobile-history-item span {
+  display: block;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.mobile-history-item small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.mobile-history-item--active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+@media (min-width: 768px) {
+  .mobile-composer-wrap {
+    left: 50%;
+    max-width: 920px;
+    transform: translateX(-50%);
+    border-left: 1px solid rgba(226, 232, 240, 0.9);
+    border-right: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 18px 18px 0 0;
+  }
+
+  .mobile-message-list {
+    max-height: 62vh;
   }
 }
 </style>

@@ -117,6 +117,8 @@ public class AgentServiceImpl implements AgentService {
     private static final String ANSWER_SOURCE_LLM_PROVIDER = "LLM_PROVIDER";
     private static final String ANSWER_SOURCE_KNOWLEDGE_FALLBACK_STRUCTURED = "KNOWLEDGE_FALLBACK_STRUCTURED";
     private static final String MODEL_CODE_FAST_PATH = "FAST_PATH";
+    private static final String USAGE_SOURCE_SYSTEM_META = "SYSTEM_META";
+private static final String ANSWER_SOURCE_SYSTEM_META = "SYSTEM_META";
     private static final String FALLBACK_REASON_NO_AI_PERMISSION = "当前账号未开通 AI 问答权限，已切换为知识库兜底模式。";
     private static final String FALLBACK_REASON_NO_PROVIDER = "当前系统未检测到可用的 AI Provider，已切换为知识库兜底模式。";
     private static final String FALLBACK_REASON_AI_UNAVAILABLE = "当前 AI 服务暂不可用，已切换为知识库兜底模式。";
@@ -469,9 +471,22 @@ public class AgentServiceImpl implements AgentService {
         requireKnowledgeAnalyze(user, session.getBaseId());
 
         SkillVersionEntity version = requireVersion(session.getSkillVersionId());
-        String sourceScene = normalizeSourceScene(request == null ? null : request.getSourceScene(), session.getSourceScene());
-        AiPolicyConsultService.ConsultResult policyConsultResult =
-                aiPolicyConsultService.consult(session.getId(), user.getUserId(), session.getBaseId(), request.getQuestion(), sourceScene);
+String sourceScene = normalizeSourceScene(request == null ? null : request.getSourceScene(), session.getSourceScene());
+
+String systemMetaAnswer = resolveSystemMetaAnswer(request.getQuestion(), session, version);
+if (normalizeText(systemMetaAnswer) != null) {
+    return buildAndSaveSystemMetaChatResult(
+            request,
+            user,
+            session,
+            sourceScene,
+            systemMetaAnswer,
+            resolveCurrentModelCodeForDisplay(session, version)
+    );
+}
+
+AiPolicyConsultService.ConsultResult policyConsultResult =
+        aiPolicyConsultService.consult(session.getId(), user.getUserId(), session.getBaseId(), request.getQuestion(), sourceScene);
         KnowledgeCitationContext context = policyConsultResult.applied()
                 ? policyConsultResult.context()
                 : buildContext(session.getBaseId(), request.getQuestion(), 5, sourceScene);
@@ -654,9 +669,25 @@ public class AgentServiceImpl implements AgentService {
         requireKnowledgeAnalyze(user, session.getBaseId());
 
         SkillVersionEntity version = requireVersion(session.getSkillVersionId());
-        String sourceScene = normalizeSourceScene(request == null ? null : request.getSourceScene(), session.getSourceScene());
-        AiPolicyConsultService.ConsultResult policyConsultResult =
-                aiPolicyConsultService.consult(session.getId(), user.getUserId(), session.getBaseId(), request.getQuestion(), sourceScene);
+String sourceScene = normalizeSourceScene(request == null ? null : request.getSourceScene(), session.getSourceScene());
+
+String systemMetaAnswer = resolveSystemMetaAnswer(request.getQuestion(), session, version);
+if (normalizeText(systemMetaAnswer) != null) {
+    SseEmitter emitter = new SseEmitter(0L);
+    CompletableFuture.runAsync(() -> executeSystemMetaChatStream(
+            emitter,
+            request,
+            user,
+            session,
+            sourceScene,
+            systemMetaAnswer,
+            resolveCurrentModelCodeForDisplay(session, version)
+    ));
+    return emitter;
+}
+
+AiPolicyConsultService.ConsultResult policyConsultResult =
+        aiPolicyConsultService.consult(session.getId(), user.getUserId(), session.getBaseId(), request.getQuestion(), sourceScene);
         KnowledgeCitationContext context = policyConsultResult.applied()
                 ? policyConsultResult.context()
                 : buildContext(session.getBaseId(), request.getQuestion(), 5, sourceScene);
@@ -1423,7 +1454,318 @@ public class AgentServiceImpl implements AgentService {
         result.setModelCode(usageEntity.getModelCode());
         return result;
     }
+private String resolveSystemMetaAnswer(String question,
+                                       AgentSessionEntity session,
+                                       SkillVersionEntity version) {
+    String q = compactQuestionText(question);
+    if (q == null) {
+        return null;
+    }
 
+    if (isModelQuestion(q)) {
+        return "当前政策咨询助手配置使用的语言模型为 "
+                + resolveCurrentModelCodeForDisplay(session, version)
+                + "。具体模型以后台 AI 接入配置和 Skill 版本配置为准。";
+    }
+
+    if (isCorrectionFeedback(q)) {
+        return "抱歉，刚才回答与您的问题不匹配。请您重新输入要查询的政策问题，或直接说明需要纠正哪一部分，我会按新的问题重新检索。";
+    }
+
+    if (isAssistantIdentityQuestion(q)) {
+        return "我是政策咨询助手，主要用于回答人才政策、申报条件、补助标准、办理流程、材料依据等问题。";
+    }
+
+    if (isClearlyOutOfPolicyQuestion(q)) {
+        return "这个问题不属于当前政策咨询助手的服务范围。当前助手主要回答人才政策、申报条件、补助标准、办理流程、材料依据等问题。"
+                + "如果要咨询人才政策，请输入具体政策名称或问题，例如“双百计划补助标准是什么”“住房补贴怎么申请”。";
+    }
+
+    return null;
+}
+
+private String compactQuestionText(String text) {
+    String normalized = normalizeText(text);
+    if (normalized == null) {
+        return null;
+    }
+    String value = normalized
+            .replaceAll("\\s+", "")
+            .replaceAll("[？?。！!，,、；;：:]", "");
+    return normalizeText(value);
+}
+
+private boolean isModelQuestion(String question) {
+    if (question == null) {
+        return false;
+    }
+    return question.contains("语言模型")
+            || question.contains("什么模型")
+            || question.contains("模型是什么")
+            || question.contains("你用的模型")
+            || question.contains("你是什么模型")
+            || question.contains("当前模型")
+            || question.contains("模型版本");
+}
+
+private boolean isCorrectionFeedback(String question) {
+    if (question == null) {
+        return false;
+    }
+    return question.contains("回答错误")
+            || question.contains("回答错了")
+            || question.contains("答错")
+            || question.contains("不对")
+            || question.contains("错了")
+            || question.contains("不准确")
+            || question.contains("重新回答")
+            || question.contains("不是这个");
+}
+
+private boolean isAssistantIdentityQuestion(String question) {
+    if (question == null) {
+        return false;
+    }
+    return question.contains("你是谁")
+            || question.contains("你是什么")
+            || question.contains("你能做什么")
+            || question.contains("你可以做什么");
+}
+private boolean isClearlyOutOfPolicyQuestion(String question) {
+    if (question == null) {
+        return false;
+    }
+
+    // 先保护政策类问题，避免误拦截
+    if (looksLikePolicyQuestion(question)) {
+        return false;
+    }
+
+    return containsAny(question, List.of(
+            "天气",
+            "气温",
+            "下雨",
+            "降雨",
+            "台风",
+            "空气质量",
+            "几点",
+            "现在时间",
+            "今天几号",
+            "星期几",
+            "新闻",
+            "热搜",
+            "股票",
+            "股价",
+            "汇率",
+            "翻译",
+            "作文",
+            "写一篇",
+            "写文章",
+            "数学题",
+            "物理题",
+            "化学题",
+            "代码怎么写",
+            "帮我写代码",
+            "旅游攻略",
+            "菜谱",
+            "做饭",
+            "电影",
+            "音乐"
+    ));
+}
+
+private boolean looksLikePolicyQuestion(String question) {
+    if (question == null) {
+        return false;
+    }
+
+    return containsAny(question, List.of(
+            "政策",
+            "人才",
+            "补助",
+            "补贴",
+            "奖励",
+            "资助",
+            "申报",
+            "申请",
+            "认定",
+            "条件",
+            "材料",
+            "流程",
+            "办理",
+            "兑现",
+            "拨付",
+            "双百",
+            "特聘岗位",
+            "专项资金",
+            "群鹭兴厦",
+            "高层次",
+            "博士后",
+            "住房补贴",
+            "服务保障",
+            "子女教育",
+            "医疗保障",
+            "台湾特聘",
+            "百人计划",
+            "四大经济",
+            "福建省",
+            "厦门市"
+    ));
+}
+private String resolveCurrentModelCodeForDisplay(AgentSessionEntity session,
+                                                 SkillVersionEntity version) {
+    String modelCode = normalizeText(session == null ? null : session.getModelCode());
+    if (modelCode != null) {
+        return modelCode;
+    }
+
+    modelCode = normalizeText(version == null ? null : version.getModelCode());
+    if (modelCode != null) {
+        return modelCode;
+    }
+
+    ProviderConfigEntity provider = providerConfigMapper.findFirstEnabledSuccess();
+    modelCode = normalizeText(provider == null ? null : provider.getDefaultModel());
+    if (modelCode != null) {
+        return modelCode;
+    }
+
+    return "当前模型信息暂未配置";
+}
+private AgentChatResultVO buildAndSaveSystemMetaChatResult(AgentChatRequest request,
+                                                           LoginUser user,
+                                                           AgentSessionEntity session,
+                                                           String sourceScene,
+                                                           String answer,
+                                                           String modelCode) {
+    AgentMessageEntity userMessage = new AgentMessageEntity();
+    userMessage.setSessionId(session.getId());
+    userMessage.setMessageRole("user");
+    userMessage.setMessageText(request.getQuestion());
+    userMessage.setCreateTime(LocalDateTime.now());
+    agentMessageMapper.insert(userMessage);
+
+    AgentMessageEntity assistantMessage = new AgentMessageEntity();
+    assistantMessage.setSessionId(session.getId());
+    assistantMessage.setMessageRole("assistant");
+    assistantMessage.setMessageText(answer);
+    assistantMessage.setCitedChunkIds("");
+    assistantMessage.setCreateTime(LocalDateTime.now());
+    agentMessageMapper.insert(assistantMessage);
+
+    AiAgentUsageEntity usageEntity = new AiAgentUsageEntity();
+    usageEntity.setSessionId(session.getId());
+    usageEntity.setMessageId(assistantMessage.getId());
+    usageEntity.setUserId(user.getUserId());
+    usageEntity.setSourceScene(sourceScene);
+    usageEntity.setProviderName("SYSTEM");
+    usageEntity.setModelCode(modelCode);
+    usageEntity.setPromptTokens(0);
+    usageEntity.setCompletionTokens(0);
+    usageEntity.setTotalTokens(0);
+    usageEntity.setDurationMs(0L);
+    usageEntity.setUsageSource(USAGE_SOURCE_SYSTEM_META);
+    usageEntity.setCreateTime(LocalDateTime.now());
+    aiAgentUsageMapper.insert(usageEntity);
+
+    Long monthTotalTokens = safeUsageLong(aiAgentUsageMapper.sumMonthTotalTokensByUserId(user.getUserId()));
+
+    if (DEFAULT_SESSION_TITLE.equals(session.getSessionTitle())) {
+        String newTitle = buildSessionTitle(request.getQuestion());
+        session.setSessionTitle(newTitle);
+        agentSessionMapper.updateTitle(session.getId(), newTitle);
+    }
+
+    operationLogService.log("AGENT", "CHAT_SYSTEM_META", session.getId(), "system meta answer in policy consultant");
+
+    AgentChatResultVO result = new AgentChatResultVO();
+    result.setSessionId(session.getId());
+    result.setSourceScene(sourceScene);
+    result.setAnswer(answer);
+    result.setCitedChunkIds("");
+    result.setCitedChunkIdList(List.of());
+    result.setCitedTitles(List.of());
+    result.setPromptTokens(0);
+    result.setCompletionTokens(0);
+    result.setTotalTokens(0);
+    result.setDurationMs(0L);
+    result.setMonthTotalTokens(monthTotalTokens);
+    result.setModelCode(modelCode);
+    return result;
+}
+private void executeSystemMetaChatStream(SseEmitter emitter,
+                                         AgentChatRequest request,
+                                         LoginUser user,
+                                         AgentSessionEntity session,
+                                         String sourceScene,
+                                         String answer,
+                                         String modelCode) {
+    try {
+        sendStreamStart(emitter, session.getId(), user.getUserId(), sourceScene, ANSWER_SOURCE_SYSTEM_META);
+
+        AgentMessageEntity userMessage = new AgentMessageEntity();
+        userMessage.setSessionId(session.getId());
+        userMessage.setMessageRole("user");
+        userMessage.setMessageText(request.getQuestion());
+        userMessage.setCreateTime(LocalDateTime.now());
+        agentMessageMapper.insert(userMessage);
+
+        AgentMessageEntity assistantMessage = new AgentMessageEntity();
+        assistantMessage.setSessionId(session.getId());
+        assistantMessage.setMessageRole("assistant");
+        assistantMessage.setMessageText(answer);
+        assistantMessage.setCitedChunkIds("");
+        assistantMessage.setCreateTime(LocalDateTime.now());
+
+        sendStreamDelta(emitter, answer);
+
+        agentMessageMapper.insert(assistantMessage);
+
+        AiAgentUsageEntity usageEntity = new AiAgentUsageEntity();
+        usageEntity.setSessionId(session.getId());
+        usageEntity.setMessageId(assistantMessage.getId());
+        usageEntity.setUserId(user.getUserId());
+        usageEntity.setSourceScene(sourceScene);
+        usageEntity.setProviderName("SYSTEM");
+        usageEntity.setModelCode(modelCode);
+        usageEntity.setPromptTokens(0);
+        usageEntity.setCompletionTokens(0);
+        usageEntity.setTotalTokens(0);
+        usageEntity.setDurationMs(0L);
+        usageEntity.setUsageSource(USAGE_SOURCE_SYSTEM_META);
+        usageEntity.setCreateTime(LocalDateTime.now());
+        aiAgentUsageMapper.insert(usageEntity);
+
+        Long monthTotalTokens = safeUsageLong(aiAgentUsageMapper.sumMonthTotalTokensByUserId(user.getUserId()));
+
+        if (DEFAULT_SESSION_TITLE.equals(session.getSessionTitle())) {
+            String newTitle = buildSessionTitle(request.getQuestion());
+            session.setSessionTitle(newTitle);
+            agentSessionMapper.updateTitle(session.getId(), newTitle);
+        }
+
+        AgentChatResultVO result = new AgentChatResultVO();
+        result.setSessionId(session.getId());
+        result.setSourceScene(sourceScene);
+        result.setAnswer(answer);
+        result.setCitedChunkIds("");
+        result.setCitedChunkIdList(List.of());
+        result.setCitedTitles(List.of());
+        result.setPromptTokens(0);
+        result.setCompletionTokens(0);
+        result.setTotalTokens(0);
+        result.setDurationMs(0L);
+        result.setMonthTotalTokens(monthTotalTokens);
+        result.setModelCode(modelCode);
+
+        sendDoneMeta(emitter, result, ANSWER_SOURCE_SYSTEM_META);
+        sendDoneEvent(emitter, session.getId(), user.getUserId(), sourceScene, ANSWER_SOURCE_SYSTEM_META, usageEntity, monthTotalTokens, 0);
+        emitter.complete();
+    } catch (Exception ex) {
+        sendStreamError(emitter, ex.getMessage());
+        emitter.completeWithError(ex);
+    }
+}
     private void sendStreamStart(SseEmitter emitter,
                                  Long sessionId,
                                  Long userId,

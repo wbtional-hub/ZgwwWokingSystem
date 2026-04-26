@@ -101,10 +101,14 @@ export async function streamAgentQuestion(data, handlers = {}) {
 
   try {
     console.debug('STREAM_CLIENT_START', {
-      sessionId: data?.sessionId,
-      sourceScene: data?.sourceScene || '',
-      hasSkillHint: Boolean(data?.skillHint)
-    })
+  sessionId: data?.sessionId,
+  sourceScene: data?.sourceScene || '',
+  hasSkillHint: Boolean(data?.skillHint),
+  intentId: data?.intentId || null,
+  policyKey: data?.policyKey || '',
+  topicType: data?.topicType || '',
+  regionScope: data?.regionScope || ''
+})
     const response = await fetch(`${AI_API_BASE_URL}/agent/chat-stream`, {
       method: 'POST',
       headers,

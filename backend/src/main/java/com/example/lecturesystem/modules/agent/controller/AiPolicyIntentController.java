@@ -27,14 +27,16 @@ public class AiPolicyIntentController {
         AiPolicyIntentSuggestService.SuggestResult result = aiPolicyIntentSuggestService.suggest(baseId, userId, input);
         List<SuggestItem> items = result.items().stream()
                 .map(item -> new SuggestItem(
-                        item.intent().getId(),
-                        item.intent().getIntentCode(),
-                        item.intent().getIntentName(),
-                        item.intent().getStandardQuestion(),
-                        item.intent().getPolicyKey(),
-                        item.intent().getRegionScope(),
-                        item.hotScore()
-                ))
+        item.intent().getId(),
+        item.intent().getIntentCode(),
+        item.intent().getIntentName(),
+        item.intent().getStandardQuestion(),
+        item.intent().getPolicyKey(),
+        item.intent().getRegionScope(),
+        item.intent().getQuestionType(),
+        item.intent().getTopicType(),
+        item.hotScore()
+))
                 .toList();
         return ApiResponse.success(new SuggestResponse(result.suggestLogId(), items));
     }
@@ -50,13 +52,15 @@ public class AiPolicyIntentController {
     }
 
     public record SuggestItem(Long intentId,
-                              String intentCode,
-                              String intentName,
-                              String standardQuestion,
-                              String policyKey,
-                              String regionScope,
-                              int hotScore) {
-    }
+                          String intentCode,
+                          String intentName,
+                          String standardQuestion,
+                          String policyKey,
+                          String regionScope,
+                          String questionType,
+                          String topicType,
+                          int hotScore) {
+}
 
     public record SelectRequest(Long suggestLogId,
                                 Long selectedIntentId) {

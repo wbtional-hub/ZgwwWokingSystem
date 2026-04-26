@@ -111,36 +111,47 @@ public class AiPolicyConsultService {
             Long selectedIntentId = matchedIntentId;
 
             if (properties.getFaq().isEnabled()) {
-                AiPolicyFaqService.FaqMatch faqMatch = faqService.match(baseId, normalizedQuestion, regionMatch, policyMatch);
-                if (faqMatch.matched()) {
-                    DiagnosticTrace trace = new DiagnosticTrace(
-                            true,
-                            normalizedQuestion.original(),
-                            normalizedQuestion.normalized(),
-                            regionMatch.scope().getCode(),
-                            policyMatch.policyKey(),
-                            effectiveIntentMatch.intentType().name().toLowerCase(),
-                            buildRoutePlanText(matchedIntentCode, "faq-first"),
-                            true,
-                            false,
-                            matchedIntentId,
-                            matchedIntentCode,
-                            suggestedIntents,
-                            selectedIntentId,
-                            false,
-                            false,
-                            "",
-                            "direct_confirmed",
-                            "FAQ direct hit",
-                            faqMatch.answer(),
-                            "faq_hit"
-                    );
-                    if (persistLogs) {
-                        writeAnswerLog(baseId, sessionId, userId, sourceScene, trace);
-                    }
-                    return new ConsultResult(true, faqMatch.answer(), new KnowledgeCitationContext(), trace);
-                }
-            }
+    AiPolicyFaqService.FaqMatch faqMatch = faqService.match(baseId, normalizedQuestion, regionMatch, policyMatch);
+    if (faqMatch.matched() && shouldAcceptFaqDirectHit(normalizedQuestion, faqMatch)) {
+        DiagnosticTrace trace = new DiagnosticTrace(
+                true,
+                normalizedQuestion.original(),
+                normalizedQuestion.normalized(),
+                regionMatch.scope().getCode(),
+                policyMatch.policyKey(),
+                effectiveIntentMatch.intentType().name().toLowerCase(),
+                buildRoutePlanText(matchedIntentCode, "faq-first"),
+                true,
+                false,
+                matchedIntentId,
+                matchedIntentCode,
+                suggestedIntents,
+                selectedIntentId,
+                false,
+                false,
+                "",
+                "direct_confirmed",
+                "FAQ direct hit",
+                faqMatch.answer(),
+                "faq_hit"
+        );
+        if (persistLogs) {
+            writeAnswerLog(baseId, sessionId, userId, sourceScene, trace);
+        }
+        return new ConsultResult(true, faqMatch.answer(), new KnowledgeCitationContext(), trace);
+    }
+
+    if (faqMatch.matched()) {
+        logCenterService.recordAiChainFailed(
+                "AI_POLICY_FAQ_REJECTED_LOW_CONFIDENCE",
+                sessionId,
+                userId,
+                sourceScene,
+                "question=" + valueOrBlank(normalizedQuestion.original())
+                        + ", answerPreview=" + valueOrBlank(previewText(faqMatch.answer()))
+        );
+    }
+}
 
             AiPolicyRouterService.RoutePlan routePlan =
                     routerService.plan(baseId, normalizedQuestion, regionMatch, effectiveIntentMatch, policyMatch, matchedIntent);
@@ -276,18 +287,18 @@ public class AiPolicyConsultService {
     }
 
     private AiPolicyIntentEntity resolveMatchedIntent(Long baseId,
-                                                      AiPolicyRegionResolver.RegionMatch regionMatch,
-                                                      AiPolicyResolver.PolicyMatch policyMatch,
-                                                      AiPolicyIntentClassifier.IntentMatch intentMatch,
-                                                      AiPolicyIntentPhraseService.MatchResult phraseMatch) {
-        if (phraseMatch != null && phraseMatch.matched() && phraseMatch.intent() != null) {
-            return phraseMatch.intent();
-        }
-        String regionScope = regionMatch == null ? null : regionMatch.scope().getCode();
-        String policyKey = policyMatch == null ? null : policyMatch.policyKey();
-        String questionType = intentMatch == null ? null : intentMatch.intentType().name().toLowerCase();
-        return intentService.findBestByProfile(baseId, regionScope, policyKey, questionType, defaultTopicType(questionType));
+                                                  AiPolicyRegionResolver.RegionMatch regionMatch,
+                                                  AiPolicyResolver.PolicyMatch policyMatch,
+                                                  AiPolicyIntentClassifier.IntentMatch intentMatch,
+                                                  AiPolicyIntentPhraseService.MatchResult phraseMatch) {
+    // 只接受“短语/联想/标准问题”明确命中的 intent。
+    // 不再通过 findBestByProfile 强行兜底，避免没有高置信命中时误套用高优先级 FAQ。
+    if (phraseMatch != null && phraseMatch.matched() && phraseMatch.intent() != null) {
+        return phraseMatch.intent();
     }
+
+    return null;
+}
 
     private List<AiPolicyIntentPhraseService.SuggestedIntent> resolveSuggestions(AiPolicyIntentPhraseService.MatchResult phraseMatch,
                                                                                  AiPolicyIntentEntity matchedIntent) {
@@ -341,7 +352,86 @@ public class AiPolicyConsultService {
             default -> "overview";
         };
     }
+private boolean shouldAcceptFaqDirectHit(AiPolicyQuestionNormalizer.NormalizedQuestion normalizedQuestion,
+                                         AiPolicyFaqService.FaqMatch faqMatch) {
+    String question = compactPolicyText(
+            valueOrBlank(normalizedQuestion.original()) + " " + valueOrBlank(normalizedQuestion.normalized())
+    );
+    String answer = compactPolicyText(faqMatch == null ? null : faqMatch.answer());
 
+    if (question == null || answer == null) {
+        return false;
+    }
+
+    // 明显非政策问题，不能进入 FAQ 快速回答
+    if (containsAnyText(question, List.of(
+            "天气", "气温", "下雨", "空气质量", "几点", "现在时间", "今天几号",
+            "你是谁", "你是什么模型", "语言模型", "回答错误", "回答错了", "不对", "错了"
+    ))) {
+        return false;
+    }
+
+    // 用户问“适合哪个政策 / 怎么判断”，不能返回“省市政策区别”或“双百补助”
+    if (containsAnyText(question, List.of("适合哪个", "适合什么", "怎么判断", "如何判断", "怎么匹配", "政策匹配", "怎么选择"))) {
+        return containsAnyText(answer, List.of("五个维度", "筛选", "适合", "判断", "补充"));
+    }
+
+    // 用户问“区别 / 同时享受”，不能返回具体补助标准
+    if (containsAnyText(question, List.of("区别", "不同", "同时享受", "重复享受", "省级", "市级"))) {
+        return containsAnyText(answer, List.of("政策层级", "适用范围", "主管部门", "申报口径", "同时享受", "重复享受"));
+    }
+
+    // 防止最常见错误：不是问双百补助，却返回“双百计划补助标准”
+    if (answer.contains("双百计划补助标准按申报类别区分")) {
+        return question.contains("双百")
+                && containsAnyText(question, List.of("补助", "补贴", "资金", "多少", "多少钱", "待遇", "支持标准", "标准"));
+    }
+
+    // 防止不是问特聘岗位，却返回特聘岗位答案
+    if (answer.contains("特聘岗位人选经研究确认")) {
+        return question.contains("特聘岗位");
+    }
+
+    // 防止不是问创业资金，却返回创业资金拨付答案
+    if (answer.contains("创业人才创业扶持资金")) {
+        return containsAnyText(question, List.of("创业资金", "创业扶持资金", "创业人才", "怎么拨", "拨付"));
+    }
+
+    return true;
+}
+
+private String compactPolicyText(String text) {
+    if (text == null) {
+        return null;
+    }
+    String value = text
+            .replaceAll("\\s+", "")
+            .replaceAll("[？?。！!，,、；;：:]", "");
+    return value.isBlank() ? null : value;
+}
+
+private boolean containsAnyText(String text, List<String> keywords) {
+    if (text == null || keywords == null || keywords.isEmpty()) {
+        return false;
+    }
+    for (String keyword : keywords) {
+        if (keyword != null && !keyword.isBlank() && text.contains(keyword)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+private String previewText(String text) {
+    if (text == null) {
+        return "";
+    }
+    String value = text.replaceAll("\\s+", " ").trim();
+    if (value.length() <= 120) {
+        return value;
+    }
+    return value.substring(0, 120);
+}
     private String buildRoutePlanText(String matchedIntentCode, String routePlan) {
         if (matchedIntentCode == null || matchedIntentCode.isBlank()) {
             return routePlan;
