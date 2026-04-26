@@ -81,8 +81,8 @@ export const APP_MENU_ITEMS = [
 
   { path: '/attendance', title: '考勤工作台', description: '日常签到、今日状态与团队工作台', moduleCode: MODULE_CODES.ATTENDANCE_WORKBENCH },
   { path: '/attendance/stats', title: '考勤统计', description: '查看团队应到、异常与本周概览', moduleCode: MODULE_CODES.ATTENDANCE_STATS },
-  { path: '/attendance/patch-apply', title: '补打卡申请', description: '提交并查看我的补卡申请', moduleCode: MODULE_CODES.ATTENDANCE_PATCH_APPLY },
-  { path: '/attendance/patch-approvals', title: '补打卡审批', description: '审批待处理的补卡申请', moduleCode: MODULE_CODES.ATTENDANCE_PATCH_APPROVALS },
+ { path: '/attendance/patch-apply', title: '考勤申请', description: '提交并查看补打卡、取证等考勤申请', moduleCode: MODULE_CODES.ATTENDANCE_PATCH_APPLY },
+{ path: '/attendance/patch-approvals', title: '考勤审批', description: '审批待处理的考勤申请', moduleCode: MODULE_CODES.ATTENDANCE_PATCH_APPROVALS },
   { path: '/attendance/rules', title: '考勤规则', description: '配置上下班时间与迟到早退阈值', moduleCode: MODULE_CODES.ATTENDANCE_RULES },
 
   { path: '/weekly-work', title: '周报管理', description: '填写和查看周报', moduleCode: MODULE_CODES.WEEKLY_WORK },

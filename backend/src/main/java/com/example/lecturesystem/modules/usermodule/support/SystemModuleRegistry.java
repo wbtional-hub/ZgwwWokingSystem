@@ -36,8 +36,8 @@ public class SystemModuleRegistry {
 
         register(map, "attendance_workbench", "考勤工作台", "/attendance", "attendance", 160, true, false, null);
         register(map, "attendance_stats", "考勤统计", "/attendance/stats", "attendance-stats", 170, true, false, null);
-        register(map, "attendance_patch_apply", "补打卡申请", "/attendance/patch-apply", "attendance-patch-apply", 180, true, false, null);
-        register(map, "attendance_patch_approvals", "补打卡审批", "/attendance/patch-approvals", "attendance-patch-approvals", 190, true, false, null);
+        register(map, "attendance_patch_apply", "考勤申请", "/attendance/patch-apply", "attendance-patch-apply", 180, true, false, null);
+register(map, "attendance_patch_approvals", "考勤审批", "/attendance/patch-approvals", "attendance-patch-approvals", 190, true, false, null);
         register(map, "attendance_rules", "考勤规则", "/attendance/rules", "attendance-rules", 200, true, false, null);
 
         register(map, "weeklywork", "周报管理", "/weekly-work", "weekly-work", 210, true, false, null);
