@@ -53,6 +53,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.example.lecturesystem.modules.logcenter.service.LogCenterService;
+import com.example.lecturesystem.modules.aiuserprofile.service.AiUserProfileService;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -116,6 +117,7 @@ public class AgentServiceImpl implements AgentService {
     private static final String USAGE_SOURCE_PROVIDER_STREAM_FALLBACK_SEGMENTED = "PROVIDER_STREAM_FALLBACK_SEGMENTED";
     private static final String ANSWER_SOURCE_LLM_PROVIDER = "LLM_PROVIDER";
     private static final String ANSWER_SOURCE_KNOWLEDGE_FALLBACK_STRUCTURED = "KNOWLEDGE_FALLBACK_STRUCTURED";
+    private static final String USAGE_SOURCE_FALLBACK_NO_POLICY_EVIDENCE = "FALLBACK_NO_POLICY_EVIDENCE";
     private static final String MODEL_CODE_FAST_PATH = "FAST_PATH";
     private static final String USAGE_SOURCE_SYSTEM_META = "SYSTEM_META";
 private static final String ANSWER_SOURCE_SYSTEM_META = "SYSTEM_META";
@@ -181,10 +183,11 @@ private static final String ANSWER_SOURCE_SYSTEM_META = "SYSTEM_META";
     private final OperationLogService operationLogService;
     private final AiAgentUsageMapper aiAgentUsageMapper;
     private final ParamService paramService;
-    private final PolicyRouteService policyRouteService;
-    private final PolicyCatalogService policyCatalogService;
-    private final AiPolicyConsultService aiPolicyConsultService;
-    private static final String SOURCE_SCENE_AI_WORKBENCH = "AI_WORKBENCH";
+private final PolicyRouteService policyRouteService;
+private final PolicyCatalogService policyCatalogService;
+private final AiPolicyConsultService aiPolicyConsultService;
+private final AiUserProfileService aiUserProfileService;
+private static final String SOURCE_SCENE_AI_WORKBENCH = "AI_WORKBENCH";
     private static final String SOURCE_SCENE_MOBILE_POLICY_CONSULTANT = "MOBILE_POLICY_CONSULTANT";
     private final LogCenterService logCenterService;
 
@@ -205,7 +208,8 @@ private static final String ANSWER_SOURCE_SYSTEM_META = "SYSTEM_META";
                             ParamService paramService,
                             PolicyRouteService policyRouteService,
                             PolicyCatalogService policyCatalogService,
-                            AiPolicyConsultService aiPolicyConsultService) {
+                            AiPolicyConsultService aiPolicyConsultService,
+                            AiUserProfileService aiUserProfileService) {
         this.agentSessionMapper = agentSessionMapper;
         this.agentMessageMapper = agentMessageMapper;
         this.agentUserPreferenceMapper = agentUserPreferenceMapper;
@@ -224,6 +228,7 @@ private static final String ANSWER_SOURCE_SYSTEM_META = "SYSTEM_META";
         this.policyRouteService = policyRouteService;
         this.policyCatalogService = policyCatalogService;
         this.aiPolicyConsultService = aiPolicyConsultService;
+        this.aiUserProfileService = aiUserProfileService;
     }
 
     @Override
@@ -487,17 +492,23 @@ if (normalizeText(systemMetaAnswer) != null) {
 
 AiPolicyConsultService.ConsultResult policyConsultResult =
         aiPolicyConsultService.consult(session.getId(), user.getUserId(), session.getBaseId(), request.getQuestion(), sourceScene);
-        KnowledgeCitationContext context = policyConsultResult.applied()
-                ? policyConsultResult.context()
-                : buildContext(session.getBaseId(), request.getQuestion(), 5, sourceScene);
-        PolicyQuestionType questionType = detectPolicyQuestionType(request.getQuestion());
-        String regionScope = detectPreferredRegionScope(request.getQuestion(), questionType);
-        AgentUserPreferenceEntity preference = agentUserPreferenceMapper.findByUserId(user.getUserId());
-        boolean canUseAi = permissionService.isSuperAdmin(user.getUserId()) || aiPermissionService.canUseAi(user.getUserId());
-        ProviderResolution providerResolution = canUseAi ? resolveProvider(session, version) : null;
-        String fastPathAnswer = policyConsultResult.applied()
-                ? policyConsultResult.answer()
-                : resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, session.getBaseId(), context, providerResolution);
+
+KnowledgeCitationContext context = resolvePolicyConsultContextOrSearch(
+        session,
+        request.getQuestion(),
+        sourceScene,
+        policyConsultResult
+);
+
+PolicyQuestionType questionType = detectPolicyQuestionType(request.getQuestion());
+String regionScope = detectPreferredRegionScope(request.getQuestion(), questionType);
+AgentUserPreferenceEntity preference = agentUserPreferenceMapper.findByUserId(user.getUserId());
+boolean canUseAi = permissionService.isSuperAdmin(user.getUserId()) || aiPermissionService.canUseAi(user.getUserId());
+ProviderResolution providerResolution = canUseAi ? resolveProvider(session, version) : null;
+
+String fastPathAnswer = shouldUsePolicyConsultAsFastPath(policyConsultResult, request.getQuestion())
+        ? policyConsultResult.answer()
+        : resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, session.getBaseId(), context, providerResolution);
 
         AgentMessageEntity userMessage = new AgentMessageEntity();
         userMessage.setSessionId(session.getId());
@@ -506,8 +517,17 @@ AiPolicyConsultService.ConsultResult policyConsultResult =
         userMessage.setCreateTime(LocalDateTime.now());
         agentMessageMapper.insert(userMessage);
 
-        logCenterService.recordAiChainSuccess(
-                LOG_EVENT_AI_CHAT,
+safeExtractUserProfile(
+        user.getUserId(),
+        session.getBaseId(),
+        sourceScene,
+        session.getId(),
+        userMessage.getId(),
+        request.getQuestion()
+);
+
+logCenterService.recordAiChainSuccess(
+        LOG_EVENT_AI_CHAT,
                 session.getId(),
                 user.getUserId(),
                 sourceScene,
@@ -527,39 +547,59 @@ AiPolicyConsultService.ConsultResult policyConsultResult =
         String modelCode = providerResolution == null ? normalizeText(session.getModelCode()) : normalizeText(providerResolution.modelCode());
         String usageSource;
         String answerSource;
-        if (normalizeText(fastPathAnswer) != null) {
-            answer = fastPathAnswer;
-            usageSource = USAGE_SOURCE_FAST_PATH_STRUCTURED;
-            answerSource = USAGE_SOURCE_FAST_PATH_STRUCTURED;
-            modelCode = MODEL_CODE_FAST_PATH;
-            logCenterService.recordAiChainSuccess(
-                    LOG_EVENT_FAST_PATH_HIT,
-                    session.getId(),
-                    user.getUserId(),
-                    sourceScene,
-                    "sessionId=" + session.getId()
-                            + ", questionType=" + questionType
-                            + ", sourceScene=" + sourceScene
-                            + ", answerSource=" + USAGE_SOURCE_FAST_PATH_STRUCTURED
-            );
-        } else if (providerResolution == null) {
-            usageSource = canUseAi ? USAGE_SOURCE_FALLBACK_NO_PROVIDER : USAGE_SOURCE_FALLBACK_NO_AI_PERMISSION;
-            answerSource = usageSource;
-                answer = buildFallbackAnswer(session.getBaseId(), request.getQuestion(), context, preference,
-                        sourceScene,
-                        canUseAi ? FALLBACK_REASON_NO_PROVIDER : FALLBACK_REASON_NO_AI_PERMISSION);
-        } else {
+        boolean noEvidenceForLlm = shouldBlockLlmBecauseNoPolicyEvidence(sourceScene, context, request.getQuestion());
+
+if (normalizeText(fastPathAnswer) != null) {
+    answer = fastPathAnswer;
+    usageSource = USAGE_SOURCE_FAST_PATH_STRUCTURED;
+    answerSource = USAGE_SOURCE_FAST_PATH_STRUCTURED;
+    modelCode = MODEL_CODE_FAST_PATH;
+    logCenterService.recordAiChainSuccess(
+            LOG_EVENT_FAST_PATH_HIT,
+            session.getId(),
+            user.getUserId(),
+            sourceScene,
+            "sessionId=" + session.getId()
+                    + ", questionType=" + questionType
+                    + ", sourceScene=" + sourceScene
+                    + ", answerSource=" + USAGE_SOURCE_FAST_PATH_STRUCTURED
+    );
+} else if (providerResolution == null || noEvidenceForLlm) {
+    usageSource = noEvidenceForLlm
+            ? USAGE_SOURCE_FALLBACK_NO_POLICY_EVIDENCE
+            : (canUseAi ? USAGE_SOURCE_FALLBACK_NO_PROVIDER : USAGE_SOURCE_FALLBACK_NO_AI_PERMISSION);
+    answerSource = usageSource;
+    answer = buildFallbackAnswer(
+            session.getBaseId(),
+            request.getQuestion(),
+            context,
+            preference,
+            sourceScene,
+            noEvidenceForLlm
+                    ? "当前知识库暂未检索到足够政策依据，未调用外部 AI 生成，避免无依据回答。"
+                    : (canUseAi ? FALLBACK_REASON_NO_PROVIDER : FALLBACK_REASON_NO_AI_PERMISSION)
+    );
+} else {
             validateMonthlyTokenQuota(user.getUserId());
             providerName = resolveProviderName(providerResolution.provider());
             try {
                 String apiToken = aiTokenCipherSupport.decrypt(providerResolution.provider().getApiTokenCipher());
-                chatResult = chatClient.chatForUsage(
-                        providerResolution.provider().getApiBaseUrl(),
-                        apiToken,
-                        providerResolution.modelCode(),
-                        buildSystemPrompt(version, preference, request.getQuestion(), sourceScene),
-                        buildPolicyAwareUserPrompt(version, request.getQuestion(), context, preference, sourceScene)
-                );
+                String userProfilePromptSummary = safeBuildUserProfilePromptSummary(
+        user.getUserId(),
+        session.getBaseId(),
+        sourceScene
+);
+String systemPrompt = buildSystemPrompt(version, preference, request.getQuestion(), sourceScene);
+String userPrompt = buildPolicyAwareUserPrompt(version, request.getQuestion(), context, preference, sourceScene);
+userPrompt = appendUserProfilePrompt(userPrompt, userProfilePromptSummary);
+
+chatResult = chatClient.chatForUsage(
+        providerResolution.provider().getApiBaseUrl(),
+        apiToken,
+        providerResolution.modelCode(),
+        systemPrompt,
+        userPrompt
+);
                 answer = chatResult.getContent();
                 usageSource = normalizeText(chatResult.getUsageSource()) == null ? "PROVIDER_NO_USAGE" : chatResult.getUsageSource();
                 answerSource = ANSWER_SOURCE_LLM_PROVIDER;
@@ -594,9 +634,10 @@ AiPolicyConsultService.ConsultResult policyConsultResult =
         assistantMessage.setMessageRole("assistant");
         assistantMessage.setMessageText(answer);
         assistantMessage.setCitedChunkIds(context.toChunkIds());
-        assistantMessage.setCreateTime(LocalDateTime.now());
-        agentMessageMapper.insert(assistantMessage);
-        logCenterService.recordAiChainSuccess(
+assistantMessage.setCreateTime(LocalDateTime.now());
+agentMessageMapper.insert(assistantMessage);
+
+logCenterService.recordAiChainSuccess(
                 LOG_EVENT_ASSISTANT_MESSAGE_SAVED,
                 assistantMessage.getId(),
                 user.getUserId(),
@@ -688,17 +729,23 @@ if (normalizeText(systemMetaAnswer) != null) {
 
 AiPolicyConsultService.ConsultResult policyConsultResult =
         aiPolicyConsultService.consult(session.getId(), user.getUserId(), session.getBaseId(), request.getQuestion(), sourceScene);
-        KnowledgeCitationContext context = policyConsultResult.applied()
-                ? policyConsultResult.context()
-                : buildContext(session.getBaseId(), request.getQuestion(), 5, sourceScene);
-        PolicyQuestionType questionType = detectPolicyQuestionType(request.getQuestion());
-        String regionScope = detectPreferredRegionScope(request.getQuestion(), questionType);
-        AgentUserPreferenceEntity preference = agentUserPreferenceMapper.findByUserId(user.getUserId());
-        boolean canUseAi = permissionService.isSuperAdmin(user.getUserId()) || aiPermissionService.canUseAi(user.getUserId());
-        ProviderResolution providerResolution = canUseAi ? resolveProvider(session, version) : null;
-        String fastPathAnswer = policyConsultResult.applied()
-                ? policyConsultResult.answer()
-                : resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, session.getBaseId(), context, providerResolution);
+
+KnowledgeCitationContext context = resolvePolicyConsultContextOrSearch(
+        session,
+        request.getQuestion(),
+        sourceScene,
+        policyConsultResult
+);
+
+PolicyQuestionType questionType = detectPolicyQuestionType(request.getQuestion());
+String regionScope = detectPreferredRegionScope(request.getQuestion(), questionType);
+AgentUserPreferenceEntity preference = agentUserPreferenceMapper.findByUserId(user.getUserId());
+boolean canUseAi = permissionService.isSuperAdmin(user.getUserId()) || aiPermissionService.canUseAi(user.getUserId());
+ProviderResolution providerResolution = canUseAi ? resolveProvider(session, version) : null;
+
+String fastPathAnswer = shouldUsePolicyConsultAsFastPath(policyConsultResult, request.getQuestion())
+        ? policyConsultResult.answer()
+        : resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, session.getBaseId(), context, providerResolution);
 
         SseEmitter emitter = new SseEmitter(0L);
         CompletableFuture.runAsync(() -> executeChatStream(
@@ -747,8 +794,12 @@ AiPolicyConsultService.ConsultResult policyConsultResult =
                                    PolicyQuestionType questionType,
                                    String regionScope,
                                    String fastPathAnswer) {
-        String answerSource = normalizeText(fastPathAnswer) != null ? USAGE_SOURCE_FAST_PATH_STRUCTURED
-                : (providerResolution == null ? ANSWER_SOURCE_KNOWLEDGE_FALLBACK_STRUCTURED : ANSWER_SOURCE_LLM_PROVIDER);
+        boolean noEvidenceForLlm = shouldBlockLlmBecauseNoPolicyEvidence(sourceScene, context, request.getQuestion());
+
+String answerSource = normalizeText(fastPathAnswer) != null ? USAGE_SOURCE_FAST_PATH_STRUCTURED
+        : ((providerResolution == null || noEvidenceForLlm)
+        ? ANSWER_SOURCE_KNOWLEDGE_FALLBACK_STRUCTURED
+        : ANSWER_SOURCE_LLM_PROVIDER);
         final boolean[] streamDeltaSent = {false};
         try {
             sendStreamStart(emitter, session.getId(), user.getUserId(), sourceScene, answerSource);
@@ -758,10 +809,19 @@ AiPolicyConsultService.ConsultResult policyConsultResult =
             userMessage.setMessageRole("user");
             userMessage.setMessageText(request.getQuestion());
             userMessage.setCreateTime(LocalDateTime.now());
-            agentMessageMapper.insert(userMessage);
+           agentMessageMapper.insert(userMessage);
 
-            logCenterService.recordAiChainSuccess(
-                    LOG_EVENT_AI_CHAT,
+safeExtractUserProfile(
+        user.getUserId(),
+        session.getBaseId(),
+        sourceScene,
+        session.getId(),
+        userMessage.getId(),
+        request.getQuestion()
+);
+
+logCenterService.recordAiChainSuccess(
+        LOG_EVENT_AI_CHAT,
                     session.getId(),
                     user.getUserId(),
                     sourceScene,
@@ -796,23 +856,33 @@ AiPolicyConsultService.ConsultResult policyConsultResult =
                                 + ", answerSource=" + USAGE_SOURCE_FAST_PATH_STRUCTURED
                                 + ", stream=true"
                 );
-            } else if (providerResolution == null) {
-                usageSource = canUseAi ? USAGE_SOURCE_FALLBACK_NO_PROVIDER : USAGE_SOURCE_FALLBACK_NO_AI_PERMISSION;
-                answerSource = ANSWER_SOURCE_KNOWLEDGE_FALLBACK_STRUCTURED;
-                answer = buildFallbackAnswer(
-                        session.getBaseId(),
-                        request.getQuestion(),
-                        context,
-                        preference,
-                        sourceScene,
-                        canUseAi ? FALLBACK_REASON_NO_PROVIDER : FALLBACK_REASON_NO_AI_PERMISSION
-                );
-            } else {
+            } else if (providerResolution == null || noEvidenceForLlm) {
+    usageSource = noEvidenceForLlm
+            ? USAGE_SOURCE_FALLBACK_NO_POLICY_EVIDENCE
+            : (canUseAi ? USAGE_SOURCE_FALLBACK_NO_PROVIDER : USAGE_SOURCE_FALLBACK_NO_AI_PERMISSION);
+    answerSource = ANSWER_SOURCE_KNOWLEDGE_FALLBACK_STRUCTURED;
+    answer = buildFallbackAnswer(
+            session.getBaseId(),
+            request.getQuestion(),
+            context,
+            preference,
+            sourceScene,
+            noEvidenceForLlm
+                    ? "当前知识库暂未检索到足够政策依据，未调用外部 AI 生成，避免无依据回答。"
+                    : (canUseAi ? FALLBACK_REASON_NO_PROVIDER : FALLBACK_REASON_NO_AI_PERMISSION)
+    );
+} else {
                 validateMonthlyTokenQuota(user.getUserId());
                 providerName = resolveProviderName(providerResolution.provider());
-                String systemPrompt = buildSystemPrompt(version, preference, request.getQuestion(), sourceScene);
-                String userPrompt = buildPolicyAwareUserPrompt(version, request.getQuestion(), context, preference, sourceScene);
-                try {
+                String userProfilePromptSummary = safeBuildUserProfilePromptSummary(
+        user.getUserId(),
+        session.getBaseId(),
+        sourceScene
+);
+String systemPrompt = buildSystemPrompt(version, preference, request.getQuestion(), sourceScene);
+String userPrompt = buildPolicyAwareUserPrompt(version, request.getQuestion(), context, preference, sourceScene);
+userPrompt = appendUserProfilePrompt(userPrompt, userProfilePromptSummary);
+try {
                     String apiToken = aiTokenCipherSupport.decrypt(providerResolution.provider().getApiTokenCipher());
                     final Long finalSessionId = session.getId();
                     final Long finalUserId = user.getUserId();
@@ -974,10 +1044,13 @@ AiPolicyConsultService.ConsultResult policyConsultResult =
             assistantMessage.setSessionId(session.getId());
             assistantMessage.setMessageRole("assistant");
             assistantMessage.setMessageText(answer);
-            assistantMessage.setCitedChunkIds(context.toChunkIds());
-            assistantMessage.setCreateTime(LocalDateTime.now());
-            agentMessageMapper.insert(assistantMessage);
-            logCenterService.recordAiChainSuccess(
+           assistantMessage.setCitedChunkIds(context.toChunkIds());
+assistantMessage.setCreateTime(LocalDateTime.now());
+agentMessageMapper.insert(assistantMessage);
+
+
+
+logCenterService.recordAiChainSuccess(
                     LOG_EVENT_ASSISTANT_MESSAGE_SAVED,
                     assistantMessage.getId(),
                     user.getUserId(),
@@ -1454,6 +1527,107 @@ AiPolicyConsultService.ConsultResult policyConsultResult =
         result.setModelCode(usageEntity.getModelCode());
         return result;
     }
+
+    private void safeExtractUserProfile(Long userId,
+                                    Long baseId,
+                                    String sourceScene,
+                                    Long sessionId,
+                                    Long messageId,
+                                    String question) {
+    logCenterService.recordAiChainSuccess(
+            "AI_USER_PROFILE_EXTRACT_TRY",
+            sessionId,
+            userId,
+            sourceScene,
+            "baseId=" + valueOrBlank(baseId)
+                    + ", messageId=" + valueOrBlank(messageId)
+                    + ", questionLength=" + safeLength(question)
+    );
+
+    if (aiUserProfileService == null) {
+        logCenterService.recordAiChainFailed(
+                "AI_USER_PROFILE_SERVICE_NULL",
+                sessionId,
+                userId,
+                sourceScene,
+                "messageId=" + valueOrBlank(messageId)
+        );
+        return;
+    }
+
+    if (userId == null || normalizeText(question) == null) {
+        logCenterService.recordAiChainFailed(
+                "AI_USER_PROFILE_EXTRACT_SKIP",
+                sessionId,
+                userId,
+                sourceScene,
+                "userId=" + valueOrBlank(userId)
+                        + ", questionLength=" + safeLength(question)
+        );
+        return;
+    }
+
+    try {
+        aiUserProfileService.extractAndUpdateFromMessage(
+                userId,
+                baseId,
+                sourceScene,
+                sessionId,
+                messageId,
+                question
+        );
+
+        logCenterService.recordAiChainSuccess(
+                "AI_USER_PROFILE_EXTRACT_DONE",
+                sessionId,
+                userId,
+                sourceScene,
+                "messageId=" + valueOrBlank(messageId)
+        );
+    } catch (Exception ex) {
+        logCenterService.recordAiChainFailed(
+                "AI_USER_PROFILE_EXTRACT_FAILED",
+                sessionId,
+                userId,
+                sourceScene,
+                "messageId=" + valueOrBlank(messageId)
+                        + ", error=" + valueOrBlank(normalizeText(ex.getMessage()))
+        );
+    }
+}
+
+private String safeBuildUserProfilePromptSummary(Long userId,
+                                                 Long baseId,
+                                                 String sourceScene) {
+    if (aiUserProfileService == null || userId == null) {
+        return "";
+    }
+
+    try {
+        String summary = aiUserProfileService.buildPromptSummary(userId, baseId, sourceScene);
+        return normalizeText(summary) == null ? "" : summary.trim();
+    } catch (Exception ex) {
+        logCenterService.recordAiChainFailed(
+                "AI_USER_PROFILE_PROMPT_SUMMARY_FAILED",
+                null,
+                userId,
+                sourceScene,
+                "baseId=" + valueOrBlank(baseId)
+                        + ", error=" + valueOrBlank(normalizeText(ex.getMessage()))
+        );
+        return "";
+    }
+}
+
+private String appendUserProfilePrompt(String prompt, String userProfilePromptSummary) {
+    if (normalizeText(userProfilePromptSummary) == null) {
+        return prompt;
+    }
+
+    String basePrompt = prompt == null ? "" : prompt;
+    return basePrompt + "\n\n" + userProfilePromptSummary.trim();
+}
+
 private String resolveSystemMetaAnswer(String question,
                                        AgentSessionEntity session,
                                        SkillVersionEntity version) {
@@ -2402,7 +2576,172 @@ private void executeSystemMetaChatStream(SseEmitter emitter,
         builder.insert(promptContextIndex, rules);
         return builder.toString();
     }
+private boolean shouldUsePolicyConsultAsFastPath(AiPolicyConsultService.ConsultResult result,
+                                                 String question) {
+    if (result == null || !result.applied()) {
+        return false;
+    }
 
+    AiPolicyConsultService.DiagnosticTrace trace = result.trace();
+    if (trace == null) {
+        return false;
+    }
+
+    // 1. 精准 FAQ 命中：继续快速返回，0 Token
+    if (trace.faqHit()) {
+        return true;
+    }
+
+    /*
+     * 2. 综合分析 / 多政策比较 / 个人匹配类问题：
+     * 不要因为某一个专题证据不足就提前 FAST_PATH 返回。
+     * 这类问题应该交给外部 AI，基于已命中的多个政策证据做分析或追问。
+     */
+    if (shouldUseLlmForPolicyAnalysis(question)) {
+        return false;
+    }
+
+    // 3. 明确依据不足：不要调用外部 AI，避免无依据生成
+    if (isPolicyEvidenceInsufficient(result)) {
+        return true;
+    }
+
+    // 4. 其他已命中知识库证据的问题，交给 glm-4.7 组织答案
+    return false;
+}
+private boolean shouldUseLlmForPolicyAnalysis(String question) {
+    String normalized = normalizeText(question);
+    if (normalized == null) {
+        return false;
+    }
+
+    // 明显的综合分析、政策匹配、对比判断类问题
+    if (containsAny(normalized, List.of(
+            "哪个更适合",
+            "更适合我",
+            "适合哪个",
+            "适合什么",
+            "怎么判断",
+            "如何判断",
+            "帮我分析",
+            "分析一下",
+            "比较一下",
+            "对比一下",
+            "哪个政策",
+            "哪些政策适合",
+            "可以申请哪些",
+            "能申请哪些",
+            "怎么选择",
+            "政策匹配"
+    ))) {
+        return true;
+    }
+
+    // 同一个问题里出现多个政策主题，也应交给 AI 综合判断
+    return countMatchedPolicyTopics(normalized) >= 2;
+}
+private int countMatchedPolicyTopics(String question) {
+    if (question == null) {
+        return 0;
+    }
+
+    int count = 0;
+
+    if (containsAny(question, List.of("博士后", "博士后工作站"))) {
+        count++;
+    }
+    if (containsAny(question, List.of("住房", "住房补贴", "安居", "租房", "购房"))) {
+        count++;
+    }
+    if (containsAny(question, List.of("AI", "人工智能", "AI人才", "人工智能人才"))) {
+        count++;
+    }
+    if (containsAny(question, List.of("双百", "双百计划", "创新创业人才"))) {
+        count++;
+    }
+    if (containsAny(question, List.of("特聘岗位"))) {
+        count++;
+    }
+    if (containsAny(question, List.of("专项资金", "创业资金", "创业扶持资金"))) {
+        count++;
+    }
+    if (containsAny(question, List.of("台湾特聘", "台湾专才", "台湾人才"))) {
+        count++;
+    }
+    if (containsAny(question, List.of("福建省", "省级", "百人计划", "高层次人才认定"))) {
+        count++;
+    }
+    if (containsAny(question, List.of("子女教育", "医疗保障", "服务保障"))) {
+        count++;
+    }
+
+    return count;
+}
+private boolean isPolicyEvidenceInsufficient(AiPolicyConsultService.ConsultResult result) {
+    if (result == null) {
+        return false;
+    }
+
+    AiPolicyConsultService.DiagnosticTrace trace = result.trace();
+    String text = String.join(" ",
+            valueOrBlank(result.answer()),
+            valueOrBlank(trace == null ? null : trace.validationSummary()),
+            
+            valueOrBlank(trace == null ? null : trace.answerMode())
+    );
+
+    return containsAny(text, List.of(
+            "依据不足",
+            "未命中足够",
+            "缺少完整",
+            "暂不能把未命中的细节当作已确认事实",
+            "当前未命中足够的 AI 政策专题证据",
+            "当前知识库暂未命中足够"
+    ));
+}
+
+private KnowledgeCitationContext resolvePolicyConsultContextOrSearch(AgentSessionEntity session,
+                                                                     String question,
+                                                                     String sourceScene,
+                                                                     AiPolicyConsultService.ConsultResult policyConsultResult) {
+    /*
+     * 综合分析 / 多政策比较 / 个人匹配类问题：
+     * 优先重新按原问题检索，尽量命中多个专题，而不是只使用 policyConsultResult 中偏向某一个专题的 context。
+     */
+    if (shouldUseLlmForPolicyAnalysis(question)) {
+        KnowledgeCitationContext rebuiltContext = buildContext(session.getBaseId(), question, 8, sourceScene);
+        if (rebuiltContext != null
+                && rebuiltContext.getChunks() != null
+                && !rebuiltContext.getChunks().isEmpty()) {
+            return rebuiltContext;
+        }
+    }
+
+    if (policyConsultResult != null
+            && policyConsultResult.context() != null
+            && policyConsultResult.context().getChunks() != null
+            && !policyConsultResult.context().getChunks().isEmpty()) {
+        return policyConsultResult.context();
+    }
+
+    return buildContext(session.getBaseId(), question, 5, sourceScene);
+}
+
+private boolean shouldBlockLlmBecauseNoPolicyEvidence(String sourceScene,
+                                                      KnowledgeCitationContext context,
+                                                      String question) {
+    if (!SOURCE_SCENE_MOBILE_POLICY_CONSULTANT.equals(sourceScene)) {
+        return false;
+    }
+
+    if (context != null && context.getChunks() != null && !context.getChunks().isEmpty()) {
+        return false;
+    }
+
+    // 非政策问题前面 resolveSystemMetaAnswer 已经拦截过；
+    // 这里保护政策咨询场景：没有证据时不要让大模型自由发挥。
+    return looksLikePolicyQuestion(compactQuestionText(question));
+}
     private String resolveFastPathAnswer(String question,
                                          PolicyQuestionType questionType,
                                          String regionScope,
@@ -2453,12 +2792,12 @@ private void executeSystemMetaChatStream(SseEmitter emitter,
     }
 
     private boolean isFastPathQuestionType(PolicyQuestionType questionType) {
-    return questionType == PolicyQuestionType.LIST
-            || questionType == PolicyQuestionType.FAQ
-            || questionType == PolicyQuestionType.BOUNDARY
-            || questionType == PolicyQuestionType.CONDITION
-            || questionType == PolicyQuestionType.BENEFIT
-            || questionType == PolicyQuestionType.PROCESS;
+    /*
+     * 只保留目录/清单类 FAST_PATH。
+     * FAQ 已由 AiPolicyFaqService 精准命中处理。
+     * 条件、补助、流程、比较、综合判断类问题交给外部 AI 基于知识库证据组织答案。
+     */
+    return questionType == PolicyQuestionType.LIST;
 }
 
     private boolean isComplexPersonalizedQuestion(String question) {
@@ -4572,18 +4911,26 @@ private boolean looksLikeFundingProcessOnly(String step) {
     }
 
     private void updateUserPreference(Long userId, String question, AgentUserPreferenceEntity existed) {
-        if (userId == null || normalizeText(question) == null) {
-            return;
-        }
-        AgentUserPreferenceEntity entity = existed == null ? new AgentUserPreferenceEntity() : existed;
-        entity.setUserId(userId);
-        entity.setPreferredAnswerStyle(detectPreferredAnswerStyle(question, existed));
-        entity.setRecentTopics(mergeRecentTopics(existed == null ? null : existed.getRecentTopics(), question));
-        entity.setLastQuestion(abbreviate(question, 500));
-        entity.setHabitSummary(buildHabitSummary(entity));
-        entity.setUpdateTime(LocalDateTime.now());
-        agentUserPreferenceMapper.upsert(entity);
+    if (userId == null || normalizeText(question) == null) {
+        return;
     }
+
+    AgentUserPreferenceEntity entity = existed == null ? new AgentUserPreferenceEntity() : existed;
+    entity.setUserId(userId);
+
+    String preferredAnswerStyle = detectPreferredAnswerStyle(question, existed);
+    String recentTopics = mergeRecentTopics(existed == null ? null : existed.getRecentTopics(), question);
+
+    entity.setPreferredAnswerStyle(limitDbText(preferredAnswerStyle, 64));
+    entity.setRecentTopics(limitDbText(recentTopics, 480));
+    entity.setLastQuestion(limitDbText(question, 480));
+
+    String habitSummary = buildHabitSummary(entity);
+    entity.setHabitSummary(limitDbText(habitSummary, 480));
+
+    entity.setUpdateTime(LocalDateTime.now());
+    agentUserPreferenceMapper.upsert(entity);
+}
 
     private String detectPreferredAnswerStyle(String question, AgentUserPreferenceEntity existed) {
         String normalized = normalizeText(question);
@@ -4657,7 +5004,22 @@ private boolean looksLikeFundingProcessOnly(String step) {
         }
         return value;
     }
-
+private String limitDbText(String text, int maxLength) {
+    String normalized = normalizeText(text);
+    if (normalized == null) {
+        return null;
+    }
+    if (maxLength <= 0) {
+        return "";
+    }
+    if (normalized.length() <= maxLength) {
+        return normalized;
+    }
+    if (maxLength <= 3) {
+        return normalized.substring(0, maxLength);
+    }
+    return normalized.substring(0, maxLength - 3) + "...";
+}
     private String normalizeText(String text) {
         if (text == null) {
             return null;
@@ -5100,12 +5462,8 @@ private boolean isDoubleHundredProcessChunk(KnowledgeSearchResultVO item) {
 }
 
     private String abbreviate(String text, int maxLength) {
-        String normalized = normalizeText(text);
-        if (normalized == null || maxLength <= 0 || normalized.length() <= maxLength) {
-            return normalized;
-        }
-        return normalized.substring(0, maxLength) + "...";
-    }
+    return limitDbText(text, maxLength);
+}
 
     private String csvValue(Object value) {
         String text = value == null ? "" : String.valueOf(value);

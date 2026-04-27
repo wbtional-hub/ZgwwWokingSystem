@@ -64,6 +64,12 @@ export const APP_MENU_ITEMS = [
   { path: '/knowledge', title: '知识库中心', description: '按授权查看和使用知识库', moduleCode: MODULE_CODES.KNOWLEDGE },
   { path: '/skills', title: 'Skills中心', description: '训练、验证和发布技能', moduleCode: MODULE_CODES.SKILL },
   { path: '/ai-workbench', title: 'AI工作台', description: '按技能进行问答和分析', moduleCode: MODULE_CODES.AI_WORKBENCH },
+  {
+  title: '我的画像',
+  path: '/ai/user-profile',
+  icon: 'user-o',
+  alwaysVisible: true
+},
   { path: '/policy-consultant', title: '手机端政策咨询', description: '面向客户的移动端智能体入口', moduleCode: MODULE_CODES.POLICY_CONSULTANT },
   {
     path: '/ai-result-flow',

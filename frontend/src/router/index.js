@@ -28,6 +28,7 @@ import AIConsultationMonthlyReportView from '@/views/agent/AIConsultationMonthly
 import AIResultFlowView from '@/views/agent/AIResultFlowView.vue'
 import MobilePolicyConsultantView from '@/views/agent/MobilePolicyConsultantView.vue'
 import ExpertListView from '@/views/expert/ExpertListView.vue'
+import AiUserProfileView from '@/views/ai/AiUserProfileView.vue'
 import { useUserStore } from '@/stores/user'
 import { queryCurrentUserApi } from '@/api/auth'
 import { queryCurrentUserModulePermissionsApi } from '@/api/user-module-permission'
@@ -74,6 +75,14 @@ const routes = [
       { path: 'units', component: UnitListView, meta: { adminOnly: true, moduleCode: MODULE_CODES.UNIT } },
       { path: 'params', component: ParamListView, meta: { adminOnly: true, moduleCode: MODULE_CODES.PARAM } },
       { path: 'ai-map', component: AICapabilityMapView, meta: { title: 'AI能力地图', accessAnyModuleCodes: AI_FLOW_MODULE_CODES } },
+      {
+  path: 'ai/user-profile',
+  name: 'AiUserProfile',
+  component: AiUserProfileView,
+  meta: {
+    title: '我的画像'
+  }
+},
       { path: 'ai-provider', component: AIProviderConfigView, meta: { adminOnly: true, moduleCode: MODULE_CODES.AI_PROVIDER } },
       { path: 'ai-permissions', component: AIPermissionConfigView, meta: { adminOnly: true, moduleCode: MODULE_CODES.AI_PERMISSION } },
       { path: 'knowledge', component: KnowledgeBaseListView, meta: { moduleCode: MODULE_CODES.KNOWLEDGE } },
