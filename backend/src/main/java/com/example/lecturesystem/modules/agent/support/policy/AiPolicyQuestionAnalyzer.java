@@ -73,18 +73,61 @@ if (q.contains("高级职称")
 }
 
         // 三、专业 / 行业类
-        if (q.contains("软件工程") || q.contains("软件开发")) {
-            codes.add("software_engineering");
-        }
-        if (q.contains("软件信息")) {
-            codes.add("software_information");
-        }
-        if (q.contains("人工智能") || lower.contains("ai")) {
-            codes.add("ai");
-        }
-        if (q.contains("集成电路")) {
-            codes.add("integrated_circuit");
-        }
+        // 三、专业 / 行业类
+if (q.contains("软件工程")
+        || q.contains("软件工程专业")
+        || q.contains("软件开发")
+        || q.contains("计算机")
+        || q.contains("信息技术")) {
+    codes.add("software_engineering");
+}
+
+if (q.contains("软件信息")) {
+    codes.add("software_information");
+}
+
+if (q.contains("电子信息")
+        || q.contains("电子信息企业")
+        || q.contains("电子信息产业")
+        || q.contains("电子信息制造业")
+        || q.contains("人工智能企业")
+        || q.contains("软件信息企业")) {
+    codes.add("electronic_org");
+    codes.add("software_information");
+}
+
+if (q.contains("人工智能")
+        || q.contains("人工智能项目")
+        || q.contains("大模型")
+        || q.contains("机器学习")
+        || q.contains("深度学习")
+        || lower.contains("ai")) {
+    codes.add("ai");
+}
+
+if (q.contains("集成电路")) {
+    codes.add("integrated_circuit");
+}
+
+if (q.contains("金融机构")
+        || q.contains("基金管理机构")
+        || q.contains("地方金融组织")
+        || q.contains("金融投资集团")
+        || q.contains("金融行业")
+        || q.contains("金融单位")) {
+    codes.add("finance_org");
+}
+
+if (q.contains("留厦")
+        || q.contains("出站留厦")
+        || q.contains("留在厦门")
+        || q.contains("留厦就业")) {
+    codes.add("stay_xiamen");
+}
+
+if (q.contains("特聘岗位")) {
+    codes.add("special_post");
+}
 
         // 四、博士后类
         if (q.contains("博士后")) {
@@ -131,43 +174,81 @@ if (q.contains("高级职称")
     }
 
     private boolean isConditionReverseQuestion(String q) {
-        return q.contains("可以申请")
-                || q.contains("能申请")
-                || q.contains("申请什么")
-                || q.contains("可以申报")
-                || q.contains("能申报")
-                || q.contains("适合什么政策")
-                || q.contains("有什么政策")
-                || q.contains("有哪些政策")
-                || q.contains("哪些政策")
-                || q.contains("匹配什么政策")
-                || q.contains("能享受什么")
-                || q.contains("可以享受什么")
-                || q.contains("有什么补助")
-                || q.contains("有哪些补助")
-                || q.contains("补助多少")
-                || q.contains("补贴多少")
-                || q.contains("有什么补贴")
-                || q.contains("有哪些补贴")
-                || q.contains("有什么支持")
-                || q.contains("有哪些支持")
-                || q.contains("支持政策")
-                || q.contains("有什么待遇")
-                || q.contains("有哪些待遇")
-                || q.contains("怎么申请")
-                || q.contains("如何申请")
-                || q.contains("申请条件")
-                || q.contains("有哪些")
-                || q.contains("有什么");
-    }
+    return q.contains("可以申请")
+            || q.contains("能申请")
+            || q.contains("申请什么")
+            || q.contains("申请哪些")
+            || q.contains("想申请")
+            || q.contains("可以申报")
+            || q.contains("能申报")
+            || q.contains("想申报")
+            || q.contains("适合什么政策")
+            || q.contains("适合哪个政策")
+            || q.contains("适合哪些政策")
+            || q.contains("适合什么人才政策")
+            || q.contains("适合哪个人才政策")
+            || q.contains("有什么政策")
+            || q.contains("有哪些政策")
+            || q.contains("哪些政策")
+            || q.contains("匹配什么政策")
+            || q.contains("匹配哪个政策")
+            || q.contains("能享受什么")
+            || q.contains("可以享受什么")
+            || q.contains("可以同时享受")
+            || q.contains("能否同时享受")
+            || q.contains("能不能同时享受")
+            || q.contains("可以同时看")
+            || q.contains("同时看哪些")
+            || q.contains("有什么补助")
+            || q.contains("有哪些补助")
+            || q.contains("哪些补助")
+            || q.contains("补助多少")
+            || q.contains("补贴多少")
+            || q.contains("有什么补贴")
+            || q.contains("有哪些补贴")
+            || q.contains("有什么支持")
+            || q.contains("有哪些支持")
+            || q.contains("支持政策")
+            || q.contains("有什么待遇")
+            || q.contains("有哪些待遇")
+            || q.contains("怎么申请")
+            || q.contains("如何申请")
+            || q.contains("申请条件")
+            || q.contains("可以吗")
+            || q.contains("能不能")
+            || q.contains("是否可以")
+            || q.contains("有哪些")
+            || q.contains("有什么");
+}
 
     private String resolveTargetSubject(String q) {
-        if (q.contains("女儿") || q.contains("孩子") || q.contains("儿子")) {
-            return "CHILD";
-        }
-        if (q.contains("朋友") || q.contains("客户") || q.contains("员工") || q.contains("同事")) {
-            return "OTHER_PERSON";
-        }
+    if (q.contains("我是")
+            || q.contains("本人是")
+            || q.contains("我有")
+            || q.contains("我在")
+            || q.contains("我想")
+            || q.contains("我可以")
+            || q.contains("我能")) {
         return "USER_SELF_OR_UNCLEAR";
     }
+
+    if (q.contains("女儿")
+            || q.contains("孩子")
+            || q.contains("儿子")
+            || q.contains("子女")) {
+        return "CHILD";
+    }
+
+    if (q.contains("朋友")
+            || q.contains("客户")
+            || q.contains("同事")
+            || q.contains("下属")
+            || q.contains("员工可以")
+            || q.contains("员工能")
+            || q.contains("员工是否")) {
+        return "OTHER_PERSON";
+    }
+
+    return "USER_SELF_OR_UNCLEAR";
+}
 }

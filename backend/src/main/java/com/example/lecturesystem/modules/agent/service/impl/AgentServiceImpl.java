@@ -79,9 +79,12 @@ import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class AgentServiceImpl implements AgentService {
+    private static final Logger log = LoggerFactory.getLogger(AgentServiceImpl.class);
     private static final String DEFAULT_SESSION_TITLE = "New session";
     private static final String STATUS_ACTIVE = "ACTIVE";
     private static final String STATUS_ARCHIVED = "ARCHIVED";
@@ -1296,16 +1299,30 @@ logCenterService.recordAiChainSuccess(
             sendDoneEvent(emitter, session.getId(), user.getUserId(), sourceScene, answerSource, usageEntity, monthTotalTokens, context.getChunks().size());
             emitter.complete();
         } catch (Exception ex) {
-            logCenterService.recordAiChainFailed(
-                    LOG_EVENT_STREAM_ERROR,
-                    session.getId(),
-                    user.getUserId(),
-                    sourceScene,
-                    "sessionId=" + session.getId() + ", error=" + valueOrBlank(normalizeText(ex.getMessage()))
-            );
-            sendStreamError(emitter, ex.getMessage());
-            emitter.completeWithError(ex);
-        }
+    if (isClientAbortException(ex)) {
+        log.warn("SSE客户端已断开，终止本次流式任务，sessionId={}, message={}",
+                session == null ? null : session.getId(),
+                ex.getMessage());
+        safeCompleteSse(emitter);
+        return;
+    }
+
+    logCenterService.recordAiChainFailed(
+            LOG_EVENT_STREAM_ERROR,
+            session.getId(),
+            user.getUserId(),
+            sourceScene,
+            "sessionId=" + session.getId() + ", error=" + valueOrBlank(normalizeText(ex.getMessage()))
+    );
+
+    sendStreamError(emitter, ex.getMessage());
+
+    try {
+        emitter.completeWithError(ex);
+    } catch (Exception ignored) {
+        // ignore
+    }
+}
     }
     private List<AgentSessionVO> queryAuthorizedSessions(AgentSessionQueryRequest request) {
         AgentSessionQueryRequest safeRequest = normalizeDateRange(buildAuthorizedRequest(request));
@@ -2271,9 +2288,19 @@ private void executeSystemMetaChatStream(SseEmitter emitter,
         sendDoneEvent(emitter, session.getId(), user.getUserId(), sourceScene, ANSWER_SOURCE_SYSTEM_META, usageEntity, monthTotalTokens, 0);
         emitter.complete();
     } catch (Exception ex) {
-        sendStreamError(emitter, ex.getMessage());
-        emitter.completeWithError(ex);
+    if (isClientAbortException(ex)) {
+        log.warn("SSE客户端已断开，终止本次系统元信息流式任务，message={}", ex.getMessage());
+        safeCompleteSse(emitter);
+        return;
     }
+
+    sendStreamError(emitter, ex.getMessage());
+    try {
+        emitter.completeWithError(ex);
+    } catch (Exception ignored) {
+        // ignore
+    }
+}
 }
     private void sendStreamStart(SseEmitter emitter,
                                  Long sessionId,
@@ -2385,17 +2412,87 @@ private void executeSystemMetaChatStream(SseEmitter emitter,
     }
 
     private void sendStreamError(SseEmitter emitter, String message) {
-        try {
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("message", valueOrDefault(normalizeText(message), "stream error"));
-            sendSseEvent(emitter, "error", data);
-        } catch (IOException ignored) {
-        }
+    Map<String, Object> data = new LinkedHashMap<>();
+    data.put("message", valueOrDefault(normalizeText(message), "stream error"));
+    try {
+        sendSseEvent(emitter, "error", data);
+    } catch (IOException ignored) {
+        // 发送错误事件失败时不再向外抛，避免 SSE 异常进入全局异常处理器
+    }
+}
+
+private void sendSseEvent(SseEmitter emitter, String eventName, Object data) throws IOException {
+    if (emitter == null) {
+        return;
     }
 
-    private void sendSseEvent(SseEmitter emitter, String eventName, Object data) throws IOException {
+    try {
         emitter.send(SseEmitter.event().name(eventName).data(data, MediaType.APPLICATION_JSON));
+    } catch (Exception ex) {
+        if (isClientAbortException(ex)) {
+            log.warn("SSE客户端已断开，停止继续推送事件 eventName={}, message={}",
+                    eventName,
+                    ex.getMessage());
+            safeCompleteSse(emitter);
+            return;
+        }
+
+        if (ex instanceof IOException ioException) {
+            throw ioException;
+        }
+
+        if (ex instanceof RuntimeException runtimeException) {
+            throw runtimeException;
+        }
+
+        throw new IOException(ex);
     }
+}
+
+private void safeCompleteSse(SseEmitter emitter) {
+    if (emitter == null) {
+        return;
+    }
+
+    try {
+        emitter.complete();
+    } catch (Exception ignored) {
+        // ignore
+    }
+}
+
+private boolean isClientAbortException(Throwable ex) {
+    if (ex == null) {
+        return false;
+    }
+
+    Throwable current = ex;
+    while (current != null) {
+        String message = current.getMessage();
+        String className = current.getClass().getName();
+
+        if (message != null) {
+            String lower = message.toLowerCase();
+            if (lower.contains("connection reset")
+                    || lower.contains("broken pipe")
+                    || lower.contains("client abort")
+                    || lower.contains("connection has been shutdown")
+                    || lower.contains("远程主机强迫关闭")
+                    || lower.contains("你的主机中的软件中止了一个已建立的连接")) {
+                return true;
+            }
+        }
+
+        if (className.contains("ClientAbortException")
+                || className.contains("EOFException")) {
+            return true;
+        }
+
+        current = current.getCause();
+    }
+
+    return false;
+}
 
     private String ensureNonEmptyStreamAnswer(String answer,
                                               Long sessionId,

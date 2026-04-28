@@ -776,6 +776,61 @@ private boolean looksLikeCompareQuestion(String text) {
     return containsAnyText(text, List.of("和", "与", "跟", "及", "vs", "VS"))
             && containsAnyText(text, POLICY_COMPARE_INTENT_KEYWORDS);
 }
+private boolean looksLikePersonalCompositePolicyQuestion(String text) {
+    if (!notBlank(text)) {
+        return false;
+    }
+
+    boolean hasPersonalSubject = containsAnyText(text, List.of(
+            "我是",
+            "本人是",
+            "我有",
+            "我在",
+            "我想",
+            "我可以",
+            "我能",
+            "适合我",
+            "帮我判断"
+    ));
+
+    boolean hasCompositeIntent = containsAnyText(text, List.of(
+            "可以申请哪些",
+            "申请哪些",
+            "适合哪个",
+            "适合哪些",
+            "可以同时看",
+            "同时看哪些",
+            "可以同时享受",
+            "能否同时享受",
+            "可以吗",
+            "哪些补助",
+            "哪些政策",
+            "什么政策"
+    ));
+
+    boolean hasPolicyCondition = containsAnyText(text, List.of(
+            "博士",
+            "博士后",
+            "高级职称",
+            "本科",
+            "硕士",
+            "CFA",
+            "FRM",
+            "CPA",
+            "ACCA",
+            "金融机构",
+            "软件工程",
+            "人工智能",
+            "AI",
+            "电子信息",
+            "特聘岗位",
+            "住房补贴",
+            "服务保障",
+            "留厦"
+    ));
+
+    return hasPersonalSubject && hasCompositeIntent && hasPolicyCondition;
+}
 private FaqMatch tryMatchServiceBenefitTopic(AiPolicyQuestionNormalizer.NormalizedQuestion question) {
     String questionText = buildQuestionText(question);
     if (questionText == null || questionText.isBlank()) {
@@ -784,6 +839,11 @@ private FaqMatch tryMatchServiceBenefitTopic(AiPolicyQuestionNormalizer.Normaliz
 
     String compact = valueOrBlank(compactText(questionText));
     String matchText = questionText + " " + compact;
+
+    if (looksLikePersonalCompositePolicyQuestion(matchText)) {
+        return FaqMatch.notMatched();
+    }
+
 
     if (containsAnyText(matchText, CHILD_EDUCATION_TOPIC_KEYWORDS)) {
         return new FaqMatch(true, null, buildChildEducationServiceAnswer(matchText));
@@ -1257,11 +1317,22 @@ private String buildFinanceVsElectronicInfoTalentAnswer(String questionText) {
     }
 
     if (policyMainHitMap.isEmpty()) {
-        return "结论：当前未命中明确的条件反查政策依据。\n"
-                + "当前边界：建议继续命中对应专题文档、年度申报公告或原始条款后再确认。";
-    }
+    return "结论：当前未命中明确的条件反查政策依据。\n"
+            + "当前边界：建议继续命中对应专题文档、年度申报公告或原始条款后再确认。";
+}
 
-    sb.append("结论：根据当前知识库条件反查结果，您可以重点关注以下政策：\n");
+if (isCompositeConditionAnalysis(analysis, allConditionCodes, policyConditionMap, policyMainHitMap)) {
+    return buildCompositeConditionIndexAnswer(
+            policyMainHitMap,
+            policyConditionMap,
+            policyRequirementMap,
+            policyChunkMap,
+            allConditionCodes,
+            analysis
+    );
+}
+
+sb.append("结论：根据当前知识库条件反查结果，您可以重点关注以下政策：\n");
 
     int index = 1;
     for (Map.Entry<String, AiPolicyConditionIndex> entry : policyMainHitMap.entrySet()) {
@@ -1313,6 +1384,289 @@ private String buildFinanceVsElectronicInfoTalentAnswer(String questionText) {
     sb.append("\n\n当前边界：以上为知识库条件反查结果，是否最终符合申报条件，应以当年度申报通知、正式政策文件和主管部门审核为准。");
 
     return sb.toString();
+}
+private String buildCompositeConditionIndexAnswer(
+        Map<String, AiPolicyConditionIndex> policyMainHitMap,
+        Map<String, Set<String>> policyConditionMap,
+        Map<String, Set<String>> policyRequirementMap,
+        Map<String, Set<Long>> policyChunkMap,
+        Set<String> allConditionCodes,
+        PolicyQuestionAnalysis analysis) {
+
+    StringBuilder sb = new StringBuilder();
+
+    sb.append("结论：根据您提供的多个条件，当前可以按“优先关注 / 可重点关注 / 补充关注”进行分层判断。");
+    sb.append("多条件匹配只能说明政策适配方向，不能直接等同于已经符合申报资格。\n\n");
+
+    List<Map.Entry<String, AiPolicyConditionIndex>> sortedPolicies = policyMainHitMap.entrySet()
+            .stream()
+            .sorted((a, b) -> {
+                int aCount = safeSetSize(policyConditionMap.get(a.getKey()));
+                int bCount = safeSetSize(policyConditionMap.get(b.getKey()));
+                if (aCount != bCount) {
+                    return Integer.compare(bCount, aCount);
+                }
+
+                int aPriority = a.getValue() == null || a.getValue().getPriority() == null
+                        ? 9999
+                        : a.getValue().getPriority();
+                int bPriority = b.getValue() == null || b.getValue().getPriority() == null
+                        ? 9999
+                        : b.getValue().getPriority();
+
+                return Integer.compare(aPriority, bPriority);
+            })
+            .collect(Collectors.toList());
+
+    int maxMatchCount = 0;
+    for (Map.Entry<String, AiPolicyConditionIndex> entry : sortedPolicies) {
+        maxMatchCount = Math.max(maxMatchCount, safeSetSize(policyConditionMap.get(entry.getKey())));
+    }
+
+    if (maxMatchCount >= 2) {
+        appendCompositePolicyGroup(
+                sb,
+                "一、优先关注",
+                sortedPolicies,
+                policyConditionMap,
+                policyRequirementMap,
+                policyChunkMap,
+                maxMatchCount,
+                maxMatchCount
+        );
+
+        if (maxMatchCount > 2) {
+            appendCompositePolicyGroup(
+                    sb,
+                    "二、可重点关注",
+                    sortedPolicies,
+                    policyConditionMap,
+                    policyRequirementMap,
+                    policyChunkMap,
+                    2,
+                    maxMatchCount - 1
+            );
+        }
+
+        appendCompositePolicyGroup(
+                sb,
+                maxMatchCount > 2 ? "三、补充关注" : "二、补充关注",
+                sortedPolicies,
+                policyConditionMap,
+                policyRequirementMap,
+                policyChunkMap,
+                1,
+                1
+        );
+    } else {
+        appendCompositePolicyGroup(
+                sb,
+                "一、可重点关注",
+                sortedPolicies,
+                policyConditionMap,
+                policyRequirementMap,
+                policyChunkMap,
+                1,
+                1
+        );
+    }
+
+    sb.append("\n综合办理建议：");
+    sb.append(buildCompositeAdviceText(allConditionCodes, policyMainHitMap.keySet()));
+
+    String subjectBoundary = buildSubjectBoundaryText(analysis);
+    if (notBlank(subjectBoundary)) {
+        sb.append("\n\n咨询对象边界：").append(subjectBoundary);
+    }
+
+    sb.append("\n\n当前边界：以上为知识库多条件匹配结果。最终是否符合申报条件，仍需结合单位性质、岗位方向、在厦工作情况、社保或个税、单位推荐、年度通知和主管部门审核判断。");
+
+    return sb.toString();
+}
+private void appendCompositePolicyGroup(
+        StringBuilder sb,
+        String groupTitle,
+        List<Map.Entry<String, AiPolicyConditionIndex>> sortedPolicies,
+        Map<String, Set<String>> policyConditionMap,
+        Map<String, Set<String>> policyRequirementMap,
+        Map<String, Set<Long>> policyChunkMap,
+        int minMatchCount,
+        int maxMatchCount) {
+
+    boolean hasGroup = false;
+    int index = 1;
+
+    for (Map.Entry<String, AiPolicyConditionIndex> entry : sortedPolicies) {
+        String policyName = entry.getKey();
+        AiPolicyConditionIndex mainHit = entry.getValue();
+
+        int matchCount = safeSetSize(policyConditionMap.get(policyName));
+        if (matchCount < minMatchCount || matchCount > maxMatchCount) {
+            continue;
+        }
+
+        if (!hasGroup) {
+            sb.append(groupTitle).append("：\n");
+            hasGroup = true;
+        }
+
+        sb.append(index++).append("、").append(policyName);
+
+        if (mainHit != null && notBlank(mainHit.getPolicyNo())) {
+            sb.append("（").append(mainHit.getPolicyNo()).append("）");
+        }
+
+        sb.append("\n");
+
+        Set<String> conditions = policyConditionMap.get(policyName);
+        if (conditions != null && !conditions.isEmpty()) {
+            sb.append("   命中条件：").append(String.join("、", conditions)).append("\n");
+        }
+
+        Set<String> requirements = policyRequirementMap.get(policyName);
+        if (requirements != null && !requirements.isEmpty()) {
+            int count = 0;
+            for (String requirement : requirements) {
+                if (count >= 2) {
+                    break;
+                }
+                sb.append("   适配说明：").append(requirement).append("\n");
+                count++;
+            }
+        }
+
+        Set<Long> chunkIds = policyChunkMap.get(policyName);
+        if (chunkIds != null && !chunkIds.isEmpty()) {
+            String chunkText = chunkIds.stream()
+                    .limit(5)
+                    .map(id -> "Chunk " + id)
+                    .collect(Collectors.joining("、"));
+            sb.append("   依据切片：").append(chunkText).append("\n");
+        }
+    }
+
+    if (hasGroup) {
+        sb.append("\n");
+    }
+}
+
+private int safeSetSize(Set<?> set) {
+    return set == null ? 0 : set.size();
+}
+private String buildCompositeAdviceText(Set<String> conditionCodes,
+                                        Set<String> policyNames) {
+    String joinedPolicies = policyNames == null ? "" : String.join("、", policyNames);
+    Set<String> codes = conditionCodes == null ? Collections.emptySet() : conditionCodes;
+
+    boolean hasDoctor = codes.contains("doctor_degree")
+            || codes.contains("phd")
+            || codes.contains("doctor");
+
+    boolean hasPostdoctoral = codes.contains("postdoctoral");
+
+    boolean hasSeniorTitle = codes.contains("senior_title");
+
+    boolean hasFinanceCondition = codes.contains("finance_org")
+            || codes.contains("cfa")
+            || codes.contains("frm")
+            || codes.contains("cpa")
+            || codes.contains("acca")
+            || codes.contains("fsa")
+            || codes.contains("actuary")
+            || codes.contains("legal_profession");
+
+    boolean hasFinancePolicyOnly = joinedPolicies.contains("金融服务产业人才");
+
+    boolean hasSoftwareOrAi = codes.contains("software_engineering")
+            || codes.contains("software_information")
+            || codes.contains("ai")
+            || codes.contains("integrated_circuit")
+            || joinedPolicies.contains("电子信息产业人才")
+            || joinedPolicies.contains("人工智能");
+
+    boolean hasHousing = codes.contains("housing")
+            || codes.contains("housing_subsidy")
+            || codes.contains("rent_subsidy")
+            || codes.contains("purchase_subsidy")
+            || codes.contains("settlement_housing")
+            || codes.contains("talent_housing")
+            || codes.contains("youth_rental_housing")
+            || codes.contains("affordable_housing")
+            || joinedPolicies.contains("住房");
+
+    boolean hasSpecialPost = codes.contains("special_post")
+            || joinedPolicies.contains("特聘岗位");
+
+    /*
+     * 优先级说明：
+     * 1. 博士后阶段问题优先；
+     * 2. 明确的软件/AI/电子信息方向优先于“顺带命中的金融项目”；
+     * 3. 博士 + 特聘岗位 + 住房补贴，要优先走特聘岗位/住房建议；
+     * 4. 只有真实出现金融机构或金融资格证时，才优先给金融建议。
+     */
+
+    if (hasPostdoctoral) {
+        return "建议优先区分进站博士后、在站博士后、出站留厦博士后等阶段，再同步核对博士后补助、安家补贴、住房保障和服务保障条款。";
+    }
+
+    if (hasDoctor && hasSpecialPost && hasHousing) {
+        return "建议同时核对高层次人才特聘岗位和住房保障政策。特聘岗位重点看博士学位、海外经历、用人单位设岗资格等条件；住房补贴或人才住房还需结合人才类别、在厦就业、服务年限、是否已享受过同类住房政策和年度申报通知判断。";
+    }
+
+    if (hasSoftwareOrAi && hasSeniorTitle) {
+        return "建议优先核对电子信息产业人才项目和高层次人才认定支持。电子信息方向重点看所在企业是否属于电子信息、软件信息或人工智能产业，高级职称还可同步关注省级高层次人才认定或相关人才支持政策。";
+    }
+
+    if (hasSoftwareOrAi) {
+        return "建议优先核对电子信息产业人才项目和人工智能相关政策，重点确认所在企业是否属于电子信息、软件信息或人工智能方向，岗位、项目成果、申报类别和单位推荐条件是否匹配。";
+    }
+
+    if (hasFinanceCondition && hasSeniorTitle) {
+        return "建议优先核对金融服务产业人才项目，同时确认所在机构是否属于金融机构、基金管理机构、地方金融组织或金融投资集团，高级职称是否与岗位方向匹配，在厦全职工作年限和单位推荐条件是否满足。";
+    }
+
+    if (hasFinanceCondition) {
+        return "建议优先核对金融服务产业人才项目，重点确认金融机构、基金管理机构、地方金融组织或金融投资集团等单位属性，以及CFA、FRM、ACCA、CPA等资格证书、岗位层级、在厦全职工作和单位推荐要求。";
+    }
+
+    if (hasDoctor && hasSeniorTitle) {
+        return "建议同时核对高层次人才认定、特聘岗位和重点产业人才项目，重点确认博士学位、高级职称、工作经历、所在单位和岗位方向是否同时匹配。";
+    }
+
+    if (hasHousing) {
+        return "建议先确认本人是否属于新引进人才、高层次人才或重点产业人才，再结合住房补贴、人才住房、租房或购房支持政策分别判断。";
+    }
+
+    if (hasFinancePolicyOnly) {
+        return "当前结果中命中了金融服务产业人才项目，但还需要进一步确认是否具备金融机构、金融岗位、金融资格证书、在厦全职工作和单位推荐等关键条件，不能仅凭学历或职称直接判断适配。";
+    }
+
+    return "建议先按照命中条件最多的政策方向优先核对，再补充确认单位性质、岗位方向、社保或个税、单位推荐和年度申报通知。";
+}
+private boolean isCompositeConditionAnalysis(PolicyQuestionAnalysis analysis,
+                                             Set<String> allConditionCodes,
+                                             Map<String, Set<String>> policyConditionMap,
+                                             Map<String, AiPolicyConditionIndex> policyMainHitMap) {
+    int allCodeCount = allConditionCodes == null ? 0 : allConditionCodes.size();
+
+    int analyzerCodeCount = 0;
+    if (analysis != null && analysis.getConditionCodes() != null) {
+        analyzerCodeCount = analysis.getConditionCodes().size();
+    }
+
+    int maxPolicyConditionCount = 0;
+    if (policyConditionMap != null) {
+        for (Set<String> conditions : policyConditionMap.values()) {
+            maxPolicyConditionCount = Math.max(maxPolicyConditionCount, safeSetSize(conditions));
+        }
+    }
+
+    int policyCount = policyMainHitMap == null ? 0 : policyMainHitMap.size();
+
+    return analyzerCodeCount >= 2
+            || allCodeCount >= 2
+            || maxPolicyConditionCount >= 2
+            || (policyCount >= 2 && allCodeCount >= 2);
 }
 private boolean betterMainHit(AiPolicyConditionIndex current, AiPolicyConditionIndex old) {
     if (current == null) {
@@ -1396,10 +1750,9 @@ private String buildConditionAdviceText(Set<String> conditionCodes, Set<String> 
             return "";
         }
 
-        if ("CHILD".equals(analysis.getTargetSubject())
-                || "OTHER_PERSON".equals(analysis.getTargetSubject())) {
-            return "本轮问题是代他人咨询，系统只使用本轮问题明确提供的信息，不引用历史上下文中的用户本人学历、专业、行业或单位信息作为判断条件。";
-        }
+        if ("CHILD".equals(analysis.getTargetSubject())) {
+    return "本轮问题是代子女或他人咨询，系统只使用本轮问题明确提供的信息，不引用历史上下文中的用户本人学历、专业、行业或单位信息作为判断条件。";
+}
 
         return "";
     }

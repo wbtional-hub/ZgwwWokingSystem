@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     private final OperationLogService operationLogService;
     private final LogCenterService logCenterService;
 
@@ -46,6 +47,7 @@ public class GlobalExceptionHandler {
                                                HttpServletRequest request) {
         logPermissionDenied(ex);
         log.error("Unhandled exception", ex);
+
         String message = resolveFriendlyMessage(ex, "操作失败，请稍后重试");
         writeExceptionLog(request, ex, message, 500, true);
         return ApiResponse.fail(message);
@@ -68,11 +70,13 @@ public class GlobalExceptionHandler {
         if (!message.contains("仅管理员可执行该操作") && !message.contains("无权")) {
             return;
         }
+
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null) {
             operationLogService.log("AUTH", "PERMISSION_DENIED", null, message);
             return;
         }
+
         operationLogService.log("AUTH", "PERMISSION_DENIED", null, message);
     }
 
