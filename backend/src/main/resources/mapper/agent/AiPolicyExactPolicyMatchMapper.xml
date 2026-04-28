@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AiPolicyExactPolicyMatchMapper">
+
+    <resultMap id="AiPolicyExactPolicyChunkMap"
+               type="com.example.lecturesystem.modules.agent.dto.AiPolicyExactPolicyChunk">
+        <id property="id" column="id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="chunkNo" column="chunk_no"/>
+        <result property="headingPath" column="heading_path"/>
+        <result property="policyName" column="policy_name"/>
+        <result property="policyNo" column="policy_no"/>
+        <result property="policyAliases" column="policy_aliases"/>
+        <result property="topicType" column="topic_type"/>
+        <result property="contentText" column="content_text"/>
+    </resultMap>
+
+    <select id="selectExactPolicyChunks" resultMap="AiPolicyExactPolicyChunkMap">
+        SELECT
+            id,
+            base_id,
+            chunk_no,
+            heading_path,
+            policy_name,
+            policy_no,
+            policy_aliases,
+            topic_type,
+            content_text
+        FROM ai_knowledge_chunk
+        WHERE searchable = TRUE
+          AND base_id = #{baseId}
+          AND (
+                policy_name = #{keyword}
+                OR policy_name ILIKE CONCAT('%', #{keyword}, '%')
+                OR policy_aliases ILIKE CONCAT('%', #{keyword}, '%')
+                OR heading_path ILIKE CONCAT('%', #{keyword}, '%')
+                OR content_text ILIKE CONCAT('%', #{keyword}, '%')
+          )
+        ORDER BY
+            CASE
+                WHEN policy_name = #{keyword} THEN 0
+                WHEN policy_name ILIKE CONCAT('%', #{keyword}, '%') THEN 1
+                WHEN policy_aliases ILIKE CONCAT('%', #{keyword}, '%') THEN 2
+                WHEN heading_path ILIKE CONCAT('%', #{keyword}, '%') THEN 3
+                ELSE 9
+            END,
+            CASE topic_type
+                WHEN 'process' THEN 0
+                WHEN 'condition' THEN 1
+                WHEN 'benefit' THEN 2
+                WHEN 'list' THEN 3
+                ELSE 9
+            END,
+            chunk_no ASC,
+            id ASC
+        LIMIT 10
+    </select>
+
+</mapper>

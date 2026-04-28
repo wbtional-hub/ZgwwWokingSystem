@@ -9,6 +9,11 @@ import java.util.List;
 
 @Mapper
 public interface AgentMessageMapper {
+
     int insert(AgentMessageEntity entity);
+
     List<AgentMessageVO> queryBySessionId(@Param("sessionId") Long sessionId);
+
+    List<AgentMessageEntity> queryRecentEntityBySessionId(@Param("sessionId") Long sessionId,
+                                                           @Param("limit") Integer limit);
 }

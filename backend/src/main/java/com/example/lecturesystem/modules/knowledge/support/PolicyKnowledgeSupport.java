@@ -13,7 +13,52 @@ public final class PolicyKnowledgeSupport {
     private static final List<String> LIST_KEYWORDS = List.of("有哪些", "包括哪些", "包含哪些", "列举", "清单", "名单");
     private static final List<String> PROCESS_KEYWORDS = List.of("怎么申请", "如何申请", "如何申报", "怎么申报", "流程", "材料", "审核", "公示", "兑现", "拨付");
     private static final List<String> CONDITION_KEYWORDS = List.of("条件", "要求", "资格", "适用对象", "能不能申请");
-    private static final List<String> BENEFIT_KEYWORDS = List.of("补助多少", "奖励多少", "安家补贴", "支持多少", "待遇", "补贴多少");
+    private static final List<String> BENEFIT_KEYWORDS = List.of(
+        "补助多少",
+        "奖励多少",
+        "安家补贴",
+        "支持多少",
+        "待遇",
+        "补贴多少",
+        "保障待遇",
+        "人才待遇",
+        "待遇保障"
+);
+
+private static final List<String> SERVICE_BENEFIT_KEYWORDS = List.of(
+        "子女入学",
+        "子女就学",
+        "子女教育",
+        "孩子上学",
+        "小孩上学",
+        "随迁子女",
+        "入园",
+        "读幼儿园",
+        "读小学",
+        "读初中",
+        "读高中",
+        "医疗保障",
+        "医疗服务",
+        "就医",
+        "看病",
+        "健康体检",
+        "体检",
+        "保健",
+        "诊疗",
+        "专家诊疗",
+        "就医绿色通道",
+        "医疗绿色通道",
+        "服务保障",
+        "人才服务",
+        "人才服务卡",
+        "绿色通道",
+        "一站式服务",
+        "配偶就业",
+        "落户服务",
+        "居留服务",
+        "人才待遇",
+        "待遇保障"
+);
     private static final List<String> FAQ_KEYWORDS = List.of("常见问题", "高频问答", "faq");
     private static final List<String> BOUNDARY_KEYWORDS = List.of("厦门和福建", "厦门 vs 福建", "省级", "市级", "省市", "边界", "有什么区别");
     private static final List<String> PROCESS_SECTION_KEYWORDS = List.of("申报", "申请", "流程", "遴选", "评审", "审核", "公示", "确认", "拨付", "兑现");
@@ -114,7 +159,29 @@ public final class PolicyKnowledgeSupport {
             "工程师"
     );
     private static final List<String> AI_SUMMARY_KEYWORDS = List.of("人工智能", "AI", "ai");
-    private static final List<String> XM_SPECIAL_TOPICS = List.of("双百计划", "特聘岗位", "专项资金", "群鹭兴厦", "博士后", "人工智能", "住房", "台湾人才", "台湾特聘专家", "服务保障", "子女教育", "医疗保障");
+    private static final List<String> XM_SPECIAL_TOPICS = List.of(
+        "双百计划",
+        "特聘岗位",
+        "专项资金",
+        "群鹭兴厦",
+        "博士后",
+        "人工智能",
+        "住房",
+        "台湾人才",
+        "台湾特聘专家",
+        "服务保障",
+        "人才服务",
+        "人才服务卡",
+        "绿色通道",
+        "子女教育",
+        "子女入学",
+        "子女就学",
+        "医疗保障",
+        "医疗服务",
+        "健康体检",
+        "配偶就业",
+        "落户服务"
+);
     private static final List<String> FJ_SPECIAL_TOPICS = List.of("福建省高层次人才认定", "省引才百人计划", "百人计划", "四大经济", "四大经济专项认定", "博士后", "工程师队伍建设", "台湾人才", "国际化引才");
     private static final List<PolicyAliasMapping> POLICY_ALIAS_MAPPINGS = List.of(
             new PolicyAliasMapping("厦门市引进高层次创新创业人才“双百计划”实施意见", "XM", List.of("双百计划")),
@@ -246,11 +313,14 @@ public final class PolicyKnowledgeSupport {
             return PolicyQuestionType.BOUNDARY;
         }
         if (containsAny(normalized, FAQ_KEYWORDS)) {
-            return PolicyQuestionType.FAQ;
-        }
-        if (containsAny(normalized, LIST_KEYWORDS)) {
-            return PolicyQuestionType.LIST;
-        }
+    return PolicyQuestionType.FAQ;
+}
+if (containsAny(normalized, SERVICE_BENEFIT_KEYWORDS)) {
+    return PolicyQuestionType.BENEFIT;
+}
+if (containsAny(normalized, LIST_KEYWORDS)) {
+    return PolicyQuestionType.LIST;
+}
         if (containsAny(normalized, PROCESS_KEYWORDS)) {
             return PolicyQuestionType.PROCESS;
         }
@@ -283,9 +353,27 @@ public final class PolicyKnowledgeSupport {
         if (containsAny(merged, BENEFIT_SECTION_KEYWORDS)) {
             return "benefit";
         }
-        if (containsAny(merged, List.of("服务保障", "子女教育", "医疗保障", "住房保障", "平台申报"))) {
-            return "service";
-        }
+        if (containsAny(merged, List.of(
+        "服务保障",
+        "人才服务",
+        "人才服务卡",
+        "绿色通道",
+        "一站式服务",
+        "子女教育",
+        "子女入学",
+        "子女就学",
+        "随迁子女",
+        "医疗保障",
+        "医疗服务",
+        "健康体检",
+        "就医",
+        "配偶就业",
+        "落户服务",
+        "住房保障",
+        "平台申报"
+))) {
+    return "service";
+}
         if (containsAny(merged, List.of("退出机制", "追回", "撤销", "终止", "考核"))) {
             return "risk";
         }
@@ -434,9 +522,25 @@ public final class PolicyKnowledgeSupport {
         if (containsAny(merged, List.of("四大经济"))) {
             tags.add("four-economies");
         }
-        if (containsAny(merged, List.of("服务保障", "子女教育", "医疗保障"))) {
-            tags.add("service");
-        }
+        if (containsAny(merged, List.of(
+        "服务保障",
+        "人才服务",
+        "人才服务卡",
+        "绿色通道",
+        "一站式服务",
+        "子女教育",
+        "子女入学",
+        "子女就学",
+        "随迁子女",
+        "医疗保障",
+        "医疗服务",
+        "健康体检",
+        "就医",
+        "配偶就业",
+        "落户服务"
+))) {
+    tags.add("service");
+}
         if (containsAny(merged, List.of("产业人才项目", "骨干人才项目", "产业"))) {
             tags.add("industry");
         }

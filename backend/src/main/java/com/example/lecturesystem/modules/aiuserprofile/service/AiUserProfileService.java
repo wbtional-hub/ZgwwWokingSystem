@@ -62,7 +62,7 @@ public void extractAndUpdateFromMessage(Long userId,
         }
 
         boolean changed = false;
-
+ProfileSubjectContext subjectContext = analyzeProfileSubjectContext(text);
         // 手机端来源偏好，属于习惯，不依赖用户自述。
         if ("MOBILE_POLICY_CONSULTANT".equalsIgnoreCase(nullToEmpty(sourceScene))) {
             changed |= upsertHabit(
@@ -85,9 +85,12 @@ changed |= extractQuestionFrequencyHabits(userId, sourceScene, text);
 
 // 非用户自述问题，不写入“个人身份画像”。
 // 例如：本科生可以申请什么政策？博士后补助多少？
+// 是否允许写入“用户本人长期画像”。
+// 规则：必须是用户本人明确自述，并且不是帮别人问、不是假设、不是企业主体泛问。
 boolean selfStatement = isUserSelfStatement(text);
+boolean allowPersistSelfProfile = selfStatement && subjectContext.allowPersistSelfProfile();
 
-if (selfStatement) {
+if (allowPersistSelfProfile) {
     changed |= extractEducation(userId, baseId, sourceScene, sessionId, messageId, text);
     changed |= extractGender(userId, baseId, sourceScene, sessionId, messageId, text);
     changed |= extractCity(userId, baseId, sourceScene, sessionId, messageId, text);
@@ -96,6 +99,10 @@ if (selfStatement) {
     changed |= extractAgeAndExperience(userId, baseId, sourceScene, sessionId, messageId, text);
     changed |= extractPolicyInterest(userId, baseId, sourceScene, sessionId, messageId, text);
     changed |= extractBenefitInterest(userId, baseId, sourceScene, sessionId, messageId, text);
+} else {
+    // 不是用户本人长期画像时，不写入身份事实。
+    // 但仍然可以沉淀“问题类型、关注主题、沟通习惯”等低风险习惯画像。
+    changed |= extractFrequentTopicHabit(userId, sourceScene, text);
 }
 
         if (changed) {
@@ -127,6 +134,81 @@ if (selfStatement) {
         return String.valueOf(promptSummary).trim();
     }
 
+public String buildPromptSummaryForQuestion(Long userId,
+                                            Long baseId,
+                                            String sourceScene,
+                                            String question) {
+    String baseSummary = buildPromptSummary(userId, baseId, sourceScene);
+    String text = normalize(question);
+    ProfileSubjectContext subjectContext = analyzeProfileSubjectContext(text);
+    String directive = buildQuestionAwareProfileDirective(subjectContext);
+
+    if (isBlank(baseSummary)) {
+        return directive;
+    }
+
+    if (isBlank(directive)) {
+        return baseSummary;
+    }
+
+    return baseSummary + "\n\n" + directive;
+}
+private String buildQuestionAwareProfileDirective(ProfileSubjectContext context) {
+    if (context == null) {
+        return "";
+    }
+
+    StringBuilder builder = new StringBuilder();
+    builder.append("【本轮画像使用边界】\n");
+
+    if ("SELF".equals(context.subjectScope())) {
+        builder.append("本轮问题判断为用户本人咨询。可以结合用户长期画像辅助政策匹配，但仍应以本轮明确提供的信息和知识库依据为准。\n");
+        builder.append("回答时不要机械说“根据你的画像”，应自然表达为“结合你前面提到的情况”。\n");
+        return builder.toString();
+    }
+
+    if ("OTHER_PERSON".equals(context.subjectScope())) {
+        builder.append("本轮问题判断为用户帮他人咨询。咨询对象关系：")
+                .append(nullToEmpty(context.relationToUser()))
+                .append("。\n");
+        builder.append("不要把咨询对象的信息写成用户本人情况。\n");
+        builder.append("不要用用户本人的长期事实画像替代咨询对象条件。\n");
+        builder.append("用户长期画像只可用于沟通风格，例如回答长短、是否结论先行，不可用于政策资格判断。\n");
+        builder.append("回答时应使用“如果是帮他/她咨询，可以先按咨询对象情况判断”这样的自然表达。\n");
+        return builder.toString();
+    }
+
+    if ("HYPOTHETICAL".equals(context.subjectScope())) {
+        builder.append("本轮问题判断为假设场景。\n");
+        builder.append("不要把假设条件写成用户本人画像。\n");
+        builder.append("不要把用户长期事实画像强行套入假设对象。\n");
+        builder.append("回答时应围绕假设条件判断，例如“如果按博士后身份来看……”。\n");
+        builder.append("用户长期画像只可用于沟通风格，不可用于政策资格判断。\n");
+        return builder.toString();
+    }
+
+    if ("ORGANIZATION".equals(context.subjectScope())) {
+        builder.append("本轮问题判断为企业或组织主体咨询。\n");
+        builder.append("不要把企业情况写成用户个人画像。\n");
+        builder.append("回答时应围绕单位性质、企业资质、行业方向、纳税社保、项目成果等组织条件展开。\n");
+        builder.append("用户个人长期画像只可用于沟通风格，不可用于企业政策资格判断。\n");
+        return builder.toString();
+    }
+
+    if ("GENERIC".equals(context.subjectScope())) {
+        builder.append("本轮问题判断为泛问某类人群或某类政策。\n");
+        builder.append("不要推断用户本人属于该人群。\n");
+        builder.append("回答应按通用政策条件说明，并提示如果要判断本人是否符合，需要补充个人条件。\n");
+        builder.append("用户长期画像只可用于沟通风格，不可直接套入政策资格判断。\n");
+        return builder.toString();
+    }
+
+    builder.append("本轮咨询主体不明确。\n");
+    builder.append("回答时不要过度使用长期画像做资格判断，应优先基于本轮问题和知识库依据。\n");
+    builder.append("如需判断是否符合政策，应温和追问关键条件。\n");
+
+    return builder.toString();
+}
     /**
      * 查询当前用户画像，后续给前端“我的画像”页面使用。
      */
@@ -274,6 +356,7 @@ if (selfStatement) {
         "我是本科",
         "本人本科",
         "学士学位",
+        "学士",
         "大学本科",
         "本科",
         "大学毕业")) {
@@ -712,7 +795,50 @@ private boolean extractAgeAndExperience(Long userId,
                 sourceScene,
                 text);
     }
+if (containsAny(text,
+        "直接告诉我",
+        "给结论",
+        "结论是什么",
+        "简单说",
+        "简洁一点")) {
+    changed |= upsertHabit(userId,
+            "communication_style",
+            "conclusion_first",
+            "结论先行",
+            "用户偏好先给结论、再解释原因",
+            sourceScene,
+            text);
+}
 
+if (containsAny(text,
+        "详细一点",
+        "展开说",
+        "讲细一点",
+        "全面一点",
+        "深入分析")) {
+    changed |= upsertHabit(userId,
+            "communication_style",
+            "detailed_explanation",
+            "详细解释",
+            "用户偏好较完整、较细致的解释",
+            sourceScene,
+            text);
+}
+
+if (containsAny(text,
+        "一步一步",
+        "按步骤",
+        "流程",
+        "步骤",
+        "怎么操作")) {
+    changed |= upsertHabit(userId,
+            "communication_style",
+            "step_by_step",
+            "分步骤说明",
+            "用户偏好按步骤说明操作路径",
+            sourceScene,
+            text);
+}
     return changed;
 }
 
@@ -1115,35 +1241,57 @@ addProfileLine(parts, grouped, "device_preference", "使用习惯");
 addProfileLine(parts, grouped, "frequent_topic", "常问主题");
 addProfileLine(parts, grouped, "repeated_policy_interest", "反复关注政策");
 addProfileLine(parts, grouped, "frequent_question_type", "高频问题类型");
+addProfileLine(parts, grouped, "communication_style", "沟通风格");
 
         return String.join("\n", parts);
     }
 
     private String buildPromptSummaryText(String profileSummary, String habitSummary) {
-        if (isBlank(profileSummary) && isBlank(habitSummary)) {
-            return "";
-        }
-
-        StringBuilder builder = new StringBuilder();
-        builder.append("【用户画像】\n");
-        builder.append("以下信息来自用户历史对话或用户主动提供，仅用于政策匹配参考，不能作为最终资格认定。\n");
-
-        if (!isBlank(profileSummary)) {
-            builder.append(profileSummary).append("\n");
-        }
-
-        if (!isBlank(habitSummary)) {
-            builder.append(habitSummary).append("\n");
-        }
-
-        builder.append("\n使用规则：\n");
-        builder.append("1. 回答时可以结合用户画像做初步判断。\n");
-        builder.append("2. 如果本轮问题提供了与画像冲突的新信息，以本轮问题为准。\n");
-        builder.append("3. 不要把画像当作最终资格认定。\n");
-        builder.append("4. 如果画像不足以判断，应明确提示还需要补充哪些条件。");
-
-        return builder.toString();
+    if (isBlank(profileSummary) && isBlank(habitSummary)) {
+        return "";
     }
+
+    StringBuilder builder = new StringBuilder();
+
+    builder.append("【用户画像上下文】\n");
+    builder.append("以下信息来自用户历史咨询、明确自述或使用习惯，仅用于提升政策咨询的个性化理解，不能作为最终资格认定依据。\n\n");
+
+    if (!isBlank(profileSummary)) {
+        builder.append("一、已知用户基础画像：\n");
+        builder.append(profileSummary).append("\n\n");
+    }
+
+    if (!isBlank(habitSummary)) {
+        builder.append("二、已观察到的咨询习惯：\n");
+        builder.append(habitSummary).append("\n\n");
+    }
+
+    builder.append("三、画像使用边界：\n");
+    builder.append("1. 本轮用户明确提供的信息优先于历史画像。\n");
+    builder.append("2. 如果用户是在帮别人咨询，例如女儿、朋友、客户、员工、同事，不要把咨询对象信息当作用户本人画像。\n");
+    builder.append("3. 如果用户是在假设，例如“如果我是、假如、比如”，不要把假设条件当作用户本人情况。\n");
+    builder.append("4. 如果用户只是泛问“本科生可以申请什么政策”，不要推断用户本人就是本科生。\n");
+    builder.append("5. 使用画像时要自然表达，不要机械说“根据你的画像”。\n");
+    builder.append("6. 对政策资格判断必须严谨，画像只能辅助初判，不能替代政策原文条件。\n");
+    builder.append("7. 如果知识库没有明确依据，应直接说明未命中依据，不能编造。\n\n");
+
+    builder.append("四、沟通与认知策略：\n");
+    builder.append("1. 先理解用户真实需求：他可能是在确认能不能申请、需要哪些材料、下一步怎么做。\n");
+    builder.append("2. 如果用户高频咨询“资格判断”，回答要先给初步判断，再说明依据和缺失条件。\n");
+    builder.append("3. 如果用户长期关注某类政策，应优先围绕该方向给出更具体的匹配建议。\n");
+    builder.append("4. 如果用户使用手机端，应尽量分段清楚、结论前置、避免过长政策堆砌。\n");
+    builder.append("5. 如果用户信息不完整，应温和追问关键条件，不要直接否定用户。\n");
+    builder.append("6. 回答要有温度：先给方向，再说明风险，再给下一步行动建议。\n\n");
+
+    builder.append("五、推荐回答结构：\n");
+    builder.append("1. 一句话结论：先告诉用户大致方向。\n");
+    builder.append("2. 个性化判断：结合本轮信息和已知画像说明原因。\n");
+    builder.append("3. 政策方向：列出可能适配的政策类别或项目。\n");
+    builder.append("4. 缺失条件：说明还需要补充哪些信息才能进一步判断。\n");
+    builder.append("5. 下一步建议：告诉用户应该先查什么、准备什么、或继续补充什么。\n");
+
+    return builder.toString();
+}
 
     private void addProfileLine(List<String> parts,
                                 Map<String, List<String>> grouped,
@@ -1157,6 +1305,159 @@ addProfileLine(parts, grouped, "frequent_question_type", "高频问题类型");
         parts.add("- " + title + "：" + String.join("、", values));
     }
 
+private ProfileSubjectContext analyzeProfileSubjectContext(String text) {
+    if (isBlank(text)) {
+        return new ProfileSubjectContext(
+                "UNKNOWN",
+                null,
+                false,
+                false,
+                false,
+                false,
+                "空文本"
+        );
+    }
+
+    boolean hypothetical = containsAny(text,
+            "如果我是",
+            "假如我是",
+            "要是我是",
+            "假设我是",
+            "比如我是",
+            "如果他是",
+            "假如他是",
+            "假设一个",
+            "举个例子");
+
+    if (hypothetical) {
+        return new ProfileSubjectContext(
+                "HYPOTHETICAL",
+                null,
+                true,
+                false,
+                false,
+                false,
+                "用户在提出假设场景"
+        );
+    }
+
+    String relation = resolveProxyRelation(text);
+    if (!isBlank(relation)) {
+        return new ProfileSubjectContext(
+                "OTHER_PERSON",
+                relation,
+                false,
+                true,
+                false,
+                false,
+                "用户在帮他人咨询"
+        );
+    }
+
+    boolean organizationQuestion = containsAny(text,
+            "我们公司",
+            "我司",
+            "我们单位",
+            "本单位",
+            "我们企业",
+            "公司想申请",
+            "单位想申请",
+            "企业可以申请",
+            "我们团队");
+
+    if (organizationQuestion) {
+        return new ProfileSubjectContext(
+                "ORGANIZATION",
+                null,
+                false,
+                false,
+                true,
+                false,
+                "用户在咨询组织或企业情况"
+        );
+    }
+
+    boolean genericQuestion = isGenericProfileQuestion(text);
+    if (genericQuestion) {
+        return new ProfileSubjectContext(
+                "GENERIC",
+                null,
+                false,
+                false,
+                false,
+                true,
+                "用户在泛问某类人群政策"
+        );
+    }
+
+    if (isUserSelfStatement(text)) {
+        return new ProfileSubjectContext(
+                "SELF",
+                null,
+                false,
+                false,
+                false,
+                false,
+                "用户明确自述本人情况"
+        );
+    }
+
+    return new ProfileSubjectContext(
+            "UNKNOWN",
+            null,
+            false,
+            false,
+            false,
+            false,
+            "无法明确判断咨询主体"
+    );
+}
+private String resolveProxyRelation(String text) {
+    if (isBlank(text)) {
+        return null;
+    }
+
+    if (containsAny(text, "我女儿", "女儿", "孩子", "小孩", "我儿子", "儿子")) {
+        return "child";
+    }
+
+    if (containsAny(text, "我朋友", "朋友", "同学")) {
+        return "friend";
+    }
+
+    if (containsAny(text, "我同事", "同事", "员工", "下属")) {
+        return "colleague_or_employee";
+    }
+
+    if (containsAny(text, "客户", "服务对象", "咨询对象")) {
+        return "customer";
+    }
+
+    if (containsAny(text, "我爱人", "我老婆", "我老公", "配偶")) {
+        return "spouse";
+    }
+
+    if (containsAny(text, "父亲", "母亲", "爸爸", "妈妈", "家人")) {
+        return "family";
+    }
+
+    return null;
+}
+private boolean isGenericProfileQuestion(String text) {
+    if (isBlank(text)) {
+        return false;
+    }
+
+    // 已经明确说“我是/本人/我在”的，不算泛问。
+    if (containsAny(text, "我是", "本人", "我目前", "我现在", "我在", "我的")) {
+        return false;
+    }
+
+    // 典型泛问：某类人可以申请什么？
+    return Pattern.compile(".*(本科生|研究生|硕士|博士|博士后|毕业生|人才|企业|创业者).*(可以|能否|能不能|是否|怎么|如何|哪些|什么|申请|申报).*")
+            .matcher(text)
+            .matches();
+}
     private boolean isUserSelfStatement(String text) {
         if (isBlank(text)) {
             return false;
@@ -1200,6 +1501,7 @@ private String resolveHabitDomain(String habitKey) {
         case "frequent_topic", "frequent_question_topic" -> "topic";
         case "frequent_question_type" -> "question";
         case "repeated_policy_interest" -> "policy";
+        case "communication_style" -> "communication";
         default -> "interaction";
     };
 }
@@ -1391,4 +1693,23 @@ private String resolveWorkExperienceText(Integer years) {
      * 等主画像链路跑通后，再按 ai_user_profile_change_log 真实表结构单独恢复日志。
      */
 }
+private record ProfileSubjectContext(
+        String subjectScope,
+        String relationToUser,
+        boolean hypothetical,
+        boolean proxyQuestion,
+        boolean organizationQuestion,
+        boolean genericQuestion,
+        String reason
+) {
+    boolean allowPersistSelfProfile() {
+        return "SELF".equals(subjectScope)
+                && !hypothetical
+                && !proxyQuestion
+                && !organizationQuestion
+                && !genericQuestion;
+    }
+}
+
+
 }

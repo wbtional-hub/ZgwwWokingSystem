@@ -211,6 +211,7 @@ const questionInputRef = ref(null)
 const activeStreamContext = ref(null)
 const sendRunId = ref(0)
 const isComponentUnmounted = ref(false)
+const forceCreateNextSession = ref(false)
 const FUNCTION_BINDING = getAgentFunctionBinding('talent_policy_consult')
 const SOURCE_SCENE = 'MOBILE_POLICY_CONSULTANT'
 const POLICY_BASE_ID = FUNCTION_BINDING?.defaultBaseId ?? 1
@@ -816,11 +817,12 @@ async function loadSessions() {
   state.sessionList = boundSkillId
     ? sessionList.filter((item) => Number(item?.skillId) === boundSkillId)
     : sessionList
-  if (!state.sessionPinned && !state.sessionInfo?.id && state.sessionList.length) {
-    state.sessionInfo = state.sessionList[0]
-    syncActiveSkillFromSession(state.sessionInfo, resolveFunctionBoundSkill())
-    state.messageList = []
-  }
+  if (!state.sessionInfo?.id && state.sessionList.length) {
+  state.sessionInfo = state.sessionList[0]
+  state.sessionPinned = true
+  syncActiveSkillFromSession(state.sessionInfo, resolveFunctionBoundSkill())
+  await fetchMessages()
+}
 }
 
 async function createOrReuseSession(payload) {
@@ -830,39 +832,35 @@ async function createOrReuseSession(payload) {
     throw new Error(`当前功能缺少默认专家绑定，请确认 ${FUNCTION_BINDING?.defaultSkillCode || 'talent_policy_consultant'} 已发布且当前账号可用。`)
   }
 
-  if (state.sessionPinned && state.sessionInfo?.id && (!explicitSkill || Number(state.sessionInfo.skillId) === Number(explicitSkill.id))) {
+  /*
+   * 核心规则：
+   * 只要用户没有主动点击“新会话”，就一直复用当前 session。
+   * 这样同一个主题内的上下文才能连续，不能每问一句就新建主题。
+   */
+  if (!forceCreateNextSession.value && state.sessionInfo?.id) {
     syncActiveSkillFromSession(state.sessionInfo, explicitSkill)
     return state.sessionInfo
   }
 
-  if (explicitSkill) {
-    const existing = state.sessionList.find((item) => Number(item.skillId) === Number(explicitSkill.id))
-    if (existing?.id && state.sessionPinned) {
-      state.sessionInfo = existing
-      syncActiveSkillFromSession(existing, explicitSkill)
-      return existing
-    }
-  }
+  const session = ensureSuccess(await createAgentSession({
+    skillId: Number(explicitSkill.id),
+    baseId: POLICY_BASE_ID,
+    skillHint: explicitSkill?.skillCode || undefined,
+    question: payload.question,
+    sourceScene: SOURCE_SCENE
+  }), '创建会话失败')
 
-const session = ensureSuccess(await createAgentSession({
-  skillId: Number(explicitSkill.id),
-  baseId: POLICY_BASE_ID,
-  skillHint: explicitSkill?.skillCode || undefined,
-  question: payload.question,
-  sourceScene: SOURCE_SCENE
-}), '创建会话失败')
-state.sessionInfo = session
+  state.sessionInfo = session
+  state.sessionPinned = true
+  forceCreateNextSession.value = false
 
-// 注意：新问题自动创建的会话不要默认 pin。
-// 只有用户点击“会话入口”里的已有会话，才表示继续追问。
-// 否则下一次提问应按新问题重新路由，避免复用上一轮政策意图。
-state.sessionPinned = false
+  syncActiveSkillFromSession(session, explicitSkill)
 
-syncActiveSkillFromSession(session, explicitSkill)
   state.lastChatMeta = {
     skillName: session?.skillName || '',
     skillMatchMode: session?.skillMatchMode || ''
   }
+
   await loadSessions()
   return session
 }
@@ -873,6 +871,7 @@ async function selectSession(item) {
   }
   state.sessionInfo = item
   state.sessionPinned = true
+  forceCreateNextSession.value = false
   state.showHistoryDrawer = false
   syncActiveSkillFromSession(item)
   state.lastChatMeta = {
@@ -886,11 +885,12 @@ async function handleResetSession() {
   abortActiveStream('RESET_SESSION')
   state.sessionInfo = null
   state.sessionPinned = false
+  forceCreateNextSession.value = true
   state.lastChatMeta = null
   state.messageList = []
   state.question = ''
   clearSelectedPolicySuggestion()
-  
+
   syncActiveSkillFromSession(null, resolveFunctionBoundSkill())
   clearPolicySuggestions()
 }

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AiPolicyConditionIndexMapper">
+
+    <resultMap id="AiPolicyConditionIndexMap"
+               type="com.example.lecturesystem.modules.agent.entity.AiPolicyConditionIndex">
+        <id property="id" column="id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="policyName" column="policy_name"/>
+        <result property="policyNo" column="policy_no"/>
+        <result property="policyAliases" column="policy_aliases"/>
+        <result property="conditionType" column="condition_type"/>
+        <result property="conditionCode" column="condition_code"/>
+        <result property="conditionText" column="condition_text"/>
+        <result property="requirementText" column="requirement_text"/>
+        <result property="matchedChunkId" column="matched_chunk_id"/>
+        <result property="sourceText" column="source_text"/>
+        <result property="priority" column="priority"/>
+        <result property="status" column="status"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="selectByConditionCodes" resultMap="AiPolicyConditionIndexMap">
+        SELECT
+            id,
+            base_id,
+            policy_name,
+            policy_no,
+            policy_aliases,
+            condition_type,
+            condition_code,
+            condition_text,
+            requirement_text,
+            matched_chunk_id,
+            source_text,
+            priority,
+            status,
+            created_at,
+            updated_at
+        FROM ai_policy_condition_index
+        WHERE base_id = #{baseId}
+          AND status = 'ACTIVE'
+          AND condition_code IN
+          <foreach collection="conditionCodes" item="code" open="(" separator="," close=")">
+              #{code}
+          </foreach>
+        ORDER BY
+            priority ASC,
+            CASE
+                WHEN policy_no IS NOT NULL AND policy_no != '' THEN 0
+                ELSE 1
+            END,
+            matched_chunk_id ASC,
+            id ASC
+    </select>
+
+</mapper>

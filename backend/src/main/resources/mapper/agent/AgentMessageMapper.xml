@@ -11,4 +11,17 @@
         WHERE session_id = #{sessionId}
         ORDER BY create_time ASC, id ASC
     </select>
+    <select id="queryRecentEntityBySessionId" resultType="com.example.lecturesystem.modules.agent.entity.AgentMessageEntity">
+    SELECT
+        id,
+        session_id AS sessionId,
+        message_role AS messageRole,
+        message_text AS messageText,
+        cited_chunk_ids AS citedChunkIds,
+        create_time AS createTime
+    FROM ai_agent_message
+    WHERE session_id = #{sessionId}
+    ORDER BY create_time DESC, id DESC
+    LIMIT #{limit}
+</select>
 </mapper>

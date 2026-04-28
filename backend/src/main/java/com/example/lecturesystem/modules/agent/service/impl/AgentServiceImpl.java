@@ -66,6 +66,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Collections;
+import java.util.Objects;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -126,23 +128,118 @@ private static final String ANSWER_SOURCE_SYSTEM_META = "SYSTEM_META";
     private static final String FALLBACK_REASON_AI_UNAVAILABLE = "当前 AI 服务暂不可用，已切换为知识库兜底模式。";
     private static final List<String> SEARCH_STOP_TERMS = List.of("请问", "目前", "现在", "有哪些", "有啥", "什么", "怎么", "如何", "可以", "吗", "呢", "一下");
     private static final List<String> SEARCH_HINT_TERMS = List.of(
-            "厦门市", "厦门", "福建省", "福建", "人才", "政策", "人才政策", "补贴", "住房", "安居",
-            "认定", "申报", "创业", "项目", "企业", "引进", "高层次", "落户", "奖励", "经费", "支持"
-    );
+        "厦门市", "厦门", "福建省", "福建", "人才", "政策", "人才政策", "补贴", "住房", "安居",
+        "认定", "申报", "创业", "项目", "企业", "引进", "高层次", "落户", "奖励", "经费", "支持",
+        "服务保障", "人才服务", "绿色通道", "子女入学", "子女教育", "医疗保障", "医疗服务",
+        "健康体检", "配偶就业", "落户服务", "待遇保障"
+);
 
     private static final String CLEAN_POLICY_DOC_TITLE = "厦门市人才政策（清洗导入版）";
     private static final String RAW_POLICY_DOC_TITLE = "2025年厦门市人才";
     private static final List<String> LIST_QUESTION_KEYWORDS = List.of("有哪些", "包含哪些", "包括哪些", "列举", "清单", "名单", "主要有哪些");
     private static final List<String> PROCESS_QUESTION_KEYWORDS = List.of("如何申请", "怎么申请", "申报", "流程", "材料", "入口", "审核", "公示", "认定");
     private static final List<String> CONDITION_QUESTION_KEYWORDS = List.of("条件", "要求", "适用对象", "资格", "适合", "能不能申请");
-    private static final List<String> BENEFIT_QUESTION_KEYWORDS = List.of("补助多少", "补贴多少", "奖励多少", "支持多少", "安家补贴");
-    private static final List<String> SPECIAL_TOPIC_KEYWORDS = List.of("双百计划", "特聘岗位", "专项资金", "群鹭兴厦", "博士后", "人工智能", "台湾特聘专家", "住房", "子女教育", "医疗保障", "服务保障");
+    private static final List<String> BENEFIT_QUESTION_KEYWORDS = List.of(
+        "补助多少",
+        "补贴多少",
+        "奖励多少",
+        "支持多少",
+        "安家补贴",
+        "待遇",
+        "人才待遇",
+        "保障待遇",
+        "待遇保障",
+        "子女入学",
+        "子女就学",
+        "子女教育",
+        "医疗保障",
+        "医疗服务",
+        "健康体检",
+        "服务保障",
+        "人才服务",
+        "绿色通道",
+        "配偶就业",
+        "落户服务"
+);
+    private static final List<String> SPECIAL_TOPIC_KEYWORDS = List.of(
+        "双百计划",
+        "特聘岗位",
+        "专项资金",
+        "群鹭兴厦",
+        "博士后",
+        "人工智能",
+        "台湾特聘专家",
+        "住房",
+        "子女教育",
+        "子女入学",
+        "子女就学",
+        "孩子上学",
+        "小孩上学",
+        "医疗保障",
+        "医疗服务",
+        "健康体检",
+        "就医",
+        "服务保障",
+        "人才服务",
+        "人才服务卡",
+        "绿色通道",
+        "一站式服务",
+        "配偶就业",
+        "落户服务",
+        "人才待遇",
+        "待遇保障"
+);
+
+private static final List<String> SERVICE_GUARANTEE_TERMS = List.of(
+        "服务保障",
+        "人才服务",
+        "人才服务卡",
+        "绿色通道",
+        "一站式服务",
+        "子女教育",
+        "子女入学",
+        "子女就学",
+        "孩子上学",
+        "小孩上学",
+        "随迁子女",
+        "医疗保障",
+        "医疗服务",
+        "健康体检",
+        "就医",
+        "体检",
+        "保健",
+        "配偶就业",
+        "落户服务",
+        "居留服务",
+        "人才待遇",
+        "待遇保障"
+);
     private static final List<String> PROCESS_SECTION_TERMS = List.of(
         "申报与评选", "遴选程序", "遴选与申请流程", "申请流程", "申报流程", "五步流程",
         "组织申报", "资格核查", "部门联审", "综合评审", "公示确定", "研究确认",
         "资金拨付", "兑现申请", "材料清单", "申报材料", "审核程序");
     private static final List<String> CONDITION_SECTION_TERMS = List.of("申报条件", "基本条件", "对象", "适用对象", "资格", "申报要求", "认定条件");
-    private static final List<String> BENEFIT_SECTION_TERMS = List.of("支持政策", "补助标准", "安家补贴", "资金扶持", "奖励", "补贴标准", "资助标准", "管理期");
+    private static final List<String> BENEFIT_SECTION_TERMS = List.of(
+        "支持政策",
+        "补助标准",
+        "安家补贴",
+        "资金扶持",
+        "奖励",
+        "补贴标准",
+        "资助标准",
+        "管理期",
+        "待遇",
+        "服务保障",
+        "人才服务",
+        "子女入学",
+        "子女教育",
+        "医疗保障",
+        "医疗服务",
+        "健康体检",
+        "绿色通道",
+        "配偶就业",
+        "落户服务"
+);
     private static final List<String> OVERVIEW_SECTION_TERMS = List.of("导入目录", "政策正文", "咨询主题", "检索建议", "总览", "目录", "总则", "意见", "实施办法");
     private static final List<String> ABSTRACT_SUMMARY_TERMS = List.of("框架摘要", "基础框架", "主框架", "政策框架");
     private static final String PROCESS_EVIDENCE_MISSING_MESSAGE = "已确认该政策/项目存在，当前知识库已命中部分政策依据，但缺少完整申请流程/申报通知/材料清单依据";
@@ -587,10 +684,26 @@ if (normalizeText(fastPathAnswer) != null) {
                 String userProfilePromptSummary = safeBuildUserProfilePromptSummary(
         user.getUserId(),
         session.getBaseId(),
-        sourceScene
+        sourceScene,
+        request.getQuestion()
 );
+
+String conversationContextPrompt = buildConversationContextPrompt(
+        session.getId(),
+        userMessage.getId()
+);
+
+String repeatedQuestionHint = buildRepeatedQuestionHint(
+        session.getId(),
+        userMessage.getId(),
+        request.getQuestion()
+);
+
 String systemPrompt = buildSystemPrompt(version, preference, request.getQuestion(), sourceScene);
 String userPrompt = buildPolicyAwareUserPrompt(version, request.getQuestion(), context, preference, sourceScene);
+
+userPrompt = appendConversationContextPrompt(userPrompt, conversationContextPrompt);
+userPrompt = appendConversationContextPrompt(userPrompt, repeatedQuestionHint);
 userPrompt = appendUserProfilePrompt(userPrompt, userProfilePromptSummary);
 
 chatResult = chatClient.chatForUsage(
@@ -628,7 +741,7 @@ chatResult = chatClient.chatForUsage(
                         FALLBACK_REASON_AI_UNAVAILABLE + "原因：" + valueOrBlank(normalizeText(ex.getMessage())));
             }
         }
-
+answer = applyQuestionSubjectTone(answer, request.getQuestion());
         AgentMessageEntity assistantMessage = new AgentMessageEntity();
         assistantMessage.setSessionId(session.getId());
         assistantMessage.setMessageRole("assistant");
@@ -696,75 +809,122 @@ logCenterService.recordAiChainSuccess(
     }
 
     @Override
-    public SseEmitter chatStream(AgentChatRequest request) {
-        LoginUser user = currentUserFacade.currentLoginUser();
-        requireAgentPermission(user);
-        AgentSessionEntity session = requireSession(request.getSessionId());
-        if (!permissionService.isSuperAdmin(user.getUserId()) && !session.getUserId().equals(user.getUserId())) {
-            throw new IllegalArgumentException("no permission to access this session");
-        }
-        if (!STATUS_ACTIVE.equalsIgnoreCase(session.getStatus())) {
-            throw new IllegalArgumentException("session is archived and cannot continue chatting");
-        }
-        requireSkillUse(user, session.getSkillId());
-        requireKnowledgeAnalyze(user, session.getBaseId());
+public SseEmitter chatStream(AgentChatRequest request) {
+    LoginUser user = currentUserFacade.currentLoginUser();
+    requireAgentPermission(user);
 
-        SkillVersionEntity version = requireVersion(session.getSkillVersionId());
-String sourceScene = normalizeSourceScene(request == null ? null : request.getSourceScene(), session.getSourceScene());
+    AgentSessionEntity session = requireSession(request.getSessionId());
+    if (!permissionService.isSuperAdmin(user.getUserId()) && !session.getUserId().equals(user.getUserId())) {
+        throw new IllegalArgumentException("no permission to access this session");
+    }
 
-String systemMetaAnswer = resolveSystemMetaAnswer(request.getQuestion(), session, version);
-if (normalizeText(systemMetaAnswer) != null) {
-    SseEmitter emitter = new SseEmitter(0L);
-    CompletableFuture.runAsync(() -> executeSystemMetaChatStream(
-            emitter,
-            request,
-            user,
-            session,
-            sourceScene,
-            systemMetaAnswer,
-            resolveCurrentModelCodeForDisplay(session, version)
-    ));
-    return emitter;
-}
+    if (!STATUS_ACTIVE.equalsIgnoreCase(session.getStatus())) {
+        throw new IllegalArgumentException("session is archived and cannot continue chatting");
+    }
 
-AiPolicyConsultService.ConsultResult policyConsultResult =
-        aiPolicyConsultService.consult(session.getId(), user.getUserId(), session.getBaseId(), request.getQuestion(), sourceScene);
+    requireSkillUse(user, session.getSkillId());
+    requireKnowledgeAnalyze(user, session.getBaseId());
 
-KnowledgeCitationContext context = resolvePolicyConsultContextOrSearch(
-        session,
-        request.getQuestion(),
-        sourceScene,
-        policyConsultResult
-);
+    SkillVersionEntity version = requireVersion(session.getSkillVersionId());
+    String sourceScene = normalizeSourceScene(
+            request == null ? null : request.getSourceScene(),
+            session.getSourceScene()
+    );
 
-PolicyQuestionType questionType = detectPolicyQuestionType(request.getQuestion());
-String regionScope = detectPreferredRegionScope(request.getQuestion(), questionType);
-AgentUserPreferenceEntity preference = agentUserPreferenceMapper.findByUserId(user.getUserId());
-boolean canUseAi = permissionService.isSuperAdmin(user.getUserId()) || aiPermissionService.canUseAi(user.getUserId());
-ProviderResolution providerResolution = canUseAi ? resolveProvider(session, version) : null;
-
-String fastPathAnswer = shouldUsePolicyConsultAsFastPath(policyConsultResult, request.getQuestion())
-        ? policyConsultResult.answer()
-        : resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, session.getBaseId(), context, providerResolution);
-
+    String systemMetaAnswer = resolveSystemMetaAnswer(request.getQuestion(), session, version);
+    if (normalizeText(systemMetaAnswer) != null) {
         SseEmitter emitter = new SseEmitter(0L);
-        CompletableFuture.runAsync(() -> executeChatStream(
+        CompletableFuture.runAsync(() -> executeSystemMetaChatStream(
                 emitter,
                 request,
                 user,
                 session,
-                version,
                 sourceScene,
-                context,
-                preference,
-                canUseAi,
-                providerResolution,
-                questionType,
-                regionScope,
-                fastPathAnswer
+                systemMetaAnswer,
+                resolveCurrentModelCodeForDisplay(session, version)
         ));
         return emitter;
     }
+
+    AiPolicyConsultService.ConsultResult policyConsultResult =
+            aiPolicyConsultService.consult(
+                    session.getId(),
+                    user.getUserId(),
+                    session.getBaseId(),
+                    request.getQuestion(),
+                    sourceScene
+            );
+
+    KnowledgeCitationContext context = resolvePolicyConsultContextOrSearch(
+            session,
+            request.getQuestion(),
+            sourceScene,
+            policyConsultResult
+    );
+
+    PolicyQuestionType questionType = detectPolicyQuestionType(request.getQuestion());
+    String regionScope = detectPreferredRegionScope(request.getQuestion(), questionType);
+    AgentUserPreferenceEntity preference = agentUserPreferenceMapper.findByUserId(user.getUserId());
+
+    boolean canUseAi = permissionService.isSuperAdmin(user.getUserId())
+            || aiPermissionService.canUseAi(user.getUserId());
+
+    ProviderResolution providerResolution = canUseAi ? resolveProvider(session, version) : null;
+
+    /*
+     * 关键修复：
+     * 只要政策咨询新链路已经 applied=true 且 answer 不为空，
+     * 就强制作为 fastPathAnswer 传入 executeChatStream。
+     * 这样条件索引命中结果不会再被后面的 RAG / 大模型覆盖。
+     */
+    String policyConsultAnswer = policyConsultResult != null
+            && policyConsultResult.applied()
+            ? normalizeText(policyConsultResult.answer())
+            : null;
+
+    String fastPathAnswer;
+    if (policyConsultAnswer != null) {
+        fastPathAnswer = policyConsultResult.answer();
+
+       
+
+        if (policyConsultResult.context() != null) {
+            context.getChunks().clear();
+            context.getChunks().addAll(policyConsultResult.context().getChunks());
+        }
+    } else {
+        fastPathAnswer = resolveFastPathAnswer(
+                request.getQuestion(),
+                questionType,
+                regionScope,
+                sourceScene,
+                session.getBaseId(),
+                context,
+                providerResolution
+        );
+
+        
+    }
+
+    SseEmitter emitter = new SseEmitter(0L);
+    CompletableFuture.runAsync(() -> executeChatStream(
+            emitter,
+            request,
+            user,
+            session,
+            version,
+            sourceScene,
+            context,
+            preference,
+            canUseAi,
+            providerResolution,
+            questionType,
+            regionScope,
+            fastPathAnswer
+    ));
+
+    return emitter;
+}
 
     @Override
     public Object queryMessages(Long sessionId) {
@@ -842,21 +1002,41 @@ logCenterService.recordAiChainSuccess(
             OpenAiCompatibleChatClient.ChatResult chatResult = null;
 
             if (normalizeText(fastPathAnswer) != null) {
-                answer = fastPathAnswer;
-                usageSource = USAGE_SOURCE_FAST_PATH_STRUCTURED;
-                modelCode = MODEL_CODE_FAST_PATH;
-                logCenterService.recordAiChainSuccess(
-                        LOG_EVENT_FAST_PATH_HIT,
-                        session.getId(),
-                        user.getUserId(),
-                        sourceScene,
-                        "sessionId=" + session.getId()
-                                + ", questionType=" + questionType
-                                + ", sourceScene=" + sourceScene
-                                + ", answerSource=" + USAGE_SOURCE_FAST_PATH_STRUCTURED
-                                + ", stream=true"
-                );
-            } else if (providerResolution == null || noEvidenceForLlm) {
+    answer = fastPathAnswer;
+    usageSource = USAGE_SOURCE_FAST_PATH_STRUCTURED;
+    modelCode = MODEL_CODE_FAST_PATH;
+    answerSource = USAGE_SOURCE_FAST_PATH_STRUCTURED;
+
+    
+
+    /*
+     * 关键修复：
+     * fastPathAnswer 已经是确定答案，直接推送给前端。
+     * 否则前端会一直等流式 delta，或者后续被 provider stream 覆盖。
+     */
+    streamDeltaSent[0] = emitStreamAnswer(
+            emitter,
+            session.getId(),
+            user.getUserId(),
+            sourceScene,
+            answerSource,
+            answer,
+            splitStructuredStreamSegments(answer)
+    ) > 0 || streamDeltaSent[0];
+
+    logCenterService.recordAiChainSuccess(
+            LOG_EVENT_FAST_PATH_HIT,
+            session.getId(),
+            user.getUserId(),
+            sourceScene,
+            "sessionId=" + session.getId()
+                    + ", questionType=" + questionType
+                    + ", sourceScene=" + sourceScene
+                    + ", answerSource=" + USAGE_SOURCE_FAST_PATH_STRUCTURED
+                    + ", stream=true"
+                    + ", directStreamSent=" + streamDeltaSent[0]
+    );
+} else if (providerResolution == null || noEvidenceForLlm) {
     usageSource = noEvidenceForLlm
             ? USAGE_SOURCE_FALLBACK_NO_POLICY_EVIDENCE
             : (canUseAi ? USAGE_SOURCE_FALLBACK_NO_PROVIDER : USAGE_SOURCE_FALLBACK_NO_AI_PERMISSION);
@@ -877,11 +1057,28 @@ logCenterService.recordAiChainSuccess(
                 String userProfilePromptSummary = safeBuildUserProfilePromptSummary(
         user.getUserId(),
         session.getBaseId(),
-        sourceScene
+        sourceScene,
+        request.getQuestion()
 );
+
+String conversationContextPrompt = buildConversationContextPrompt(
+        session.getId(),
+        userMessage.getId()
+);
+
+String repeatedQuestionHint = buildRepeatedQuestionHint(
+        session.getId(),
+        userMessage.getId(),
+        request.getQuestion()
+);
+
 String systemPrompt = buildSystemPrompt(version, preference, request.getQuestion(), sourceScene);
 String userPrompt = buildPolicyAwareUserPrompt(version, request.getQuestion(), context, preference, sourceScene);
+
+userPrompt = appendConversationContextPrompt(userPrompt, conversationContextPrompt);
+userPrompt = appendConversationContextPrompt(userPrompt, repeatedQuestionHint);
 userPrompt = appendUserProfilePrompt(userPrompt, userProfilePromptSummary);
+
 try {
                     String apiToken = aiTokenCipherSupport.decrypt(providerResolution.provider().getApiTokenCipher());
                     final Long finalSessionId = session.getId();
@@ -1024,8 +1221,13 @@ try {
                 }
             }
 
-            answer = ensureNonEmptyStreamAnswer(answer, session.getId(), user.getUserId(), sourceScene, answerSource);
             if (!streamDeltaSent[0]) {
+    answer = applyQuestionSubjectTone(answer, request.getQuestion());
+}
+
+answer = ensureNonEmptyStreamAnswer(answer, session.getId(), user.getUserId(), sourceScene, answerSource);
+
+if (!streamDeltaSent[0]) {
                 List<String> segments = ANSWER_SOURCE_LLM_PROVIDER.equals(answerSource)
                         ? splitGenericStreamSegments(answer)
                         : splitStructuredStreamSegments(answer);
@@ -1598,13 +1800,19 @@ logCenterService.recordAiChainSuccess(
 
 private String safeBuildUserProfilePromptSummary(Long userId,
                                                  Long baseId,
-                                                 String sourceScene) {
+                                                 String sourceScene,
+                                                 String question) {
     if (aiUserProfileService == null || userId == null) {
         return "";
     }
 
     try {
-        String summary = aiUserProfileService.buildPromptSummary(userId, baseId, sourceScene);
+        String summary = aiUserProfileService.buildPromptSummaryForQuestion(
+                userId,
+                baseId,
+                sourceScene,
+                question
+        );
         return normalizeText(summary) == null ? "" : summary.trim();
     } catch (Exception ex) {
         logCenterService.recordAiChainFailed(
@@ -1626,6 +1834,120 @@ private String appendUserProfilePrompt(String prompt, String userProfilePromptSu
 
     String basePrompt = prompt == null ? "" : prompt;
     return basePrompt + "\n\n" + userProfilePromptSummary.trim();
+}
+
+private String appendConversationContextPrompt(String prompt, String contextPrompt) {
+    if (normalizeText(contextPrompt) == null) {
+        return prompt;
+    }
+
+    String basePrompt = prompt == null ? "" : prompt;
+    return basePrompt + "\n\n" + contextPrompt.trim();
+}
+
+private String buildConversationContextPrompt(Long sessionId, Long currentMessageId) {
+    if (sessionId == null) {
+        return "";
+    }
+
+    List<AgentMessageEntity> recentMessages = agentMessageMapper.queryRecentEntityBySessionId(sessionId, 20);
+    if (recentMessages == null || recentMessages.isEmpty()) {
+        return "";
+    }
+
+    Collections.reverse(recentMessages);
+
+    StringBuilder builder = new StringBuilder();
+    builder.append("【当前主题历史上下文】\n");
+    builder.append("以下内容是用户在当前主题内的连续对话历史。回答本轮问题时必须结合上下文，不要聊了这句忘了上句。\n");
+    builder.append("如果用户重复问了前面已经问过的问题，应自然提示“上面已经提到过，我再帮您整理一下重点”。\n");
+    builder.append("如果用户补充了新条件，应基于新条件修正或细化前面的判断。\n");
+    builder.append("如果用户是在帮别人问、假设场景或泛问，不要把这些信息误当成用户本人画像。\n\n");
+
+    int totalLength = 0;
+    for (AgentMessageEntity message : recentMessages) {
+        if (message == null || Objects.equals(message.getId(), currentMessageId)) {
+            continue;
+        }
+
+        String role = normalizeText(message.getMessageRole());
+        String text = normalizeText(message.getMessageText());
+        if (text == null) {
+            continue;
+        }
+
+        String roleLabel = "assistant".equalsIgnoreCase(role) ? "助手" : "用户";
+        String line = roleLabel + "：" + text + "\n";
+
+        totalLength += line.length();
+        if (totalLength > 3500) {
+            builder.append("……以上为当前主题最近部分上下文，较早内容已省略。\n");
+            break;
+        }
+
+        builder.append(line);
+    }
+
+    return builder.toString();
+}
+
+private String buildRepeatedQuestionHint(Long sessionId, Long currentMessageId, String question) {
+    String normalizedQuestion = normalizeForRepeatCheck(question);
+    if (sessionId == null || normalizedQuestion == null) {
+        return "";
+    }
+
+    List<AgentMessageEntity> recentMessages = agentMessageMapper.queryRecentEntityBySessionId(sessionId, 20);
+    if (recentMessages == null || recentMessages.isEmpty()) {
+        return "";
+    }
+
+    for (AgentMessageEntity message : recentMessages) {
+        if (message == null || Objects.equals(message.getId(), currentMessageId)) {
+            continue;
+        }
+
+        String role = normalizeText(message.getMessageRole());
+        if (!"user".equalsIgnoreCase(role)) {
+            continue;
+        }
+
+        String oldQuestion = normalizeForRepeatCheck(message.getMessageText());
+        if (oldQuestion == null) {
+            continue;
+        }
+
+        if (oldQuestion.equals(normalizedQuestion)
+                || oldQuestion.contains(normalizedQuestion)
+                || normalizedQuestion.contains(oldQuestion)) {
+            return "【重复提问提示】\n"
+                    + "用户本轮问题与当前主题前文高度相似。回答时请自然承接上下文，可以说："
+                    + "“上面已经提到过，我再帮您整理一下重点。”然后再给出更清晰、更简洁的归纳。\n";
+        }
+    }
+
+    return "";
+}
+
+private String normalizeForRepeatCheck(String text) {
+    String normalized = normalizeText(text);
+    if (normalized == null) {
+        return null;
+    }
+    return normalized
+            .replace("？", "")
+            .replace("?", "")
+            .replace("。", "")
+            .replace(".", "")
+            .replace("，", "")
+            .replace(",", "")
+            .replace("、", "")
+            .replace("；", "")
+            .replace(";", "")
+            .replace("：", "")
+            .replace(":", "")
+            .replace(" ", "")
+            .trim();
 }
 
 private String resolveSystemMetaAnswer(String question,
@@ -1779,6 +2101,19 @@ private boolean looksLikePolicyQuestion(String question) {
             "服务保障",
             "子女教育",
             "医疗保障",
+            "子女入学",
+"子女就学",
+"子女教育",
+"孩子上学",
+"医疗保障",
+"医疗服务",
+"健康体检",
+"服务保障",
+"人才服务",
+"绿色通道",
+"配偶就业",
+"落户服务",
+"待遇保障",
             "台湾特聘",
             "百人计划",
             "四大经济",
@@ -2159,7 +2494,108 @@ private void executeSystemMetaChatStream(SseEmitter emitter,
     private int safeLength(String value) {
         return value == null ? 0 : value.length();
     }
+private KnowledgeCitationContext buildConditionReverseContext(Long baseId,
+                                                              String question,
+                                                              String sourceScene,
+                                                              int topN) {
+    KnowledgeCitationContext context = new KnowledgeCitationContext();
+    if (baseId == null) {
+        return context;
+    }
 
+    LinkedHashSet<Long> chunkIds = new LinkedHashSet<>();
+    List<String> candidates = buildConditionReverseCandidates(question);
+    String regionScope = detectPreferredRegionScope(question, PolicyQuestionType.CONDITION);
+    int limit = Math.max(topN, 10);
+
+    /*
+     * 第 0 轮：精准政策强召回。
+     * 这一步很关键：用户问“本科生/CFA/软件工程可以申请什么”，
+     * 不能只靠自然搜索，要直接扫描可能包含这些条件的产业人才项目。
+     */
+    appendExactPolicyConditionReverseChunks(
+            context,
+            chunkIds,
+            baseId,
+            question,
+            regionScope,
+            sourceScene,
+            limit
+    );
+
+    /*
+     * 第 1 轮：严格条件类切片召回。
+     */
+    if (context.getChunks().size() < 6) {
+        appendContextChunks(
+                context,
+                chunkIds,
+                baseId,
+                candidates,
+                limit,
+                limit,
+                PolicyQuestionType.CONDITION,
+                regionScope,
+                sourceScene,
+                item -> isConditionReverseChunk(item, question)
+        );
+    }
+
+    /*
+     * 第 2 轮：放宽到候选词命中。
+     */
+    if (context.getChunks().size() < 6) {
+        appendContextChunks(
+                context,
+                chunkIds,
+                baseId,
+                candidates,
+                limit,
+                limit,
+                PolicyQuestionType.CONDITION,
+                regionScope,
+                sourceScene,
+                item -> containsAny(buildChunkSearchText(item), candidates)
+        );
+    }
+
+    /*
+     * 第 3 轮：本科/金融证书专门强召回。
+     */
+    if (context.getChunks().size() < 6
+            && containsAny(question, List.of("本科", "本科生", "学士", "学士学位", "CFA", "FRM", "CPA", "金融"))) {
+        appendContextChunks(
+                context,
+                chunkIds,
+                baseId,
+                List.of(
+                        "金融服务产业人才项目 本科及以上 CFA FRM CPA",
+                        "金融服务产业人才 申报条件 本科及以上",
+                        "所在机构推荐申报 本科及以上 高级职称",
+                        "金融服务产业人才项目 申报方式 CFA FRM CPA 精算 法律职业资格"
+                ),
+                limit,
+                limit,
+                PolicyQuestionType.CONDITION,
+                regionScope,
+                sourceScene,
+                item -> containsAny(buildChunkSearchText(item), List.of(
+                        "金融服务产业人才",
+                        "本科及以上",
+                        "本科以上",
+                        "CFA",
+                        "FRM",
+                        "CPA",
+                        "精算",
+                        "法律职业",
+                        "高级职称",
+                        "所在机构推荐"
+                ))
+        );
+    }
+
+    return context;
+}
     private KnowledgeCitationContext buildContext(Long baseId, String question, int topN, String sourceScene) {
         KnowledgeCitationContext context = new KnowledgeCitationContext();
         if (baseId == null || topN <= 0) {
@@ -2482,7 +2918,17 @@ private void executeSystemMetaChatStream(SseEmitter emitter,
             }
         }
         appendPolicyConsultationRules(builder, question, sourceScene);
-        return builder.toString();
+
+builder.append("\n【连续对话规则】\n");
+builder.append("1. 你正在和用户在同一个主题中连续聊天，必须参考当前主题历史上下文。\n");
+builder.append("2. 如果用户重复询问前面已经问过的问题，要自然提醒“上面已经提到过，我再帮您整理一下重点”，不要像第一次听到一样回答。\n");
+builder.append("3. 如果用户补充了新信息，要基于新信息修正或细化前面的判断。\n");
+builder.append("4. 如果用户问“那我呢、这个呢、还有吗、继续”等省略问题，必须结合前文理解指代。\n");
+builder.append("5. 不要把帮别人问、假设场景、泛问条件误当成用户本人长期画像。\n");
+builder.append("6. 回答要像政策顾问一样自然承接上下文，而不是每次重新开始。\n");
+builder.append("7. 如果用户指出前文不准确、补充政策原文或提供新的政策依据，要先承认用户补充的信息有价值，再基于知识库和上下文修正回答，不要机械重复“依据不足”。\n");
+
+return builder.toString();
     }
 
     private String buildUserPrompt(SkillVersionEntity version,
@@ -2540,6 +2986,23 @@ private void executeSystemMetaChatStream(SseEmitter emitter,
         }
         StringBuilder rules = new StringBuilder();
         rules.append("Active routing skills: ").append(resolvePolicyRouteSkills(question)).append(".\n\n");
+                if (isConditionReverseQuestion(question)) {
+            rules.append("This is a CONDITION_REVERSE policy matching question. ")
+                    .append("The user is asking which policies may match a condition such as education, degree, certificate, profession, title, or industry. ")
+                    .append("Do not answer that there is no policy only because no policy is named exactly after the condition. ")
+                    .append("Explain that the condition may be an entry requirement rather than a standalone policy name. ")
+                    .append("List matched policy or project names from the knowledge context, and for each one explain: matched condition, additional requirements, and uncertainty. ")
+                    .append("For undergraduate/bachelor questions, pay special attention to clauses like 本科及以上学历、学士学位、所在机构推荐、CFA、FRM、CPA、精算、法律职业资格、高级职称. ")
+                    .append("Answer in Chinese with a warm policy-consultant tone.\n\n");
+        }
+        if (isUserCorrectionOrEvidenceSupplement(question)) {
+    rules.append("The user is correcting the previous answer or supplementing policy evidence. ")
+            .append("You must acknowledge the user's supplement first, then re-check the knowledge context. ")
+            .append("Do not mechanically answer that evidence is insufficient. ")
+            .append("If the user's provided clause is not fully verified by the knowledge base, say that the supplement is useful but still needs official source verification. ")
+            .append("Use a warm correction style such as: “您这个补充很关键，我先按您提到的政策方向重新核对。” ")
+            .append("Then explain what can be preliminarily judged and what still requires official policy text.\n\n");
+}
         if (SOURCE_SCENE_MOBILE_POLICY_CONSULTANT.equals(sourceScene)) {
             if (questionType == PolicyQuestionType.LIST) {
                 rules.append("For MOBILE_POLICY_CONSULTANT list questions, you may answer slightly longer than usual so that 5 to 8 concrete policy or project names can be listed clearly.\n\n");
@@ -2581,11 +3044,25 @@ private boolean shouldUsePolicyConsultAsFastPath(AiPolicyConsultService.ConsultR
     if (result == null || !result.applied()) {
         return false;
     }
-
+    /*
+     * 条件反查类问题不能走普通 FAST_PATH。
+     * 例如“本科生可以申请什么政策”，本质是按学历/证书/专业条件反查可适配政策，
+     * 不能简单返回“当前知识库未命中足够专题证据”。
+     */
+    if (isConditionReverseQuestion(question)) {
+        return false;
+    }
     AiPolicyConsultService.DiagnosticTrace trace = result.trace();
     if (trace == null) {
         return false;
     }
+    /*
+ * 用户在纠错、反驳或补充政策依据时，不能直接走 FAST_PATH 依据不足。
+ * 这类问题需要交给 LLM 结合上下文重新组织回答，避免显得“没听懂用户刚才说的话”。
+ */
+if (isUserCorrectionOrEvidenceSupplement(question)) {
+    return false;
+}
 
     // 1. 精准 FAQ 命中：继续快速返回，0 Token
     if (trace.faqHit()) {
@@ -2595,26 +3072,356 @@ private boolean shouldUsePolicyConsultAsFastPath(AiPolicyConsultService.ConsultR
     /*
      * 2. 综合分析 / 多政策比较 / 个人匹配类问题：
      * 不要因为某一个专题证据不足就提前 FAST_PATH 返回。
-     * 这类问题应该交给外部 AI，基于已命中的多个政策证据做分析或追问。
      */
     if (shouldUseLlmForPolicyAnalysis(question)) {
         return false;
     }
 
-    // 3. 明确依据不足：不要调用外部 AI，避免无依据生成
+    /*
+     * 3. 带限定词的清单类问题：
+     * 例如“涉及个税的条款、涉及社保的条款、有哪些申报材料、哪些不能重复享受”。
+     * 这类问题不要返回普通依据不足；如果后续 context 有证据，应交给外部 AI 组织。
+     */
+    if (isNarrowPolicyListQuestion(question)) {
+        return false;
+    }
+
+    // 4. 明确依据不足：不要调用外部 AI，避免无依据生成
     if (isPolicyEvidenceInsufficient(result)) {
         return true;
     }
 
-    // 4. 其他已命中知识库证据的问题，交给 glm-4.7 组织答案
+    // 5. 其他已命中知识库证据的问题，交给 glm-4.7 组织答案
     return false;
+}
+
+private boolean isConditionReverseQuestion(String question) {
+    String text = normalizeText(question);
+    if (text == null) {
+        return false;
+    }
+
+    boolean hasCondition = containsAny(text, List.of(
+            "本科生",
+            "本科",
+            "本科学历",
+            "本科及以上",
+            "学士",
+            "学士学位",
+            "大学本科",
+            "硕士",
+            "研究生",
+            "博士",
+            "博士后",
+            "CFA",
+            "FRM",
+            "CPA",
+            "精算",
+            "法律职业",
+            "高级职称",
+            "中级职称",
+            "职称",
+            "资格证书",
+            "技能证书",
+            "软件工程",
+            "软件开发",
+            "人工智能",
+            "金融",
+            "金融服务"
+    ));
+
+    boolean asksPolicyMatch = containsAny(text, List.of(
+            "可以申请",
+            "能申请",
+            "能不能申请",
+            "能否申请",
+            "适合申请",
+            "适合什么",
+            "申请什么",
+            "申请哪些",
+            "哪些政策",
+            "什么政策",
+            "人才政策",
+            "补贴",
+            "补助",
+            "政策"
+    ));
+
+    return hasCondition && asksPolicyMatch;
+}
+private List<String> resolveConditionReverseSeedPolicies(String question) {
+    String text = normalizeText(question);
+    if (text == null) {
+        return List.of();
+    }
+
+    LinkedHashSet<String> policies = new LinkedHashSet<>();
+
+    boolean bachelorLike = containsAny(text, List.of(
+            "本科生", "本科", "本科学历", "本科及以上", "学士", "学士学位", "大学本科"
+    ));
+
+    boolean financeLike = containsAny(text, List.of(
+            "金融", "金融服务", "CFA", "FRM", "CPA", "精算", "法律职业"
+    ));
+
+    boolean softwareLike = containsAny(text, List.of(
+            "软件工程", "软件", "软件开发", "信息技术", "计算机", "人工智能", "AI"
+    ));
+
+    boolean titleLike = containsAny(text, List.of(
+            "高级职称", "中级职称", "职称", "资格证书", "技能证书"
+    ));
+
+    /*
+     * 本科/学士类泛问，不能只搜“双百计划”。
+     * 应优先扫描各产业人才项目的申报条件。
+     */
+    if (bachelorLike) {
+        policies.add("厦门市金融服务产业人才项目实施办法");
+        policies.add("厦门市电子信息产业人才项目实施办法");
+        policies.add("厦门市重点产业骨干人才项目实施办法");
+        policies.add("厦门市商贸物流产业人才项目实施办法");
+        policies.add("厦门市文旅创意产业人才项目实施办法");
+        policies.add("厦门市新能源和新材料产业人才项目实施办法");
+        policies.add("厦门市生物医药产业人才项目实施办法");
+    }
+
+    if (financeLike) {
+        policies.add("厦门市金融服务产业人才项目实施办法");
+    }
+
+    if (softwareLike) {
+        policies.add("厦门市电子信息产业人才项目实施办法");
+        policies.add("厦门市重点产业骨干人才项目实施办法");
+        policies.add("厦门市支持人工智能领域人才发展的若干措施");
+    }
+
+    if (titleLike) {
+        policies.add("厦门市重点产业骨干人才项目实施办法");
+        policies.add("厦门市金融服务产业人才项目实施办法");
+        policies.add("厦门市电子信息产业人才项目实施办法");
+    }
+
+    return new ArrayList<>(policies);
+}
+private void appendExactPolicyConditionReverseChunks(KnowledgeCitationContext context,
+                                                     LinkedHashSet<Long> chunkIds,
+                                                     Long baseId,
+                                                     String question,
+                                                     String regionScope,
+                                                     String sourceScene,
+                                                     int limit) {
+    if (context == null || baseId == null || limit <= 0) {
+        return;
+    }
+
+    List<String> policyNames = resolveConditionReverseSeedPolicies(question);
+    if (policyNames.isEmpty()) {
+        return;
+    }
+
+    for (String policyName : policyNames) {
+        if (context.getChunks().size() >= limit) {
+            return;
+        }
+
+        List<KnowledgeSearchResultVO> matchedChunks = searchExactPolicyChunks(
+                baseId,
+                policyName,
+                regionScope,
+                sourceScene
+        );
+
+        if (matchedChunks == null || matchedChunks.isEmpty()) {
+            continue;
+        }
+
+        for (KnowledgeSearchResultVO item : matchedChunks) {
+            if (context.getChunks().size() >= limit) {
+                return;
+            }
+
+            if (!isStrongConditionReverseSeedChunk(item, question, policyName)) {
+                continue;
+            }
+
+            Long chunkId = item.getChunkId();
+            if (chunkId != null && !chunkIds.add(chunkId)) {
+                continue;
+            }
+
+            context.getChunks().add(item);
+        }
+    }
+}
+private boolean isStrongConditionReverseSeedChunk(KnowledgeSearchResultVO item,
+                                                  String question,
+                                                  String seedPolicyName) {
+    if (item == null) {
+        return false;
+    }
+
+    String text = buildChunkSearchText(item);
+    if (normalizeText(text) == null) {
+        return false;
+    }
+
+    String upperText = text.toUpperCase();
+    String policyText = String.join(" ",
+            valueOrBlank(seedPolicyName),
+            valueOrBlank(resolvePolicyDisplayName(item)),
+            valueOrBlank(item.getPolicyName()),
+            valueOrBlank(item.getDocTitle()),
+            valueOrBlank(item.getChapterTitle()),
+            valueOrBlank(item.getSectionTitle()),
+            valueOrBlank(item.getHeadingPath())
+    );
+
+    boolean policyMatched = containsKeyword(policyText, seedPolicyName)
+            || containsAny(policyText, List.of(
+            "金融服务产业人才",
+            "电子信息产业人才",
+            "重点产业骨干人才",
+            "人工智能领域人才",
+            "商贸物流产业人才",
+            "文旅创意产业人才",
+            "新能源和新材料产业人才",
+            "生物医药产业人才"
+    ));
+
+    if (!policyMatched) {
+        return false;
+    }
+
+    boolean conditionSection = containsAny(text, List.of(
+            "申报条件",
+            "基本条件",
+            "适用对象",
+            "资格要求",
+            "认定条件",
+            "申报方式",
+            "所在机构推荐",
+            "推荐申报",
+            "学历",
+            "学位",
+            "职称",
+            "资格证书"
+    ));
+
+    boolean conditionMatched = containsAny(text, buildConditionReverseCandidates(question))
+            || upperText.contains("CFA")
+            || upperText.contains("FRM")
+            || upperText.contains("CPA")
+            || containsAny(text, List.of(
+            "本科及以上",
+            "本科以上",
+            "学士",
+            "学士学位",
+            "高级职称",
+            "精算",
+            "法律职业资格",
+            "所在机构推荐申报"
+    ));
+
+    return conditionSection && conditionMatched;
+}
+private List<String> buildConditionReverseCandidates(String question) {
+    String text = normalizeText(question);
+    if (text == null) {
+        return List.of();
+    }
+
+    LinkedHashSet<String> candidates = new LinkedHashSet<>();
+
+    candidates.add(text);
+    candidates.add("申报条件");
+    candidates.add("适用对象");
+    candidates.add("资格要求");
+    candidates.add("认定条件");
+    candidates.add("申报方式");
+    candidates.add("所在机构推荐申报");
+
+    if (containsAny(text, List.of("本科生", "本科", "本科学历", "本科及以上", "学士", "学士学位", "大学本科"))) {
+        candidates.add("本科及以上学历");
+        candidates.add("本科及以上");
+        candidates.add("本科学历");
+        candidates.add("学士学位");
+        candidates.add("学士");
+        candidates.add("大学本科");
+        candidates.add("普通高校毕业生");
+        candidates.add("高校毕业生");
+        candidates.add("青年人才");
+    }
+
+    if (containsAny(text, List.of("金融", "金融服务", "CFA", "FRM", "CPA", "精算", "法律职业"))) {
+        candidates.add("金融服务产业人才");
+        candidates.add("金融服务产业人才项目");
+        candidates.add("CFA");
+        candidates.add("FRM");
+        candidates.add("CPA");
+        candidates.add("精算");
+        candidates.add("法律职业资格");
+        candidates.add("高级职称");
+        candidates.add("所在机构推荐");
+    }
+
+    if (containsAny(text, List.of("软件工程", "软件", "软件开发", "信息技术", "计算机", "人工智能", "AI"))) {
+        candidates.add("电子信息产业人才");
+        candidates.add("软件信息技术");
+        candidates.add("电子信息");
+        candidates.add("人工智能人才");
+        candidates.add("重点产业骨干人才");
+        candidates.add("群鹭兴厦");
+    }
+
+    if (containsAny(text, List.of("高级职称", "中级职称", "职称"))) {
+        candidates.add("高级职称");
+        candidates.add("中级职称");
+        candidates.add("专业技术职称");
+        candidates.add("资格要求");
+        candidates.add("认定条件");
+    }
+
+    return new ArrayList<>(candidates);
+}
+
+private boolean isConditionReverseChunk(KnowledgeSearchResultVO item, String question) {
+    if (item == null) {
+        return false;
+    }
+
+    String text = buildChunkSearchText(item);
+    if (normalizeText(text) == null) {
+        return false;
+    }
+
+    boolean conditionSection = containsAny(text, List.of(
+            "申报条件",
+            "基本条件",
+            "适用对象",
+            "资格要求",
+            "认定条件",
+            "申报方式",
+            "所在机构推荐",
+            "推荐申报",
+            "学历",
+            "职称",
+            "资格证书"
+    ));
+
+    boolean matchedCondition = containsAny(text, buildConditionReverseCandidates(question));
+
+    return conditionSection && matchedCondition;
 }
 private boolean shouldUseLlmForPolicyAnalysis(String question) {
     String normalized = normalizeText(question);
     if (normalized == null) {
         return false;
     }
-
+    if (isConditionReverseQuestion(question)) {
+        return true;
+    }
     // 明显的综合分析、政策匹配、对比判断类问题
     if (containsAny(normalized, List.of(
             "哪个更适合",
@@ -2630,8 +3437,13 @@ private boolean shouldUseLlmForPolicyAnalysis(String question) {
             "哪个政策",
             "哪些政策适合",
             "可以申请哪些",
+            "可以申请什么",
             "能申请哪些",
-            "怎么选择",
+            "能申请什么",
+            "我可以申请",
+            "我能申请",
+            "我适合",
+            "帮我判断",
             "政策匹配"
     ))) {
         return true;
@@ -2671,9 +3483,9 @@ private int countMatchedPolicyTopics(String question) {
     if (containsAny(question, List.of("福建省", "省级", "百人计划", "高层次人才认定"))) {
         count++;
     }
-    if (containsAny(question, List.of("子女教育", "医疗保障", "服务保障"))) {
-        count++;
-    }
+    if (containsAny(question, SERVICE_GUARANTEE_TERMS)) {
+    count++;
+}
 
     return count;
 }
@@ -2704,6 +3516,54 @@ private KnowledgeCitationContext resolvePolicyConsultContextOrSearch(AgentSessio
                                                                      String question,
                                                                      String sourceScene,
                                                                      AiPolicyConsultService.ConsultResult policyConsultResult) {
+    
+       /*
+     * 条件反查类问题：优先按扩展条件重新检索。
+     * 例如“本科生可以申请什么政策”，需要检索“本科及以上、学士、申报条件、适用对象”等条件词。
+     */
+    if (isConditionReverseQuestion(question)) {
+    KnowledgeCitationContext conditionContext = buildConditionReverseContext(
+            session.getBaseId(),
+            question,
+            sourceScene,
+            10
+    );
+
+    int hitCount = conditionContext == null || conditionContext.getChunks() == null
+            ? 0
+            : conditionContext.getChunks().size();
+
+    logCenterService.recordAiChainSuccess(
+            "POLICY_CONDITION_REVERSE_SEARCH",
+            session.getId(),
+            session.getUserId(),
+            sourceScene,
+            "question=" + valueOrBlank(normalizeText(question))
+                    + ", candidates=" + String.join("|", buildConditionReverseCandidates(question))
+                    + ", seedPolicies=" + String.join("|", resolveConditionReverseSeedPolicies(question))
+                    + ", hitCount=" + hitCount
+    );
+
+    if (conditionContext != null
+            && conditionContext.getChunks() != null
+            && !conditionContext.getChunks().isEmpty()) {
+        return conditionContext;
+    }
+}
+   
+    /*
+ * 用户纠错或补充了政策依据时，优先按用户原话重新检索。
+ * 例如用户补充“金融服务产业人才项目、本科及以上学历、CFA/FRM/CPA”等，
+ * 这些词本身就是很强的检索线索。
+ */
+if (isUserCorrectionOrEvidenceSupplement(question)) {
+    KnowledgeCitationContext rebuiltContext = buildContext(session.getBaseId(), question, 10, sourceScene);
+    if (rebuiltContext != null
+            && rebuiltContext.getChunks() != null
+            && !rebuiltContext.getChunks().isEmpty()) {
+        return rebuiltContext;
+    }
+}
     /*
      * 综合分析 / 多政策比较 / 个人匹配类问题：
      * 优先重新按原问题检索，尽量命中多个专题，而不是只使用 policyConsultResult 中偏向某一个专题的 context。
@@ -2738,10 +3598,188 @@ private boolean shouldBlockLlmBecauseNoPolicyEvidence(String sourceScene,
         return false;
     }
 
-    // 非政策问题前面 resolveSystemMetaAnswer 已经拦截过；
-    // 这里保护政策咨询场景：没有证据时不要让大模型自由发挥。
     return looksLikePolicyQuestion(compactQuestionText(question));
 }
+private boolean isNarrowPolicyListQuestion(String question) {
+    String text = normalizeText(question);
+    if (text == null) {
+        return false;
+    }
+
+    /*
+     * 必须是“清单/有哪些”类表达，同时又带有明确限定词。
+     * 这样可以避免误伤普通问题：
+     * - 厦门有哪些人才政策        → 可以走总览
+     * - 厦门有哪些涉及个税的条款  → 不能走总览
+     */
+    boolean looksLikeListQuestion = containsAny(text, List.of(
+            "有哪些",
+            "有什么",
+            "包括哪些",
+            "包含哪些",
+            "涉及哪些",
+            "哪些政策",
+            "哪些条款",
+            "哪些要求"
+    ));
+
+    if (!looksLikeListQuestion) {
+        return false;
+    }
+
+    boolean hasNarrowKeyword = containsAny(text, List.of(
+            "个税",
+            "个人所得税",
+            "社保个税",
+            "纳税",
+            "税收",
+            "税务",
+            "扣税",
+            "综合经济贡献",
+
+            "社保",
+            "医保",
+            "公积金",
+
+            "材料",
+            "申报材料",
+            "材料清单",
+            "证明材料",
+
+            "流程",
+            "办理流程",
+            "申报流程",
+            "怎么申请",
+            "如何申请",
+
+            "管理期",
+            "服务期",
+            "考核",
+            "年度考核",
+
+            "重复享受",
+            "不能重复",
+            "叠加享受",
+            "同时享受",
+
+            "拨付",
+            "兑现",
+            "发放",
+            "资金拨付",
+
+            "追回",
+            "终止资助",
+            "违规",
+            "风险",
+            "审计"
+    ));
+
+    return hasNarrowKeyword;
+}
+
+private boolean isUserCorrectionOrEvidenceSupplement(String question) {
+    String text = normalizeText(question);
+    if (text == null) {
+        return false;
+    }
+
+    boolean correctionOrSupplement = containsAny(text, List.of(
+            "不对",
+            "不是",
+            "应该",
+            "我记得",
+            "我看到",
+            "我查到",
+            "政策如下",
+            "条款如下",
+            "规定如下",
+            "文件里面",
+            "政策里面",
+            "申报方式里面",
+            "原文",
+            "依据如下",
+            "补充一下"
+    ));
+
+    boolean policyEvidenceLike = looksLikePolicyQuestion(text)
+            || containsAny(text, List.of(
+            "本科及以上",
+            "本科以上",
+            "金融服务产业人才",
+            "金融服务产业人才项目",
+            "CFA",
+            "FRM",
+            "CPA",
+            "精算",
+            "法律职业",
+            "高级职称",
+            "博士学位",
+            "所在机构推荐申报",
+            "申报方式"
+    ));
+
+    return correctionOrSupplement && policyEvidenceLike;
+}
+
+private boolean isContextDependentFollowupQuestion(String question) {
+    String text = normalizeText(question);
+    if (text == null) {
+        return false;
+    }
+
+    return containsAny(text, List.of(
+            "我可以申请什么",
+            "我还能申请什么",
+            "那我呢",
+            "这个呢",
+            "刚才那个",
+            "上面那个",
+            "还有吗",
+            "继续",
+            "再说一下",
+            "重新整理",
+            "总结一下",
+            "帮我整理一下"
+    ));
+}
+private String applyQuestionSubjectTone(String answer, String question) {
+    if (normalizeText(answer) == null) {
+        return answer;
+    }
+
+    String text = normalizeText(question);
+    if (text == null) {
+        return answer;
+    }
+
+    String result = answer;
+
+    if (containsAny(text, List.of("我女儿", "女儿", "我儿子", "儿子", "孩子", "小孩"))) {
+        if (!result.contains("帮女儿") && !result.contains("帮孩子") && !result.contains("和您本人情况分开")) {
+            return "如果是帮孩子咨询，这个判断要和您本人情况分开看。\n\n" + result;
+        }
+    }
+
+    if (containsAny(text, List.of("如果我是", "假如我是", "假设我是", "比如我是"))) {
+        result = result
+                .replace("结论：作为博士后", "结论：如果按博士后身份来看")
+                .replace("作为博士后", "如果按博士后身份来看")
+                .replace("您可申请", "一般可以重点关注")
+                .replace("您可以申请", "一般可以重点关注");
+
+        if (!result.contains("假设") && !result.contains("如果按")) {
+            return "这是一个假设场景，我先按您提出的身份条件判断，不把它作为您本人长期画像。\n\n" + result;
+        }
+        return result;
+    }
+
+    if (isContextDependentFollowupQuestion(text) && !result.contains("上面已经") && !result.contains("前面已经")) {
+        return "结合上面已经聊到的信息，我再帮您整理一下重点。\n\n" + result;
+    }
+
+    return result;
+}
+
     private String resolveFastPathAnswer(String question,
                                          PolicyQuestionType questionType,
                                          String regionScope,
@@ -2749,6 +3787,12 @@ private boolean shouldBlockLlmBecauseNoPolicyEvidence(String sourceScene,
                                          Long baseId,
                                          KnowledgeCitationContext context,
                                          ProviderResolution providerResolution) {
+        if (isConditionReverseQuestion(question)) {
+        return null;
+    }
+        if (isNarrowPolicyListQuestion(question)) {
+        return null;
+    }
         if (!SOURCE_SCENE_MOBILE_POLICY_CONSULTANT.equals(sourceScene)
                 || providerResolution == null
                 || !isFastPathQuestionType(questionType)) {
@@ -4429,10 +5473,73 @@ private boolean looksLikeFundingProcessOnly(String step) {
         return builder.toString().trim();
     }
 
+private String buildConditionReverseFallbackAnswer(String question,
+                                                   String regionScope,
+                                                   List<KnowledgeSearchResultVO> chunks) {
+    List<KnowledgeSearchResultVO> usable = chunks == null ? List.of() : selectFallbackChunks(
+            question,
+            PolicyQuestionType.CONDITION,
+            regionScope,
+            chunks
+    );
+
+    StringBuilder builder = new StringBuilder();
+    builder.append("结论：");
+    builder.append("这类问题不能简单理解为“是否有一个叫本科生政策的项目”。");
+    builder.append("本科/学士、证书、职称、专业方向通常是部分人才项目的准入条件之一，需要和行业、单位、证书、职称、成果等条件一起判断。\n");
+
+    if (usable.isEmpty()) {
+        builder.append("当前知识库暂未检索到足够可直接匹配的条件条款，建议继续补充或优化申报条件类专题切片。\n");
+        return builder.toString().trim();
+    }
+
+    builder.append("当前知识库可先关注以下方向：\n");
+
+    LinkedHashSet<String> seen = new LinkedHashSet<>();
+    int index = 1;
+    for (KnowledgeSearchResultVO item : usable) {
+        String policyName = resolvePolicyDisplayName(item);
+        if (normalizeText(policyName) == null || seen.contains(policyName)) {
+            continue;
+        }
+        seen.add(policyName);
+
+        builder.append(index++).append(". ").append(policyName).append("：");
+        String text = buildChunkSearchText(item);
+
+        if (containsAny(text, List.of("本科及以上", "学士", "学士学位"))) {
+            builder.append("命中“本科/学士”相关准入条件。");
+        } else if (containsAny(text, List.of("CFA", "FRM", "CPA", "精算", "法律职业"))) {
+            builder.append("命中金融资格证书或专业资格相关条件。");
+        } else if (containsAny(text, List.of("高级职称", "职称"))) {
+            builder.append("命中职称或专业技术资格相关条件。");
+        } else if (containsAny(text, List.of("软件", "电子信息", "人工智能"))) {
+            builder.append("命中软件信息技术或重点产业方向。");
+        } else {
+            builder.append("命中相关申报条件或适用对象。");
+        }
+
+        builder.append("仍需继续核对完整申报条件、单位推荐要求、证书/职称/成果等附加要求。\n");
+
+        if (index > 5) {
+            break;
+        }
+    }
+
+    if (seen.isEmpty()) {
+        builder.append("当前命中内容仍偏弱，建议优先优化“申报条件、适用对象、申报方式”类切片。\n");
+    }
+
+    builder.append("提示：本科/学士一般不是充分条件，通常还要叠加行业方向、所在单位、资格证书、职称或项目成果等要求。");
+    return builder.toString().trim();
+}
     private String buildGeneralFallbackAnswer(String question,
                                               String regionScope,
                                               String sourceScene,
                                               List<KnowledgeSearchResultVO> chunks) {
+                if (isConditionReverseQuestion(question)) {
+            return buildConditionReverseFallbackAnswer(question, regionScope, chunks);
+        }
         if (detectPolicyQuestionType(question) == PolicyQuestionType.PROCESS) {
             return buildProcessFallbackAnswer(question, regionScope, chunks);
         }
@@ -5280,22 +6387,61 @@ private boolean isDoubleHundredProcessChunk(KnowledgeSearchResultVO item) {
     }
 
     private List<String> extractStructuredBenefitRecallCandidates(String question) {
-        LinkedHashSet<String> candidates = new LinkedHashSet<>(extractStructuredTopicRecallCandidates(question));
-        candidates.addAll(BENEFIT_SECTION_TERMS);
-        candidates.add("补助标准");
-        candidates.add("资金扶持");
-        candidates.add("安家补贴");
-        return new ArrayList<>(candidates);
+    LinkedHashSet<String> candidates = new LinkedHashSet<>(extractStructuredTopicRecallCandidates(question));
+    candidates.addAll(BENEFIT_SECTION_TERMS);
+    candidates.add("补助标准");
+    candidates.add("资金扶持");
+    candidates.add("安家补贴");
+
+    if (containsAny(question, SERVICE_GUARANTEE_TERMS)) {
+        candidates.add("服务保障");
+        candidates.add("人才服务");
+        candidates.add("人才服务卡");
+        candidates.add("绿色通道");
+        candidates.add("一站式服务");
+        candidates.add("子女入学");
+        candidates.add("子女教育");
+        candidates.add("子女就学");
+        candidates.add("医疗保障");
+        candidates.add("医疗服务");
+        candidates.add("健康体检");
+        candidates.add("配偶就业");
+        candidates.add("落户服务");
+        candidates.add("人才待遇");
+        candidates.add("待遇保障");
     }
+
+    return new ArrayList<>(candidates);
+}
 
     private List<String> extractStructuredSpecialTopicSupplementCandidates(String question) {
         LinkedHashSet<String> candidates = new LinkedHashSet<>(extractStructuredTopicRecallCandidates(question));
-        if (containsAny(question, List.of("住房", "住房补贴", "子女教育", "医疗保障", "服务保障"))) {
-            candidates.add("服务保障");
-            candidates.add("住房补贴");
-            candidates.add("子女教育");
-            candidates.add("医疗保障");
-        }
+        if (containsAny(question, List.of(
+        "住房",
+        "住房补贴",
+        "子女教育",
+        "子女入学",
+        "子女就学",
+        "医疗保障",
+        "医疗服务",
+        "健康体检",
+        "服务保障",
+        "人才服务",
+        "绿色通道",
+        "配偶就业",
+        "落户服务"
+))) {
+    candidates.add("服务保障");
+    candidates.add("人才服务");
+    candidates.add("住房补贴");
+    candidates.add("子女教育");
+    candidates.add("子女入学");
+    candidates.add("医疗保障");
+    candidates.add("医疗服务");
+    candidates.add("健康体检");
+    candidates.add("配偶就业");
+    candidates.add("落户服务");
+}
         candidates.add("关于更加精准有效集聚人才加快推进高质量发展的意见");
         candidates.add("厦门市高层次人才专项资金管理办法");
         return new ArrayList<>(candidates);
@@ -5336,9 +6482,11 @@ private boolean isDoubleHundredProcessChunk(KnowledgeSearchResultVO item) {
     }
 
     private boolean isBenefitChunk(KnowledgeSearchResultVO item) {
-        return containsAny(buildChunkSearchText(item), BENEFIT_SECTION_TERMS)
-                || containsAny(buildChunkSearchText(item), List.of("补助", "补贴", "奖励", "支持", "安家补贴", "资金扶持", "管理期"));
-    }
+    String text = buildChunkSearchText(item);
+    return containsAny(text, BENEFIT_SECTION_TERMS)
+            || containsAny(text, SERVICE_GUARANTEE_TERMS)
+            || containsAny(text, List.of("补助", "补贴", "奖励", "支持", "安家补贴", "资金扶持", "管理期"));
+}
 
     private boolean hasStructuredSpecificPolicyHitWithoutProcessEvidence(String question, KnowledgeCitationContext context) {
         return contextMatchesStructuredSpecificPolicy(question, context) && !contextHasStructuredProcessEvidence(context);
