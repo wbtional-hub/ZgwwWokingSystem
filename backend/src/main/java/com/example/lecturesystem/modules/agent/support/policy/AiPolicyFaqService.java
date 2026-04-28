@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 public class AiPolicyFaqService {
 
     private static final int DIRECT_HIT_THRESHOLD = 70;
-
+//第一步：新增对比关键词
     private static final List<String> CHILD_EDUCATION_TOPIC_KEYWORDS = List.of(
         "子女入学",
         "子女就学",
@@ -66,7 +66,223 @@ private static final List<String> TALENT_SERVICE_TOPIC_KEYWORDS = List.of(
         "人才待遇",
         "待遇保障"
 );
+private static final List<String> SETTLEMENT_SERVICE_TOPIC_KEYWORDS = List.of(
+        "落户",
+        "人才落户",
+        "落户服务",
+        "户口",
+        "迁户口",
+        "户籍",
+        "户籍迁入",
+        "户口迁入",
+        "随迁落户",
+        "家属落户",
+        "居留服务"
+);
 
+private static final List<String> SPOUSE_EMPLOYMENT_TOPIC_KEYWORDS = List.of(
+        "配偶就业",
+        "配偶工作",
+        "家属就业",
+        "家属工作",
+        "爱人就业",
+        "爱人工作",
+        "夫妻就业",
+        "随迁配偶",
+        "随迁家属就业",
+        "配偶安置",
+        "就业服务",
+        "就业协调"
+);
+
+private static final List<String> TALENT_SERVICE_CARD_TOPIC_KEYWORDS = List.of(
+        "人才服务卡",
+        "人才卡",
+        "服务卡",
+        "人才服务凭证",
+        "人才服务码",
+        "人才服务平台",
+        "人才服务窗口",
+        "一站式服务",
+        "绿色通道"
+);
+private static final List<String> POLICY_PROCESS_TOPIC_KEYWORDS = List.of(
+        "怎么申请",
+        "如何申请",
+        "怎么申报",
+        "如何申报",
+        "申请流程",
+        "申报流程",
+        "办理流程",
+        "办理步骤",
+        "申报步骤",
+        "申请步骤",
+        "申报程序",
+        "遴选程序",
+        "办理程序",
+        "怎么办理",
+        "如何办理"
+);
+
+private static final List<String> POLICY_MATERIAL_TOPIC_KEYWORDS = List.of(
+        "材料清单",
+        "申请材料",
+        "申报材料",
+        "办理材料",
+        "需要什么材料",
+        "需要哪些材料",
+        "要什么材料",
+        "要哪些材料",
+        "证明材料",
+        "提交材料",
+        "需提交材料",
+        "附件材料"
+);
+
+private static final List<String> POLICY_ENTRY_TOPIC_KEYWORDS = List.of(
+        "办理入口",
+        "申报入口",
+        "申请入口",
+        "申报平台",
+        "办理平台",
+        "申请平台",
+        "申报系统",
+        "办理系统",
+        "在哪里申请",
+        "在哪申请",
+        "在哪里申报",
+        "在哪申报",
+        "哪里申请",
+        "哪里申报",
+        "线上申请",
+        "网上申报"
+);
+
+private static final List<String> POLICY_AUTHORITY_TOPIC_KEYWORDS = List.of(
+        "主管部门",
+        "受理部门",
+        "办理部门",
+        "归口部门",
+        "牵头部门",
+        "责任部门",
+        "审核部门",
+        "哪个部门",
+        "哪个单位负责",
+        "谁负责",
+        "找哪个部门",
+        "咨询哪个部门"
+);
+private static final List<String> POLICY_COMPARE_INTENT_KEYWORDS = List.of(
+        "区别",
+        "有什么区别",
+        "差别",
+        "不同",
+        "对比",
+        "比较",
+        "怎么区分",
+        "如何区分",
+        "边界",
+        "一样吗",
+        "是否一样",
+        "是不是一样",
+        "是不是",
+        "是否属于",
+        "算不算",
+        "属于",
+        "哪个更适合",
+        "适合哪个",
+        "分别适合",
+        "分别对应",
+        "对应哪个",
+        "可以同时享受",
+        "能否同时享受",
+        "能不能同时享受",
+        "vs",
+        "VS",
+        "和",
+        "与",
+        "跟"
+);
+
+private static final List<String> XM_POLICY_KEYWORDS = List.of(
+        "厦门",
+        "厦门市",
+        "市级",
+        "厦门政策",
+        "厦门市政策",
+        "厦门人才政策"
+);
+
+private static final List<String> FJ_POLICY_KEYWORDS = List.of(
+        "福建",
+        "福建省",
+        "省级",
+        "福建政策",
+        "福建省政策",
+        "省级政策"
+);
+
+private static final List<String> HIGH_LEVEL_TALENT_COMPARE_KEYWORDS = List.of(
+        "高层次人才",
+        "高层次人才认定",
+        "福建省高层次人才",
+        "厦门高层次人才",
+        "高层次"
+);
+
+private static final List<String> DOUBLE_HUNDRED_COMPARE_KEYWORDS = List.of(
+        "双百计划",
+        "创新创业人才",
+        "引进高层次创新创业人才"
+);
+
+private static final List<String> POSTDOC_SUBSIDY_COMPARE_KEYWORDS = List.of(
+        "博士后补助",
+        "博士后资助",
+        "博士后",
+        "在站补助",
+        "出站补助"
+);
+
+private static final List<String> SETTLEMENT_SUBSIDY_COMPARE_KEYWORDS = List.of(
+        "安家补贴",
+        "安家补助",
+        "生活补贴",
+        "住房补贴",
+        "落户补贴"
+);
+
+private static final List<String> FINANCE_TALENT_COMPARE_KEYWORDS = List.of(
+        "金融服务产业人才",
+        "金融产业人才",
+        "金融人才",
+        "金融服务产业人才项目",
+        "金融服务",
+        "金融机构",
+        "CFA",
+        "FRM",
+        "ACCA",
+        "CPA",
+        "精算",
+        "法律职业资格",
+        "金融证书",
+        "金融类资质"
+);
+
+private static final List<String> ELECTRONIC_INFO_TALENT_COMPARE_KEYWORDS = List.of(
+        "电子信息产业人才",
+        "电子信息人才",
+        "电子信息产业人才项目",
+        "电子信息",
+        "软件信息",
+        "软件工程",
+        "软件开发",
+        "计算机",
+        "信息技术",
+        "人工智能",
+        "AI",
+        "AI人才"
+);
     private final AiPolicyFaqMapper aiPolicyFaqMapper;
     private final AiPolicyQuestionAnalyzer aiPolicyQuestionAnalyzer;
     private final AiPolicyConditionRetrievalService aiPolicyConditionRetrievalService;
@@ -89,29 +305,31 @@ private static final List<String> TALENT_SERVICE_TOPIC_KEYWORDS = List.of(
         if (baseId == null || question == null) {
             return FaqMatch.notMatched();
         }
+        //第二步：在 match 里增加政策对比匹配
 FaqMatch exactPolicyMatch = tryMatchExactPolicy(baseId, question);
 if (exactPolicyMatch.matched()) {
     return exactPolicyMatch;
+}
+
+FaqMatch compareMatch = tryMatchPolicyCompareTopic(question);
+if (compareMatch.matched()) {
+    return compareMatch;
 }
 
 FaqMatch serviceBenefitMatch = tryMatchServiceBenefitTopic(question);
 if (serviceBenefitMatch.matched()) {
     return serviceBenefitMatch;
 }
-        /*
-         * 第一优先级：条件反查索引
-         * 例如：
-         * - 有 CFA 可以申请什么政策？
-         * - 软件工程专业可以申请什么人才政策？
-         * - 本科生可以申请什么政策？
-         *
-         * 这类问题不能只靠 FAQ 文本相似度，否则容易被“双百计划”“特聘岗位”等高频 FAQ 抢答。
-         */
-        FaqMatch conditionMatch = tryMatchConditionIndex(baseId, question);
-        if (conditionMatch.matched()) {
-            return conditionMatch;
-        }
 
+FaqMatch handlingGuideMatch = tryMatchPolicyHandlingGuideTopic(question);
+if (handlingGuideMatch.matched()) {
+    return handlingGuideMatch;
+}
+
+FaqMatch conditionMatch = tryMatchConditionIndex(baseId, question);
+if (conditionMatch.matched()) {
+    return conditionMatch;
+}
         /*
          * 第二优先级：原有 FAQ 直接命中逻辑
          * 保留你现有逻辑，避免影响“双百计划是什么”“博士后补助多少”等正常 FAQ。
@@ -209,12 +427,32 @@ private String buildExactPolicyAnswer(List<AiPolicyExactPolicyChunk> chunks) {
 
         boolean extracted = false;
 
-        extracted |= putExtractedField(fieldMap, "主管部门", content, "主管部门");
-        extracted |= putExtractedField(fieldMap, "适用对象", content, "项目对象", "适用对象", "支持对象");
-        extracted |= putExtractedField(fieldMap, "分层分类", content, "分层或分类", "分类", "层级");
-        extracted |= putExtractedField(fieldMap, "申报方式", content, "申报方式", "谁来推荐申报");
-        extracted |= putExtractedField(fieldMap, "支持标准", content, "支持标准", "基本支持标准");
-        extracted |= putExtractedField(fieldMap, "安家补贴", content, "是否有安家补贴", "安家补贴");
+        extracted |= putExtractedField(fieldMap, "主管部门", content,
+        "主管部门", "受理部门", "办理部门", "归口部门", "牵头部门", "责任部门");
+
+extracted |= putExtractedField(fieldMap, "适用对象", content,
+        "项目对象", "适用对象", "支持对象");
+
+extracted |= putExtractedField(fieldMap, "分层分类", content,
+        "分层或分类", "分类", "层级");
+
+extracted |= putExtractedField(fieldMap, "申报方式", content,
+        "申报方式", "谁来推荐申报", "推荐申报", "申报渠道");
+
+extracted |= putExtractedField(fieldMap, "申报流程", content,
+        "申报流程", "申请流程", "办理流程", "申报程序", "遴选程序", "办理程序");
+
+extracted |= putExtractedField(fieldMap, "材料清单", content,
+        "材料清单", "申请材料", "申报材料", "办理材料", "证明材料", "需提交材料");
+
+extracted |= putExtractedField(fieldMap, "办理入口", content,
+        "办理入口", "申报入口", "申请入口", "申报平台", "办理平台", "申报系统");
+
+extracted |= putExtractedField(fieldMap, "支持标准", content,
+        "支持标准", "基本支持标准");
+
+extracted |= putExtractedField(fieldMap, "安家补贴", content,
+        "是否有安家补贴", "安家补贴");
 
         if (extracted && chunk.getId() != null) {
             evidenceChunkIds.add(chunk.getId());
@@ -457,7 +695,87 @@ private boolean isIndustryTalentQuestion(String text) {
             "骨干人才"
     ));
 }
+private FaqMatch tryMatchPolicyCompareTopic(AiPolicyQuestionNormalizer.NormalizedQuestion question) {
+    String questionText = buildQuestionText(question);
+    if (questionText == null || questionText.isBlank()) {
+        return FaqMatch.notMatched();
+    }
 
+    String compact = valueOrBlank(compactText(questionText));
+    String matchText = questionText + " " + compact;
+
+    if (!looksLikeCompareQuestion(matchText)) {
+        return FaqMatch.notMatched();
+    }
+
+    if (containsAnyText(matchText, XM_POLICY_KEYWORDS)
+            && containsAnyText(matchText, FJ_POLICY_KEYWORDS)) {
+        return new FaqMatch(true, null, buildXmFjPolicyCompareAnswer(matchText));
+    }
+
+    if (containsAnyText(matchText, HIGH_LEVEL_TALENT_COMPARE_KEYWORDS)
+            && containsAnyText(matchText, DOUBLE_HUNDRED_COMPARE_KEYWORDS)) {
+        return new FaqMatch(true, null, buildHighLevelVsDoubleHundredAnswer(matchText));
+    }
+
+    if (containsAnyText(matchText, POSTDOC_SUBSIDY_COMPARE_KEYWORDS)
+            && containsAnyText(matchText, SETTLEMENT_SUBSIDY_COMPARE_KEYWORDS)) {
+        return new FaqMatch(true, null, buildPostdocVsSettlementSubsidyAnswer(matchText));
+    }
+
+    if (containsAnyText(matchText, FINANCE_TALENT_COMPARE_KEYWORDS)
+            && containsAnyText(matchText, ELECTRONIC_INFO_TALENT_COMPARE_KEYWORDS)) {
+        return new FaqMatch(true, null, buildFinanceVsElectronicInfoTalentAnswer(matchText));
+    }
+
+    return FaqMatch.notMatched();
+}
+
+private boolean looksLikeCompareQuestion(String text) {
+    if (!notBlank(text)) {
+        return false;
+    }
+
+    /*
+     * 明确比较型表达：
+     * 例如：有什么区别、一样吗、是不是、算不算、是否属于、分别适合哪个。
+     */
+    if (containsAnyText(text, List.of(
+            "区别",
+            "有什么区别",
+            "差别",
+            "不同",
+            "对比",
+            "比较",
+            "怎么区分",
+            "如何区分",
+            "边界",
+            "一样吗",
+            "是否一样",
+            "是不是一样",
+            "是不是",
+            "是否属于",
+            "算不算",
+            "属于",
+            "分别适合",
+            "适合哪个",
+            "分别对应",
+            "对应哪个",
+            "哪个更适合",
+            "可以同时享受",
+            "能否同时享受",
+            "能不能同时享受"
+    ))) {
+        return true;
+    }
+
+    /*
+     * 有连接词 + 比较意图，也视为比较问题。
+     * 例如：A 和 B 哪个更适合、A 与 B 是否能同时享受。
+     */
+    return containsAnyText(text, List.of("和", "与", "跟", "及", "vs", "VS"))
+            && containsAnyText(text, POLICY_COMPARE_INTENT_KEYWORDS);
+}
 private FaqMatch tryMatchServiceBenefitTopic(AiPolicyQuestionNormalizer.NormalizedQuestion question) {
     String questionText = buildQuestionText(question);
     if (questionText == null || questionText.isBlank()) {
@@ -473,6 +791,18 @@ private FaqMatch tryMatchServiceBenefitTopic(AiPolicyQuestionNormalizer.Normaliz
 
     if (containsAnyText(matchText, MEDICAL_SERVICE_TOPIC_KEYWORDS)) {
         return new FaqMatch(true, null, buildMedicalServiceAnswer(matchText));
+    }
+
+    if (containsAnyText(matchText, SETTLEMENT_SERVICE_TOPIC_KEYWORDS)) {
+        return new FaqMatch(true, null, buildSettlementServiceAnswer(matchText));
+    }
+
+    if (containsAnyText(matchText, SPOUSE_EMPLOYMENT_TOPIC_KEYWORDS)) {
+        return new FaqMatch(true, null, buildSpouseEmploymentServiceAnswer(matchText));
+    }
+
+    if (containsAnyText(matchText, TALENT_SERVICE_CARD_TOPIC_KEYWORDS)) {
+        return new FaqMatch(true, null, buildTalentServiceCardAnswer(matchText));
     }
 
     if (containsAnyText(matchText, TALENT_SERVICE_TOPIC_KEYWORDS)) {
@@ -569,7 +899,284 @@ private String buildTalentServiceTargetAdvice(String questionText) {
 
     return "";
 }
+private String buildSettlementServiceAnswer(String questionText) {
+    String targetAdvice = buildSettlementTargetAdvice(questionText);
 
+    return "结论：落户服务属于人才服务保障类事项，通常不是单独的人才项目。根据当前知识库，应重点查看高层次人才、博士后、重点产业人才等政策中是否包含落户、户籍迁入、家属随迁或人才服务窗口办理支持等条款。\n\n"
+            + targetAdvice
+            + "适配说明：\n"
+            + "1、人才落户通常要先确认本人属于哪一类人才政策对象，例如高层次人才、博士后、重点产业人才或其他专项人才。\n"
+            + "2、是否可以享受落户服务，还需要结合人才类别、认定层次、工作单位、社保或个税、居住情况、户籍政策和主管部门办理规则判断。\n"
+            + "3、人才政策中出现落户服务，并不等于所有人员都可以直接落户，也不等于家属一定可以同步落户。\n\n"
+            + "办理建议：建议先确认本人是否已经完成相应人才认定或项目申报，再查看对应政策中的落户服务、家属随迁、人才服务窗口或绿色通道条款。\n\n"
+            + "当前边界：以上为人才服务保障方向的初步判断，具体落户条件、材料和办理口径应以公安、人社或人才服务窗口的正式规则为准。";
+}
+
+private String buildSettlementTargetAdvice(String questionText) {
+    if (isPostdoctoralQuestion(questionText)) {
+        return "重点方向：如果咨询对象是博士后，建议优先查看博士后进站、出站留厦、设站单位服务保障及属地人才服务政策中是否涉及落户或家属随迁支持。\n\n";
+    }
+
+    if (isHighLevelTalentQuestion(questionText)) {
+        return "重点方向：如果咨询对象是高层次人才，建议优先查看高层次人才认定支持、特聘岗位、双百计划或综合性人才政策中的落户服务和绿色通道条款，并结合人才层次判断适用范围。\n\n";
+    }
+
+    if (isIndustryTalentQuestion(questionText)) {
+        return "重点方向：如果咨询对象是重点产业人才，建议优先结合所在产业项目、企业资质、岗位方向、人才类别和单位推荐情况，判断是否配套落户服务或人才服务窗口支持。\n\n";
+    }
+
+    return "";
+}
+private String buildSpouseEmploymentServiceAnswer(String questionText) {
+    String targetAdvice = buildSpouseEmploymentTargetAdvice(questionText);
+
+    return "结论：配偶就业属于人才服务保障类事项，通常是人才政策中的配套服务内容，不是单独的人才项目。根据当前知识库，应重点查看高层次人才、博士后、重点产业人才等政策中是否包含配偶就业、家属就业、就业协调或人才服务窗口支持等条款。\n\n"
+            + targetAdvice
+            + "适配说明：\n"
+            + "1、配偶就业服务通常以协调、推荐、服务对接或政策支持为主，不应理解为一定安排具体岗位。\n"
+            + "2、是否可以享受配偶就业服务，通常取决于人才类别、认定层次、配偶自身学历专业、就业意愿、岗位需求、单位接收条件以及当年办理规则。\n"
+            + "3、仅具备学历、职称、证书或专业条件，一般不能直接等同于已经可以享受配偶就业保障。\n\n"
+            + "办理建议：建议先确认本人属于哪一类人才政策对象，再查看对应政策中的配偶就业、家属就业、就业协调或人才服务窗口条款；同时准备配偶学历、专业、工作经历和就业意向等材料。\n\n"
+            + "当前边界：以上为人才服务保障方向的初步判断，不代表政府或单位承诺安排具体岗位，最终以政策原文、年度通知和主管部门办理规则为准。";
+}
+
+private String buildSpouseEmploymentTargetAdvice(String questionText) {
+    if (isPostdoctoralQuestion(questionText)) {
+        return "重点方向：如果咨询对象是博士后，建议优先查看博士后政策、设站单位服务保障和属地人才服务安排中是否涉及配偶就业或家属就业协调。\n\n";
+    }
+
+    if (isHighLevelTalentQuestion(questionText)) {
+        return "重点方向：如果咨询对象是高层次人才，建议优先查看高层次人才认定支持、特聘岗位、双百计划或综合性人才政策中关于配偶就业、家属服务和绿色通道的条款。\n\n";
+    }
+
+    if (isIndustryTalentQuestion(questionText)) {
+        return "重点方向：如果咨询对象是重点产业人才，建议优先结合所在产业项目、企业资质、岗位方向和单位推荐情况，判断是否配套配偶就业服务或人才服务窗口支持。\n\n";
+    }
+
+    return "";
+}
+private String buildTalentServiceCardAnswer(String questionText) {
+    String targetAdvice = buildTalentServiceCardTargetAdvice(questionText);
+
+    return "结论：人才服务卡通常属于人才服务保障的载体或凭证，用于承接部分人才服务事项，不是单独的人才项目。根据当前知识库，应重点查看高层次人才、博士后、重点产业人才等政策中是否包含人才服务卡、人才服务窗口、一站式服务或绿色通道等内容。\n\n"
+            + targetAdvice
+            + "适配说明：\n"
+            + "1、人才服务卡一般需要先确认人才身份或认定层次，再判断是否具备申领或享受相关服务的资格。\n"
+            + "2、人才服务卡可能承载安居、子女入学、医疗服务、配偶就业、落户服务、窗口办理等事项，但具体服务范围以政策细则和办理规则为准。\n"
+            + "3、拥有学历、职称、专业或资格证书，不等于自动取得人才服务卡，也不等于自动享受全部服务事项。\n\n"
+            + "办理建议：建议先确认本人是否已完成高层次人才认定、博士后身份确认或重点产业人才项目申报，再查询对应政策中的人才服务卡、人才服务窗口、一站式服务或绿色通道条款。\n\n"
+            + "当前边界：以上为人才服务保障方向的初步判断，具体是否发卡、服务范围和办理方式，应以正式政策文件、年度通知和人才服务窗口规则为准。";
+}
+
+private String buildTalentServiceCardTargetAdvice(String questionText) {
+    if (isPostdoctoralQuestion(questionText)) {
+        return "重点方向：如果咨询对象是博士后，建议优先查看博士后政策及属地人才服务安排中是否明确人才服务卡、服务窗口或绿色通道支持。\n\n";
+    }
+
+    if (isHighLevelTalentQuestion(questionText)) {
+        return "重点方向：如果咨询对象是高层次人才，建议优先查看高层次人才认定支持、特聘岗位、双百计划或综合性人才政策中关于人才服务卡、服务窗口和绿色通道的条款。\n\n";
+    }
+
+    if (isIndustryTalentQuestion(questionText)) {
+        return "重点方向：如果咨询对象是重点产业人才，建议优先结合对应产业人才项目、企业资质、岗位方向、人才类别和单位推荐情况，判断是否配套人才服务卡或人才服务窗口支持。\n\n";
+    }
+
+    return "";
+}
+private FaqMatch tryMatchPolicyHandlingGuideTopic(AiPolicyQuestionNormalizer.NormalizedQuestion question) {
+    String questionText = buildQuestionText(question);
+    if (questionText == null || questionText.isBlank()) {
+        return FaqMatch.notMatched();
+    }
+
+    String compact = valueOrBlank(compactText(questionText));
+    String matchText = questionText + " " + compact;
+
+    if (containsAnyText(matchText, POLICY_AUTHORITY_TOPIC_KEYWORDS)) {
+        return new FaqMatch(true, null, buildPolicyAuthorityGuideAnswer(matchText));
+    }
+
+    if (containsAnyText(matchText, POLICY_MATERIAL_TOPIC_KEYWORDS)) {
+        return new FaqMatch(true, null, buildPolicyMaterialGuideAnswer(matchText));
+    }
+
+    if (containsAnyText(matchText, POLICY_ENTRY_TOPIC_KEYWORDS)) {
+        return new FaqMatch(true, null, buildPolicyEntryGuideAnswer(matchText));
+    }
+
+    if (containsAnyText(matchText, POLICY_PROCESS_TOPIC_KEYWORDS)) {
+        return new FaqMatch(true, null, buildPolicyProcessGuideAnswer(matchText));
+    }
+
+    return FaqMatch.notMatched();
+}
+private String resolveHandlingGuidePolicyName(String questionText) {
+    if (questionText == null || questionText.isBlank()) {
+        return "";
+    }
+
+    if (containsAnyText(questionText, List.of(
+            "金融服务产业人才项目",
+            "金融服务产业人才",
+            "金融人才"
+    ))) {
+        return "厦门市金融服务产业人才项目";
+    }
+
+    if (containsAnyText(questionText, List.of(
+            "电子信息产业人才项目",
+            "电子信息产业人才",
+            "软件信息",
+            "软件工程"
+    ))) {
+        return "厦门市电子信息产业人才项目";
+    }
+
+    if (containsAnyText(questionText, List.of(
+            "博士后补助",
+            "博士后"
+    ))) {
+        return "博士后相关政策";
+    }
+
+    if (containsAnyText(questionText, List.of(
+            "双百计划",
+            "创新创业人才"
+    ))) {
+        return "厦门市引进高层次创新创业人才“双百计划”";
+    }
+
+    if (containsAnyText(questionText, List.of(
+            "特聘岗位"
+    ))) {
+        return "厦门市高层次人才特聘岗位";
+    }
+
+    if (containsAnyText(questionText, List.of(
+            "住房补贴",
+            "住房保障",
+            "人才住房",
+            "安居"
+    ))) {
+        return "人才住房保障相关政策";
+    }
+
+    if (containsAnyText(questionText, List.of(
+            "重点产业人才",
+            "产业人才",
+            "骨干人才"
+    ))) {
+        return "重点产业人才相关政策";
+    }
+
+    if (containsAnyText(questionText, List.of(
+            "高层次人才",
+            "高层次"
+    ))) {
+        return "高层次人才相关政策";
+    }
+
+    return "";
+}
+
+private String buildHandlingGuidePolicyDirection(String questionText, String guideType) {
+    String policyName = resolveHandlingGuidePolicyName(questionText);
+    if (!notBlank(policyName)) {
+        return "";
+    }
+
+    return "已识别政策方向：" + policyName + "。\n\n"
+            + "重点方向：本轮应围绕该政策核对" + guideType
+            + "，如果当前知识库没有命中完整年度通知或明细条款，应明确提示以年度申报通知、主管部门和申报系统要求为准，不能按泛问处理，也不能编造未命中的内容。\n\n";
+}
+private String buildPolicyProcessGuideAnswer(String questionText) {
+    String policyDirection = buildHandlingGuidePolicyDirection(questionText, "申报流程、申报方式、办理步骤和组织申报要求");
+
+    return "结论：这是政策申报流程类问题。是否能给出完整流程，取决于当前问题是否明确了具体政策名称，以及知识库中是否已导入该政策的年度申报通知、办理流程或材料清单。\n\n"
+            + policyDirection
+            + "适配说明：\n"
+            + "1、如果已明确具体政策，应优先查询该政策对应的申报通知、申报流程、遴选程序、申报方式和主管部门要求。\n"
+            + "2、如果只是泛问“人才政策怎么申请”，一般需要先确认申报方向，例如高层次人才、博士后、重点产业人才、住房保障或服务保障等。\n"
+            + "3、不同政策的申报主体可能不同，有的由个人申请，有的需要单位推荐，有的需要主管部门组织申报。\n\n"
+            + "办理建议：如已明确政策名称，建议继续核对该政策年度申报通知中的办理时间、申报主体、申报方式、申报入口、材料清单和主管部门；如当前知识库未命中完整流程，只能先给出办理判断方向。\n\n"
+            + "当前边界：不能在未命中具体年度通知和流程条款的情况下编造流程，最终应以正式政策文件、年度申报通知和主管部门审核为准。";
+}
+private String buildPolicyMaterialGuideAnswer(String questionText) {
+    String policyDirection = buildHandlingGuidePolicyDirection(questionText, "材料清单、证明材料、单位推荐材料和申报附件");
+
+    return "结论：这是政策材料清单类问题。材料清单通常不能脱离具体政策单独判断，需要结合政策名称、申报类别、人才身份、单位推荐要求和年度申报通知确认。\n\n"
+            + policyDirection
+            + "适配说明：\n"
+            + "1、不同政策需要的材料不同，常见材料可能包括身份证明、学历学位证明、职称或资格证书、劳动合同、社保或个税、单位推荐材料、成果证明、项目材料等。\n"
+            + "2、如果是博士后、高层次人才、重点产业人才、住房补贴等方向，材料要求差异较大，不能用同一套材料清单替代。\n"
+            + "3、如果知识库没有命中对应年度申报通知或材料清单，系统只能给出准备方向，不能确认最终材料。\n\n"
+            + "办理建议：建议围绕具体政策继续核对年度申报通知中的“申报材料、证明材料、附件模板、单位推荐材料、线上填报要求”等内容。\n\n"
+            + "当前边界：以上为材料准备方向，不代表正式材料清单；最终材料应以年度申报通知、主管部门或申报系统要求为准。";
+}
+private String buildPolicyEntryGuideAnswer(String questionText) {
+    String policyDirection = buildHandlingGuidePolicyDirection(questionText, "申报入口、办理平台、线上系统和受理渠道");
+
+    return "结论：这是政策办理入口类问题。办理入口通常需要结合具体政策、年度申报通知和主管部门发布的申报渠道确认，不能在未命中正式入口依据时直接指定平台或网址。\n\n"
+            + policyDirection
+            + "适配说明：\n"
+            + "1、人才政策可能通过人才服务窗口、主管部门申报系统、单位推荐渠道、线上平台或年度通知指定入口办理。\n"
+            + "2、有些政策不是个人直接申请，而是由单位推荐、行业主管部门组织申报或按年度集中受理。\n"
+            + "3、如果当前知识库只命中政策正文，没有命中年度申报公告或入口说明，就不能直接判断具体入口。\n\n"
+            + "办理建议：建议围绕具体政策继续核对当年度申报通知中的“申报入口、申报平台、受理单位、办理时间、联系人或咨询电话”等信息。\n\n"
+            + "当前边界：以上为办理入口判断原则，不提供未经确认的网址或平台名称；具体入口以主管部门最新通知为准。";
+}
+private String buildPolicyAuthorityGuideAnswer(String questionText) {
+    String policyDirection = buildHandlingGuidePolicyDirection(questionText, "主管部门、受理部门、责任部门和归口部门");
+
+    return "结论：这是主管部门或受理部门类问题。主管部门需要结合具体政策名称判断，不同人才政策可能分别由组织、人社、科技、工信、金融、住建、教育、卫健等部门或行业主管部门负责。\n\n"
+            + policyDirection
+            + "适配说明：\n"
+            + "1、如果问题中已经包含明确政策名称，应优先从该政策正文、实施办法或申报通知中提取主管部门、受理部门、责任部门或归口部门。\n"
+            + "2、如果只是泛问“人才政策找哪个部门”，一般需要先明确政策方向，例如高层次人才、产业人才、博士后、住房补贴、子女入学、医疗服务等。\n"
+            + "3、同一政策也可能存在主管部门、受理窗口、初审单位、行业推荐单位等不同角色，不能简单混为一个部门。\n\n"
+            + "办理建议：建议围绕具体政策继续核对政策正文或年度通知中的“主管部门、受理部门、申报单位、行业主管部门、咨询窗口”等信息。\n\n"
+            + "当前边界：如果当前知识库未命中明确主管部门字段，不能替代主管部门正式答复。";
+}
+private String buildXmFjPolicyCompareAnswer(String questionText) {
+    return "结论：厦门市政策和福建省政策属于不同层级的人才政策体系，不能简单混为同一类政策。一般来说，厦门市政策更偏向本市产业发展、在厦就业创业、落地服务和市级财政支持；福建省政策更偏向省级人才认定、全省范围内的引才支持、专项申报和省级统筹。\n\n"
+            + "对比说明：\n"
+            + "1、政策层级不同：厦门市政策通常属于市级政策，福建省政策通常属于省级政策。\n"
+            + "2、适用范围不同：厦门市政策一般要求在厦工作、创业、纳税、社保或由厦门单位推荐；福建省政策通常面向全省范围内符合条件的人才或单位。\n"
+            + "3、主管体系不同：市级政策通常由厦门相关主管部门或人才服务窗口组织实施；省级政策通常由省级主管部门或省级专项渠道组织。\n"
+            + "4、支持方向可能重叠：例如高层次人才、博士后、台湾人才、产业人才等方向，市级和省级政策都可能涉及，但申报条件、支持标准和办理渠道不一定相同。\n\n"
+            + "办理建议：如果问题涉及“我能不能申请”，应先确认工作地、单位归属、申报身份和政策层级；如果同时符合省市政策，还要核对是否允许叠加享受或是否存在重复享受限制。\n\n"
+            + "当前边界：以上是省市政策边界说明，具体能否申报、能否叠加、以哪个部门为准，应以对应政策原文和年度申报通知为准。";
+}
+private String buildHighLevelVsDoubleHundredAnswer(String questionText) {
+    return "结论：“双百计划”不等同于高层次人才认定。高层次人才更偏向人才认定或人才层次评价；“双百计划”更偏向高层次创新创业人才引进项目，通常围绕创新创业能力、项目落地、评审遴选和资金支持展开。\n\n"
+            + "对比说明：\n"
+            + "1、高层次人才：重点看人才层次、认定条件、专业能力、贡献水平和对应服务保障，可能涉及省级或市级认定体系。\n"
+            + "2、双百计划：重点看是否属于引进的高层次创新创业人才，通常更关注创业项目、创新成果、落地转化、团队和评审遴选。\n"
+            + "3、申报逻辑不同：高层次人才更像“身份认定或层次认定”；双百计划更像“专项人才项目申报”。\n"
+            + "4、支持内容不同：高层次人才可能更多关联安居、医疗、子女入学、人才服务等保障；双百计划可能更强调项目支持、创业扶持、资金支持和落地发展。\n\n"
+            + "办理建议：如果用户是想确认身份层次，应优先查高层次人才认定；如果用户有创新创业项目、团队或落地计划，应重点看“双百计划”的申报条件和评审要求。\n\n"
+            + "当前边界：两者可能存在交叉，但不能互相替代。最终应以具体政策条款、申报通知和主管部门审核为准。";
+}
+private String buildPostdocVsSettlementSubsidyAnswer(String questionText) {
+    return "结论：博士后补助和安家补贴不是同一个概念。博士后补助通常围绕博士后进站、在站科研、平台建设或出站留厦等环节设置；安家补贴通常围绕人才落地、长期服务、住房或生活安置等事项设置。\n\n"
+            + "对比说明：\n"
+            + "1、博士后补助：重点看是否属于博士后身份，是否进站、在站、出站留厦，所在单位是否为博士后科研工作站或创新实践基地。\n"
+            + "2、安家补贴：重点看人才是否符合引进、认定、落地就业、服务年限、住房或生活安置等条件。\n"
+            + "3、支持阶段不同：博士后补助更关注博士后培养和科研阶段；安家补贴更关注人才留厦、就业创业和生活安置阶段。\n"
+            + "4、材料和审核不同：博士后补助通常要看进站、设站单位、科研或就业材料；安家补贴通常要看人才认定、就业关系、服务期、住房或安置条件等。\n\n"
+            + "办理建议：如果问题是博士后在站或出站留厦，应优先查博士后政策；如果问题是落地厦门后的生活安置或住房支持，应进一步查安家补贴、住房补贴或人才住房政策。\n\n"
+            + "当前边界：两类支持可能在个别政策中同时出现，但不能默认重复享受或自动叠加，需以政策原文和年度通知为准。";
+}
+private String buildFinanceVsElectronicInfoTalentAnswer(String questionText) {
+    return "结论：金融服务产业人才项目和电子信息产业人才项目都属于重点产业人才支持方向，但适用产业、岗位要求和申报条件不同，不能相互替代。\n\n"
+            + "对比说明：\n"
+            + "1、金融服务产业人才项目：重点面向金融机构、基金管理机构、地方金融组织、金融投资集团等金融服务领域人才，通常关注金融资质、岗位层级、在厦全职工作、单位推荐等条件。\n"
+            + "2、电子信息产业人才项目：重点面向电子信息制造业、软件信息产业、人工智能等方向人才，通常关注所在企业产业属性、岗位方向、技术能力、项目成果和单位推荐等条件。\n"
+            + "3、适配条件不同：CFA、FRM、ACCA、CPA 等金融类资质更容易与金融服务产业人才项目相关；软件工程、软件信息、人工智能等专业或岗位更容易与电子信息产业人才项目相关。\n"
+            + "4、申报判断不同：不能只看学历或职称，还要看所在单位是否属于政策覆盖范围、岗位是否匹配、社保或个税是否在厦、是否由单位推荐。\n\n"
+            + "办理建议：如果用户在金融机构或基金、金融投资相关单位工作，应优先核对金融服务产业人才项目；如果用户在软件、电子信息、人工智能相关企业工作，应优先核对电子信息产业人才项目。\n\n"
+            + "当前边界：以上为项目边界说明，最终是否符合条件仍应以正式实施办法、年度申报通知和主管部门审核为准。";
+}
     private FaqMatch tryMatchConditionIndex(Long baseId,
                                         AiPolicyQuestionNormalizer.NormalizedQuestion question) {
     String questionText = buildQuestionText(question);
