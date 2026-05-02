@@ -4,7 +4,7 @@
       <PageHelp page-key="attendance" />
     </template>
     <template #actions>
-      <div v-if="hasSubordinates" class="action-row" data-guide="attendance-checkin">
+      <div v-if="showLeadershipHeaderActions" class="action-row" data-guide="attendance-checkin">
         <van-button type="primary" :loading="state.checkingIn" :disabled="pageBusy || !personalCanCheckIn" @click="handleCheckIn">{{ personalCheckInButtonText }}</van-button>
         <van-button plain type="success" :loading="state.exporting" :disabled="pageBusy || !state.list.length" @click="handleExport">导出记录</van-button>
         <van-button plain type="primary" :loading="state.loading" :disabled="pageBusy" @click="fetchList">刷新列表</van-button>
@@ -12,7 +12,7 @@
     </template>
 
     <PersonalAttendanceWorkspace
-      v-if="!hasSubordinates"
+      v-if="showPersonalWorkspace"
       :loading="personalWorkspaceLoading"
       :name="currentWorkspaceUserName"
       :today-status-label="personalWorkspaceStatus.label"
@@ -36,7 +36,7 @@
 
     
 
-    <template v-else>
+    <template v-if="hasSubordinates">
     <section class="attendance-leadership-section">
       <AttendanceLeadershipSummarySection
         :loading="state.leadershipLoading"
@@ -618,11 +618,23 @@
             >
             <div v-if="patchDialogAttachments.length" class="patch-attachment-list">
               <div class="patch-attachment-card">
-                <img class="patch-attachment-card__image" :src="patchDialogAttachments[0].dataUrl" alt="现场照片预览">
+                <img class="patch-attachment-card__image" :src="patchDialogAttachments[0].previewDataUrl || patchDialogAttachments[0].dataUrl" alt="现场照片预览">
                 <div class="patch-attachment-card__meta">
                   <strong>{{ patchDialogAttachments[0].name || '现场照片' }}</strong>
                   <span>{{ patchDialogAttachments[0].sourceType === 'camera' ? '现场拍照' : '上传图片' }}</span>
+                  <span v-if="patchDialogAttachments[0].evidenceMeta?.canvasFailed">水印图生成失败，已保留原图</span>
                 </div>
+              </div>
+              <div v-if="patchDialogEvidenceMeta" class="patch-evidence-summary">
+                <div><strong>取证时间</strong><span>{{ patchDialogEvidenceMeta.recordedAt || '-' }}</span></div>
+                <div><strong>节点</strong><span>{{ patchDialogEvidenceMeta.nodeLabel || '-' }}</span></div>
+                <div><strong>经纬度</strong><span>{{ patchEvidenceCoordinateText(patchDialogEvidenceMeta) }}</span></div>
+                <div><strong>定位来源</strong><span>{{ patchDialogEvidenceMeta.locationProvider || patchDialogEvidenceMeta.locationSource || '-' }}</span></div>
+                <div><strong>距离</strong><span>{{ patchDialogEvidenceMeta.distanceMeters == null ? '-' : `${patchDialogEvidenceMeta.distanceMeters}米` }}</span></div>
+                <div><strong>精度</strong><span>{{ patchDialogEvidenceMeta.accuracyMeters == null ? '-' : `${patchDialogEvidenceMeta.accuracyMeters}米` }}</span></div>
+                <p v-if="patchDialogEvidenceMeta.locationFailed" class="patch-evidence-summary__warn">
+                  定位获取失败，请在说明中补充情况
+                </p>
               </div>
             </div>
             <div v-else class="patch-upload-panel__empty">
@@ -711,6 +723,9 @@ const QUICK_RANGE_OPTIONS = [
 ]
 const GEOLOCATION_SAMPLE_COUNT = 3
 const GEOLOCATION_TIMEOUT_MS = 8000
+const PATCH_ATTACHMENT_LARGE_FILE_BYTES = 2 * 1024 * 1024
+const PATCH_ATTACHMENT_MAX_WIDTH = 1280
+const PATCH_ATTACHMENT_JPEG_QUALITY = 0.75
 const WECHAT_JSAPI_DEFAULT_PRIORITY = 'WECHAT_FIRST'
 const WECHAT_JSAPI_DEFAULT_FALLBACK = 'BROWSER'
 const WECHAT_JSAPI_DEFAULT_LOCATION_TYPE = 'gcj02'
@@ -812,6 +827,7 @@ const state = reactive({
   currentActionHint: '',
   finished: false,
   nodeStates: [],
+  ruleTimes: {},
   attendanceStatusCode: '',
   evidenceNodeCode: ''
 },
@@ -911,6 +927,14 @@ const patchDialogUsageText = computed(() => {
     : '适用于忘记打卡、漏打卡的情况。请上传现场照片，并填写补打卡原因。'
 })
 
+const patchDialogPrimaryAttachment = computed(() => {
+  return patchDialogAttachments.value[0] || null
+})
+
+const patchDialogEvidenceMeta = computed(() => {
+  return patchDialogPrimaryAttachment.value?.evidenceMeta || null
+})
+
 const pageBusy = computed(() => {
   return state.loading || state.summaryLoading || state.abnormalLoading || state.trendLoading || state.userSummaryLoading || state.saving || state.checkingIn || state.exporting || state.abnormalExporting || state.deletingId !== null
 })
@@ -983,6 +1007,8 @@ const leadershipSubordinates = computed(() => {
 })
 
 const hasSubordinates = computed(() => leadershipSubordinates.value.length > 0)
+const showPersonalWorkspace = computed(() => !hasSubordinates.value || isMobile.value)
+const showLeadershipHeaderActions = computed(() => hasSubordinates.value && !isMobile.value)
 
 const leadershipEnabledUsers = computed(() => {
   return hasSubordinates.value ? leadershipSubordinates.value : leadershipAllEnabledUsers.value
@@ -1419,9 +1445,56 @@ if (node?.canApplyMakeup) {
   return actions
 }
 
+function extractPersonalNodeTimes(timeRangeText) {
+  return String(timeRangeText || '').match(/\d{1,2}:\d{2}/g) || []
+}
+
+function resolvePersonalNodeRuleTime(rawMap, nodeCode, ruleTimes = {}) {
+  const ruleTimeMap = {
+    AM_ON: ruleTimes.amOn,
+    AM_OFF: ruleTimes.amOff,
+    PM_ON: ruleTimes.pmOn,
+    PM_OFF: ruleTimes.pmOff
+  }
+  const directRuleTime = ruleTimeMap[nodeCode]
+  if (directRuleTime) {
+    return String(directRuleTime)
+  }
+
+  const raw = rawMap.get(nodeCode) || {}
+  const explicitRuleTime = raw.ruleTime
+    || raw.targetTime
+    || raw.scheduledTime
+    || raw.standardTime
+    || raw.ruleTimeText
+
+  if (explicitRuleTime) {
+    const explicitTimes = extractPersonalNodeTimes(explicitRuleTime)
+    return explicitTimes[0] || String(explicitRuleTime)
+  }
+
+  const ownTimes = extractPersonalNodeTimes(raw.timeRangeText)
+  if (nodeCode === 'AM_ON') {
+    return ownTimes[0] || '--:--'
+  }
+  if (nodeCode === 'AM_OFF') {
+    const amOnTimes = extractPersonalNodeTimes(rawMap.get('AM_ON')?.timeRangeText)
+    return amOnTimes[amOnTimes.length - 1] || (ownTimes.length === 1 ? ownTimes[0] : '--:--')
+  }
+  if (nodeCode === 'PM_ON') {
+    return ownTimes[0] || '--:--'
+  }
+  if (nodeCode === 'PM_OFF') {
+    const pmOnTimes = extractPersonalNodeTimes(rawMap.get('PM_ON')?.timeRangeText)
+    return pmOnTimes[pmOnTimes.length - 1] || (ownTimes.length === 1 ? ownTimes[0] : '--:--')
+  }
+  return '--:--'
+}
+
 const personalNodeCards = computed(() => {
   const rawList = Array.isArray(state.locationInfo.nodeStates) ? state.locationInfo.nodeStates : []
   const rawMap = new Map(rawList.map(item => [item.nodeCode, item]))
+  const ruleTimes = state.locationInfo.ruleTimes || {}
 
   return ['AM_ON', 'AM_OFF', 'PM_ON', 'PM_OFF'].map((nodeCode) => {
     const raw = rawMap.get(nodeCode) || {}
@@ -1432,6 +1505,7 @@ const personalNodeCards = computed(() => {
       stepLabel: meta.stepLabel,
       nodeTitleShort: raw.nodeTitleShort || meta.nodeTitleShort,
       timeRangeText: raw.timeRangeText || '时间以规则为准',
+      ruleTimeText: resolvePersonalNodeRuleTime(rawMap, nodeCode, ruleTimes),
       actualPunchTime: raw.actualPunchTime || '未打卡',
       simpleRemark: raw.simpleRemark || '等待当前节点处理',
       canPunch: Boolean(raw.canPunch),
@@ -3098,6 +3172,7 @@ async function fetchCurrentLocation() {
     state.locationInfo.currentActionHint = data.currentActionHint || ''
     state.locationInfo.finished = Boolean(data.finished)
     state.locationInfo.nodeStates = Array.isArray(data.nodeStates) ? data.nodeStates : []
+    state.locationInfo.ruleTimes = data.ruleTimes && typeof data.ruleTimes === 'object' ? data.ruleTimes : {}
 state.locationInfo.attendanceStatusCode = data.attendanceStatusCode || ''
 state.locationInfo.evidenceNodeCode = data.evidenceNodeCode || ''
     resetCheckInVisualizationTarget()
@@ -3119,6 +3194,7 @@ state.locationInfo.evidenceNodeCode = data.evidenceNodeCode || ''
     state.locationInfo.currentActionHint = ''
     state.locationInfo.finished = false
     state.locationInfo.nodeStates = []
+    state.locationInfo.ruleTimes = {}
 state.locationInfo.attendanceStatusCode = ''
 state.locationInfo.evidenceNodeCode = ''
     resetCheckInVisualizationTarget()
@@ -3638,22 +3714,210 @@ function triggerPatchFileInput() {
   }
   patchFileInputRef.value?.click()
 }
-function handlePatchAttachmentChange(event) {
+
+function formatPatchEvidenceTime(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+function normalizePatchNumber(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function patchEvidenceCoordinateText(meta) {
+  const latitude = normalizePatchNumber(meta?.latitude)
+  const longitude = normalizePatchNumber(meta?.longitude)
+  if (latitude == null || longitude == null) {
+    return '-'
+  }
+  return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+}
+
+async function refreshPatchLocationIfNeeded() {
+  if (state.checkInVisualization.submitLatitude != null && state.checkInVisualization.submitLongitude != null) {
+    return
+  }
+  try {
+    const selection = await resolveLocationSelectionOrFail()
+    const diagnostics = selection?.diagnostics
+    if (!diagnostics) {
+      return
+    }
+    updateCheckInVisualization({
+      ...diagnostics,
+      error: '',
+      stageText: selection.source === 'WECHAT_JSAPI' ? '已获取微信定位' : '已获取浏览器定位',
+      hasUsableLocation: true,
+      sampleTimestamp: diagnostics.timestamp ?? null
+    })
+  } catch (error) {
+    updateCheckInVisualization({
+      error: error?.message || '定位获取失败',
+      hasUsableLocation: false,
+      stageText: '定位获取失败'
+    })
+  }
+}
+
+function buildPatchEvidenceMeta(recordedAt) {
+  const latitude = normalizePatchNumber(
+    state.checkInVisualization.submitLatitude
+      ?? state.checkInVisualization.convertedLatitude
+      ?? state.checkInVisualization.rawLatitude
+  )
+  const longitude = normalizePatchNumber(
+    state.checkInVisualization.submitLongitude
+      ?? state.checkInVisualization.convertedLongitude
+      ?? state.checkInVisualization.rawLongitude
+  )
+  const accuracyMeters = normalizePatchNumber(state.checkInVisualization.accuracyMeters)
+  const distanceMeters = normalizePatchNumber(state.checkInVisualization.localDistanceMeters ?? state.checkInResult.distanceMeters)
+  const radiusMeters = normalizePatchNumber(state.checkInVisualization.radiusMeters ?? state.locationInfo.radiusMeters)
+  const locationFailed = latitude == null || longitude == null
+  const locationProvider = state.checkInVisualization.coordinateSource === 'wechat-gcj02' ? 'WECHAT' : (locationFailed ? '' : 'BROWSER')
+  const locationSource = locationProvider === 'WECHAT' ? 'WECHAT_JSAPI' : (locationFailed ? '' : 'BROWSER_GEO')
+  const locationText = locationFailed
+    ? '定位获取失败'
+    : `距打卡点 ${distanceMeters == null ? '-' : `${distanceMeters}米`}`
+
+  return {
+    recordedAt,
+    nodeCode: patchDialogNodeCode.value || '',
+    nodeLabel: patchDialogNodeLabel.value || '',
+    applyType: patchDialogMode.value,
+    latitude,
+    longitude,
+    accuracyMeters,
+    distanceMeters,
+    radiusMeters,
+    locationSource,
+    locationProvider,
+    locationText,
+    locationStatus: state.checkInResult.status || state.checkInVisualization.decisionBranch || state.locationInfo.status || '',
+    locationFailed,
+    locationFailReason: locationFailed ? (state.checkInVisualization.error || state.locationInfo.reason || '定位获取失败') : '',
+    canvasFailed: false
+  }
+}
+
+function loadPatchImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('图片加载失败'))
+    image.src = dataUrl
+  })
+}
+
+async function createPatchWatermarkPreview(dataUrl, meta) {
+  if (typeof document === 'undefined') {
+    return ''
+  }
+  const image = await loadPatchImage(dataUrl)
+  const scale = Math.min(1, PATCH_ATTACHMENT_MAX_WIDTH / Math.max(image.width || PATCH_ATTACHMENT_MAX_WIDTH, 1))
+  const width = Math.max(1, Math.round((image.width || PATCH_ATTACHMENT_MAX_WIDTH) * scale))
+  const imageHeight = Math.max(1, Math.round((image.height || PATCH_ATTACHMENT_MAX_WIDTH) * scale))
+  const watermarkHeight = Math.max(150, Math.round(width * 0.18))
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = imageHeight + watermarkHeight
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new Error('Canvas 不可用')
+  }
+
+  context.drawImage(image, 0, 0, width, imageHeight)
+  context.fillStyle = 'rgba(15, 23, 42, 0.78)'
+  context.fillRect(0, imageHeight, width, watermarkHeight)
+  context.fillStyle = '#ffffff'
+  context.font = `${Math.max(18, Math.round(width / 44))}px sans-serif`
+  context.textBaseline = 'top'
+
+  const lines = [
+    `时间：${meta.recordedAt || '-'}`,
+    `节点：${meta.nodeLabel || '-'}`,
+    `经纬度：${patchEvidenceCoordinateText(meta)}`,
+    `精度：${meta.accuracyMeters == null ? '-' : `${meta.accuracyMeters}米`}  距离：${meta.distanceMeters == null ? '-' : `${meta.distanceMeters}米`}`,
+    `定位：${meta.locationProvider || meta.locationSource || '-'}`
+  ]
+  const lineHeight = Math.max(24, Math.round(width / 34))
+  lines.forEach((line, index) => {
+    context.fillText(line, 22, imageHeight + 18 + index * lineHeight)
+  })
+  return canvas.toDataURL('image/jpeg', PATCH_ATTACHMENT_JPEG_QUALITY)
+}
+
+async function compressPatchImageDataUrl(dataUrl) {
+  if (typeof document === 'undefined') {
+    return dataUrl
+  }
+  const image = await loadPatchImage(dataUrl)
+  const scale = Math.min(1, PATCH_ATTACHMENT_MAX_WIDTH / Math.max(image.width || PATCH_ATTACHMENT_MAX_WIDTH, 1))
+  const width = Math.max(1, Math.round((image.width || PATCH_ATTACHMENT_MAX_WIDTH) * scale))
+  const height = Math.max(1, Math.round((image.height || PATCH_ATTACHMENT_MAX_WIDTH) * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new Error('Canvas 不可用')
+  }
+  context.drawImage(image, 0, 0, width, height)
+  return canvas.toDataURL('image/jpeg', PATCH_ATTACHMENT_JPEG_QUALITY)
+}
+
+async function buildEnhancedPatchAttachment(file, dataUrl) {
+  await refreshPatchLocationIfNeeded()
+  const recordedAt = formatPatchEvidenceTime()
+  const evidenceMeta = buildPatchEvidenceMeta(recordedAt)
+  let previewDataUrl = ''
+  try {
+    previewDataUrl = await createPatchWatermarkPreview(dataUrl, evidenceMeta)
+  } catch (error) {
+    evidenceMeta.canvasFailed = true
+  }
+
+  if (evidenceMeta.locationFailed) {
+    showToast('定位获取失败，请在说明中补充情况')
+  }
+
+  return {
+    name: file.name || '现场照片.jpg',
+    dataUrl,
+    sourceType: 'camera',
+    mimeType: file.type || 'image/jpeg',
+    previewDataUrl,
+    evidenceMeta
+  }
+}
+
+function readPatchFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('图片读取失败'))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function handlePatchAttachmentChange(event) {
   const file = event?.target?.files?.[0]
   if (!file) {
     return
   }
 
-  const reader = new FileReader()
-  reader.onload = () => {
-    patchDialogAttachments.value = [{
-      name: file.name || '现场照片.jpg',
-      dataUrl: reader.result,
-      sourceType: 'camera',
-      mimeType: file.type || 'image/jpeg'
-    }]
+  try {
+    if (Number(file.size || 0) > PATCH_ATTACHMENT_LARGE_FILE_BYTES) {
+      showToast('照片较大，系统将自动压缩后提交')
+    }
+    const rawDataUrl = await readPatchFileAsDataUrl(file)
+    const dataUrl = await compressPatchImageDataUrl(rawDataUrl)
+    patchDialogAttachments.value = [await buildEnhancedPatchAttachment(file, dataUrl)]
+  } catch (error) {
+    patchDialogAttachments.value = []
+    showToast(error?.message || '图片处理失败，请重新拍照')
   }
-  reader.readAsDataURL(file)
 
   if (event.target) {
     event.target.value = ''
@@ -3682,6 +3946,21 @@ async function submitPatchDialog() {
     const now = new Date()
     const pad = (v) => String(v).padStart(2, '0')
     const patchTime = `${leadershipTodayText.value} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+    let attachmentsJson = ''
+    try {
+      attachmentsJson = JSON.stringify(patchDialogAttachments.value.map(item => ({
+        name: item.name,
+        dataUrl: item.dataUrl,
+        sourceType: item.sourceType,
+        mimeType: item.mimeType || '',
+        previewDataUrl: item.previewDataUrl || '',
+        evidenceMeta: item.evidenceMeta || null
+      })))
+    } catch (error) {
+      showToast('证据图片处理失败，请重新拍照')
+      patchDialogSubmitting.value = false
+      return
+    }
 
     await submitAttendancePatchApplyApi({
       attendanceDate: leadershipTodayText.value,
@@ -3689,14 +3968,7 @@ async function submitPatchDialog() {
       applyType: patchDialogMode.value,
       patchTime,
       reason: patchDialogReason.value,
-      attachmentsJson: JSON.stringify(
-        patchDialogAttachments.value.map(item => ({
-          name: item.name,
-          dataUrl: item.dataUrl,
-          sourceType: item.sourceType,
-          mimeType: item.mimeType || ''
-        }))
-      )
+      attachmentsJson
     })
 
     showToast(patchDialogMode.value === 'EVIDENCE' ? '取证申请已提交，等待审核' : '补打卡申请已提交，等待审核')
@@ -4780,6 +5052,33 @@ onBeforeUnmount(() => {
     padding: 14px 16px;
   }
 }
+
+@media (max-width: 640px) {
+  :deep(.page-shell) {
+    padding: 10px 12px 112px;
+    border-radius: 0;
+    border: 0;
+    box-shadow: none;
+  }
+
+  :deep(.page-shell-header) {
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  :deep(.page-shell-kicker),
+  :deep(.page-shell-description) {
+    display: none;
+  }
+
+  :deep(.page-shell-title-row) {
+    margin-top: 0;
+  }
+
+  :deep(.page-shell-title) {
+    font-size: 20px;
+  }
+}
 .attendance-action-sheet {
   padding: 18px 16px 24px;
   background: #fff;
@@ -4882,6 +5181,33 @@ onBeforeUnmount(() => {
   gap: 4px;
   font-size: 12px;
   color: #64748b;
+}
+
+.patch-evidence-summary {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.patch-evidence-summary div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.patch-evidence-summary strong {
+  color: #334155;
+}
+
+.patch-evidence-summary__warn {
+  margin: 2px 0 0;
+  color: #b45309;
 }
 
 .attendance-hidden-input {

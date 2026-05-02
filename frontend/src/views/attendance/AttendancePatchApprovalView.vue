@@ -75,6 +75,38 @@
           <div class="record-card__meta">审批时间：{{ formatDateTime(item.approveTime) }}</div>
           <div class="record-card__meta">审批意见：{{ item.approveComment || '-' }}</div>
 
+          <div class="evidence-panel">
+            <div class="evidence-panel__title">证据附件</div>
+            <template v-if="item.attachmentItems?.length">
+              <div
+                v-for="attachment in item.attachmentItems"
+                :key="attachment.key"
+                class="evidence-card"
+              >
+                <img
+                  v-if="attachment.imageUrl"
+                  class="evidence-card__image"
+                  :src="attachment.imageUrl"
+                  alt="证据图片"
+                >
+                <div class="evidence-card__body">
+                  <div class="evidence-card__name">{{ attachment.name || '现场照片' }}</div>
+                  <div class="evidence-card__grid">
+                    <span>时间：{{ attachment.meta.recordedAt || '-' }}</span>
+                    <span>节点：{{ attachment.meta.nodeLabel || patchTypeLabel(item.patchType) }}</span>
+                    <span>经纬度：{{ coordinateText(attachment.meta) }}</span>
+                    <span>精度：{{ metersText(attachment.meta.accuracyMeters) }}</span>
+                    <span>距离：{{ metersText(attachment.meta.distanceMeters) }}</span>
+                    <span>来源：{{ attachment.meta.locationProvider || attachment.meta.locationSource || '-' }}</span>
+                  </div>
+                  <p v-if="attachment.meta.locationFailed" class="evidence-card__warn">定位获取失败</p>
+                  <p v-if="attachment.meta.canvasFailed" class="evidence-card__warn">水印图生成失败，已保留原图</p>
+                </div>
+              </div>
+            </template>
+            <div v-else class="evidence-panel__empty">暂无附件</div>
+          </div>
+
           <div v-if="canApproveItem(item)" class="panel-actions">
             <van-button size="small" type="success" :disabled="reviewBusy" @click="openReviewDialog(item, 'approve')">审批通过</van-button>
             <van-button size="small" plain type="danger" :disabled="reviewBusy" @click="openReviewDialog(item, 'reject')">审批拒绝</van-button>
@@ -178,7 +210,7 @@ async function fetchList() {
     const data = ensureSuccess(response) || {}
     pagination.total = Number(data.total || 0)
     pagination.pageNo = Number(data.pageNo || pagination.pageNo || 1)
-    list.value = Array.isArray(data.list) ? data.list : []
+    list.value = Array.isArray(data.list) ? data.list.map(normalizeApplyItem) : []
   } finally {
     loading.value = false
   }
@@ -297,6 +329,60 @@ function formatDateTime(value) {
   return String(value).replace('T', ' ').slice(0, 19)
 }
 
+function normalizeApplyItem(item) {
+  return {
+    ...item,
+    attachmentItems: parseAttachmentItems(item)
+  }
+}
+
+function parseAttachmentItems(item) {
+  const raw = item?.attachmentsJson
+  if (!raw) {
+    return []
+  }
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+    return parsed
+      .filter(Boolean)
+      .map((attachment, index) => {
+        const meta = attachment.evidenceMeta && typeof attachment.evidenceMeta === 'object'
+          ? attachment.evidenceMeta
+          : {}
+        return {
+          key: `${item?.id || 'apply'}-${index}`,
+          name: attachment.name || '',
+          imageUrl: attachment.previewDataUrl || attachment.dataUrl || '',
+          meta
+        }
+      })
+  } catch (error) {
+    return []
+  }
+}
+
+function normalizeNumber(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function coordinateText(meta) {
+  const latitude = normalizeNumber(meta?.latitude)
+  const longitude = normalizeNumber(meta?.longitude)
+  if (latitude == null || longitude == null) {
+    return '-'
+  }
+  return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+}
+
+function metersText(value) {
+  const number = normalizeNumber(value)
+  return number == null ? '-' : `${number}米`
+}
+
 function ensureSuccess(response) {
   if (!response || response.code !== 0) {
     throw new Error(response?.message || '请求失败')
@@ -399,6 +485,65 @@ function ensureSuccess(response) {
   white-space: pre-wrap;
 }
 
+.evidence-panel {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.evidence-panel__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.evidence-panel__empty {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.evidence-card {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 10px;
+  align-items: start;
+}
+
+.evidence-card__image {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid #dbe3ef;
+  background: #fff;
+}
+
+.evidence-card__name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.evidence-card__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.evidence-card__warn {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #b45309;
+}
+
 .pager {
   display: flex;
   flex-wrap: wrap;
@@ -431,5 +576,15 @@ function ensureSuccess(response) {
 
 .state-block {
   padding: 24px 0;
+}
+
+@media (max-width: 640px) {
+  .evidence-card {
+    grid-template-columns: 1fr;
+  }
+
+  .evidence-card__grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

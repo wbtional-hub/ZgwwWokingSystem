@@ -8,73 +8,65 @@
       <article class="personal-focus-card">
         <header class="personal-focus-card__header">
           <div>
-            <p class="personal-focus-card__eyebrow">我的考勤</p>
-            <h2 class="personal-focus-card__title">{{ name || '-' }}</h2>
+            <h2 class="personal-focus-card__title">今日考勤</h2>
+            <p class="personal-focus-card__date">{{ todayDateText }}</p>
           </div>
           <span class="personal-status" :class="`personal-status--${todayStatusTone}`">
             {{ todayStatusLabel || '未打卡' }}
           </span>
         </header>
 
-        <article class="personal-main-action personal-main-action--hero">
-          <div class="personal-main-action__meta">
-            <div class="personal-main-action__eyebrow">
-              <span class="personal-main-action__phase" :style="mainActionPhaseStyle">
-                {{ mainActionNode?.stepLabel || '当前时段' }}
-              </span>
-              <span class="personal-main-action__range">{{ mainActionNode?.timeRangeText || '时间以规则为准' }}</span>
-            </div>
-            <strong class="personal-main-action__title">{{ checkInButtonText }}</strong>
-            <p class="personal-main-action__hint">
-              {{ checkInHint || '点击后自动获取定位并刷新当前状态。' }}
-            </p>
-          </div>
-          <button
-            type="button"
-            class="personal-checkin-button"
-            :style="mainActionButtonStyle"
-            :disabled="checkingIn || !canCheckIn"
-            @click="$emit('check-in')"
-          >
-            {{ checkingIn ? '正在打卡...' : checkInButtonText }}
-          </button>
-        </article>
-
         <article v-if="notice" class="personal-notice">
           <strong>{{ notice.title }}</strong>
           <p>{{ notice.text }}</p>
         </article>
 
-        <div class="personal-node-grid">
+        <div class="personal-today-list">
           <article
-            v-for="node in nodeCards"
+            v-for="node in todayNodeRows"
             :key="node.nodeCode"
-            class="personal-node-card"
-            :class="`personal-node-card--${node.statusTone || 'pending'}`"
-            :style="nodeCardStyle(node)"
+            class="personal-today-row"
+            :class="`personal-today-row--${node.statusTone || 'pending'}`"
           >
-            <div class="personal-node-card__top">
-              <span class="personal-node-card__step" :style="nodePhaseStyle(node)">{{ node.stepLabel || '-' }}</span>
-              <span class="personal-node-card__status">{{ node.statusLabel || '待处理' }}</span>
+            <div class="personal-today-row__name">
+              <span class="personal-today-row__dot" :style="{ background: node.accentColor || '#94a3b8' }"></span>
+              <strong>{{ node.fullTitle }}</strong>
             </div>
-            <div class="personal-node-card__title">{{ node.nodeTitleShort || '-' }}</div>
-            <div class="personal-node-card__range">{{ node.timeRangeText || '时间以规则为准' }}</div>
-            <div class="personal-node-card__time">{{ node.actualPunchTime || '未打卡' }}</div>
-            <p class="personal-node-card__remark">{{ node.simpleRemark || '等待当前节点处理' }}</p>
-            <div v-if="node.actions?.length" class="personal-node-card__actions">
+            <div class="personal-today-row__rule">{{ node.ruleTimeText }}</div>
+            <div class="personal-today-row__state">
+              <span class="personal-today-row__badge">{{ node.displayStatusLabel }}</span>
+              <small v-if="node.actualTimeText">{{ node.actualTimeText }}</small>
+            </div>
+            <div class="personal-today-row__actions">
               <button
-                v-for="action in node.actions"
-                :key="`${node.nodeCode}-${action.key}`"
+                v-if="node.rowAction"
                 type="button"
-                class="personal-node-card__action"
-                :class="`personal-node-card__action--${action.tone || 'secondary'}`"
-                @click="$emit('node-action', { node, action })"
+                class="personal-today-row__action"
+                :class="`personal-today-row__action--${node.rowAction.tone || 'secondary'}`"
+                @click.stop="$emit('node-action', { node, action: node.rowAction })"
               >
-                {{ action.label }}
+                {{ node.rowAction.label }}
               </button>
             </div>
           </article>
         </div>
+
+        <article class="personal-action-orb-wrap">
+          <button
+            type="button"
+            class="personal-action-orb"
+            :class="[
+              `personal-action-orb--${primaryActionTone}`,
+              { 'personal-action-orb--disabled': primaryActionDisabled }
+            ]"
+            :disabled="primaryActionDisabled"
+            @click="handlePrimaryAction"
+          >
+            <span class="personal-action-orb__time">{{ currentClockText }}</span>
+            <strong>{{ primaryActionLabel }}</strong>
+          </button>
+          <p class="personal-action-orb-wrap__hint">{{ checkInHint || primaryActionHint }}</p>
+        </article>
 
         <div class="personal-focus-card__footer">
           <article class="personal-location">
@@ -130,7 +122,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const props = defineProps({
   loading: {
@@ -199,7 +191,23 @@ const props = defineProps({
   }
 })
 
-defineEmits(['check-in', 'node-action'])
+const emit = defineEmits(['check-in', 'node-action'])
+
+const now = ref(new Date())
+let clockTimer = null
+
+onMounted(() => {
+  clockTimer = window.setInterval(() => {
+    now.value = new Date()
+  }, 60 * 1000)
+})
+
+onBeforeUnmount(() => {
+  if (clockTimer) {
+    window.clearInterval(clockTimer)
+    clockTimer = null
+  }
+})
 
 const mainActionNode = computed(() => {
   return props.nodeCards.find(node => node?.canPunch)
@@ -224,6 +232,103 @@ const mainActionButtonStyle = computed(() => {
     background: color,
     boxShadow: `0 16px 28px ${withAlpha(color, 0.22)}`
   }
+})
+
+const todayDateText = computed(() => {
+  const date = now.value
+  const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${weekdays[date.getDay()]}`
+})
+
+const currentClockText = computed(() => {
+  return `${pad2(now.value.getHours())}:${pad2(now.value.getMinutes())}`
+})
+
+const todayNodeRows = computed(() => {
+  return props.nodeCards.map((node) => {
+    const actualTimeText = formatNodeActualTime(node?.actualPunchTime)
+    return {
+      ...node,
+      fullTitle: resolveNodeFullTitle(node),
+      ruleTimeText: resolveNodeRuleTime(node),
+      actualTimeText,
+      displayStatusLabel: resolveDisplayStatusLabel(node, actualTimeText),
+      rowAction: resolveNodeRowAction(node)
+    }
+  })
+})
+
+const primaryAction = computed(() => {
+  const node = mainActionNode.value
+  if (!node) {
+    return {
+      key: 'none',
+      label: '今日无需打卡',
+      disabled: true,
+      node: null
+    }
+  }
+
+  if (props.canCheckIn && (node.canPunch || node.needEarlyConfirm)) {
+    return {
+      key: 'check-in',
+      label: props.checkingIn ? '正在打卡...' : resolvePrimaryPunchLabel(node),
+      disabled: props.checkingIn,
+      node
+    }
+  }
+
+  if (node.canEvidence) {
+    return {
+      key: 'evidence',
+      label: '补打卡',
+      disabled: false,
+      node
+    }
+  }
+
+  if (node.canApplyMakeup) {
+    return {
+      key: 'makeup',
+      label: '补打卡',
+      disabled: false,
+      node
+    }
+  }
+
+  return {
+    key: 'none',
+    label: props.checkInButtonText || '今日无需打卡',
+    disabled: true,
+    node
+  }
+})
+
+const primaryActionLabel = computed(() => primaryAction.value.label || '今日无需打卡')
+
+const primaryActionDisabled = computed(() => Boolean(primaryAction.value.disabled))
+
+const primaryActionTone = computed(() => {
+  if (primaryActionDisabled.value) {
+    return 'disabled'
+  }
+  if (primaryAction.value.key === 'evidence') {
+    return 'evidence'
+  }
+  if (primaryAction.value.key === 'makeup') {
+    return 'makeup'
+  }
+  return 'punchable'
+})
+
+const primaryActionHint = computed(() => {
+  if (primaryAction.value.key === 'evidence') {
+    return '当前节点可提交补打卡申请。'
+  }
+  if (primaryAction.value.key === 'makeup') {
+    return '当前节点可发起补打卡申请。'
+  }
+  return '当前时段无需操作。'
 })
 
 const weekCards = computed(() => [
@@ -256,6 +361,130 @@ function nodePhaseStyle(node) {
     color: node?.accentColor || '#64748b',
     background: node?.accentSoft || 'rgba(148, 163, 184, 0.14)'
   }
+}
+
+function handlePrimaryAction() {
+  const action = primaryAction.value
+  if (action.disabled) {
+    return
+  }
+
+  if (action.key === 'check-in') {
+    emit('check-in')
+    return
+  }
+
+  if (action.key === 'evidence' || action.key === 'makeup') {
+    emit('node-action', {
+      node: action.node,
+      action: {
+        key: action.key,
+        label: action.label
+      }
+    })
+  }
+}
+
+function resolveNodeFullTitle(node) {
+  const phase = node?.stepLabel || resolveNodePhase(node?.nodeCode)
+  const title = resolveNodeShortTitle(node)
+  return `${phase}${title}`
+}
+
+function resolvePrimaryPunchLabel(node) {
+  return `${resolveNodeFullTitle(node)}打卡`
+}
+
+function resolveNodePhase(nodeCode) {
+  return String(nodeCode || '').startsWith('PM') ? '下午' : '上午'
+}
+
+function resolveNodeShortTitle(node) {
+  const code = String(node?.nodeCode || '')
+  if (node?.nodeTitleShort === '上班打卡' || node?.nodeTitleShort === '下班打卡') {
+    return node.nodeTitleShort.replace('打卡', '')
+  }
+  return code.endsWith('_OFF') ? '下班' : '上班'
+}
+
+function resolveDisplayStatusLabel(node, actualTimeText) {
+  const isOffNode = String(node?.nodeCode || '').endsWith('_OFF')
+  const label = String(node?.statusLabel || '').trim()
+  const code = String(node?.statusCode || '').toUpperCase()
+
+  if (actualTimeText && (!label || label === '正常' || label === '已通过')) {
+    return isOffNode ? '已签退' : '已签到'
+  }
+  if (code.includes('APPROVED')) {
+    return '已处理'
+  }
+  if (code.includes('PENDING')) {
+    return '补卡待审'
+  }
+  if (node?.canEvidence) {
+    return '待处理'
+  }
+  if (node?.canApplyMakeup) {
+    return '待处理'
+  }
+  if (node?.canPunch || node?.needEarlyConfirm) {
+    return isOffNode ? '待签退' : '待签到'
+  }
+  if (!label || label === '待处理') {
+    return '未开始'
+  }
+  if (label.includes('取证')) {
+    return label.replace('取证', '补卡')
+  }
+  return label
+}
+
+function resolveNodeRowAction(node) {
+  if (node?.canEvidence) {
+    return {
+      key: 'evidence',
+      label: '补打卡',
+      tone: 'primary'
+    }
+  }
+  if (node?.canApplyMakeup) {
+    return {
+      key: 'makeup',
+      label: '补打卡',
+      tone: 'warning'
+    }
+  }
+  return null
+}
+
+function resolveNodeRuleTime(node) {
+  const ruleTime = String(node?.ruleTimeText || '').trim()
+  if (ruleTime) {
+    return ruleTime
+  }
+
+  const text = String(node?.timeRangeText || '').trim()
+  if (!text || text === '时间以规则为准') {
+    return '--:--'
+  }
+  const times = text.match(/\d{1,2}:\d{2}/g)
+  if (!times?.length) {
+    return text
+  }
+  return String(node?.nodeCode || '').endsWith('_OFF') ? times[times.length - 1] : times[0]
+}
+
+function formatNodeActualTime(value) {
+  if (!value || value === '未打卡') {
+    return ''
+  }
+  const text = String(value)
+  const matched = text.match(/\d{1,2}:\d{2}/)
+  return matched ? matched[0] : text
+}
+
+function pad2(value) {
+  return String(value).padStart(2, '0')
 }
 
 function withAlpha(hexColor, alpha) {
@@ -319,6 +548,12 @@ function withAlpha(hexColor, alpha) {
   font-size: clamp(28px, 4vw, 36px);
   line-height: 1.08;
   color: #0f172a;
+}
+
+.personal-focus-card__date {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 14px;
 }
 
 .personal-panel {
@@ -465,6 +700,302 @@ function withAlpha(hexColor, alpha) {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-top: 22px;
+}
+
+.personal-today-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 14px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.personal-today-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 1fr) 74px minmax(112px, 1.1fr) 74px;
+  gap: 10px;
+  align-items: center;
+  min-height: 46px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.personal-today-row__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.personal-today-row__name strong {
+  font-size: 15px;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.personal-today-row__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.personal-today-row__rule {
+  font-size: 15px;
+  font-weight: 700;
+  color: #334155;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.personal-today-row__state {
+  display: inline-flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.personal-today-row__badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.personal-today-row__state small {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.personal-today-row--normal .personal-today-row__badge,
+.personal-today-row--approved .personal-today-row__badge {
+  background: rgba(16, 185, 129, 0.14);
+  color: #047857;
+}
+
+.personal-today-row--late .personal-today-row__badge,
+.personal-today-row--early .personal-today-row__badge,
+.personal-today-row--missing .personal-today-row__badge,
+.personal-today-row--abnormal .personal-today-row__badge,
+.personal-today-row--rejected .personal-today-row__badge {
+  background: rgba(249, 115, 22, 0.14);
+  color: #c2410c;
+}
+
+.personal-today-row--evidence .personal-today-row__badge,
+.personal-today-row--makeup .personal-today-row__badge {
+  background: rgba(99, 102, 241, 0.13);
+  color: #4f46e5;
+}
+
+.personal-today-row--pending .personal-today-row__badge {
+  background: rgba(148, 163, 184, 0.18);
+  color: #475569;
+}
+
+.personal-today-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.personal-today-row__action {
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: #fff;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.personal-today-row__action--primary {
+  border-color: rgba(79, 125, 243, 0.24);
+  background: rgba(79, 125, 243, 0.1);
+  color: #315fd3;
+}
+
+.personal-today-row__action--warning {
+  border-color: rgba(231, 169, 59, 0.24);
+  background: rgba(231, 169, 59, 0.12);
+  color: #b7791f;
+}
+
+.personal-action-orb-wrap {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.personal-action-orb {
+  --orb-shadow-color: rgba(37, 99, 235, 0.25);
+  --orb-shadow-color-strong: rgba(37, 99, 235, 0.32);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  width: 154px;
+  height: 154px;
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 34% 22%, rgba(255, 255, 255, 0.62), transparent 23%),
+    linear-gradient(145deg, #4f7df3 0%, #25bfd0 100%);
+  box-shadow:
+    0 16px 34px var(--orb-shadow-color),
+    0 5px 12px rgba(15, 23, 42, 0.1),
+    inset 0 2px 7px rgba(255, 255, 255, 0.45),
+    inset 0 -9px 18px rgba(15, 23, 42, 0.16);
+  transform: translateZ(0);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.2s ease;
+  animation: personal-orb-breathe 3.8s ease-in-out infinite;
+}
+
+.personal-action-orb::before {
+  content: '';
+  position: absolute;
+  inset: 9px;
+  z-index: -1;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.52);
+  box-shadow:
+    inset 0 1px 7px rgba(255, 255, 255, 0.32),
+    0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.personal-action-orb::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: 27px;
+  width: 72px;
+  height: 38px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0));
+  filter: blur(1px);
+  transform: rotate(-18deg);
+  pointer-events: none;
+}
+
+.personal-action-orb--evidence {
+  --orb-shadow-color: rgba(99, 102, 241, 0.27);
+  --orb-shadow-color-strong: rgba(99, 102, 241, 0.34);
+  background:
+    radial-gradient(circle at 34% 22%, rgba(255, 255, 255, 0.58), transparent 23%),
+    linear-gradient(145deg, #5b7cfa 0%, #7c5ce7 100%);
+  box-shadow:
+    0 16px 34px rgba(99, 102, 241, 0.27),
+    0 5px 12px rgba(15, 23, 42, 0.1),
+    inset 0 2px 7px rgba(255, 255, 255, 0.43),
+    inset 0 -9px 18px rgba(49, 46, 129, 0.18);
+}
+
+.personal-action-orb--makeup {
+  --orb-shadow-color: rgba(217, 119, 6, 0.26);
+  --orb-shadow-color-strong: rgba(217, 119, 6, 0.33);
+  background:
+    radial-gradient(circle at 34% 22%, rgba(255, 255, 255, 0.6), transparent 23%),
+    linear-gradient(145deg, #f7b955 0%, #ee8c36 100%);
+  box-shadow:
+    0 16px 34px rgba(217, 119, 6, 0.26),
+    0 5px 12px rgba(15, 23, 42, 0.1),
+    inset 0 2px 7px rgba(255, 255, 255, 0.43),
+    inset 0 -9px 18px rgba(124, 45, 18, 0.16);
+}
+
+.personal-action-orb--disabled {
+  --orb-shadow-color: rgba(100, 116, 139, 0.18);
+  --orb-shadow-color-strong: rgba(100, 116, 139, 0.18);
+  background:
+    radial-gradient(circle at 34% 22%, rgba(255, 255, 255, 0.55), transparent 23%),
+    linear-gradient(145deg, #cbd5e1 0%, #94a3b8 100%);
+  box-shadow:
+    0 10px 22px rgba(100, 116, 139, 0.18),
+    inset 0 2px 7px rgba(255, 255, 255, 0.42),
+    inset 0 -8px 16px rgba(51, 65, 85, 0.12);
+  animation: none;
+}
+
+.personal-action-orb:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.personal-action-orb:active:not(:disabled) {
+  transform: scale(0.97);
+  box-shadow:
+    0 8px 20px var(--orb-shadow-color, rgba(37, 99, 235, 0.2)),
+    inset 0 2px 6px rgba(255, 255, 255, 0.36),
+    inset 0 -5px 12px rgba(15, 23, 42, 0.18);
+}
+
+.personal-action-orb:disabled {
+  cursor: not-allowed;
+  opacity: 0.82;
+}
+
+.personal-action-orb__time {
+  position: relative;
+  z-index: 1;
+  font-size: 34px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+}
+
+.personal-action-orb strong {
+  position: relative;
+  z-index: 1;
+  font-size: 15px;
+  line-height: 1.2;
+  text-shadow: 0 1px 6px rgba(15, 23, 42, 0.16);
+}
+
+.personal-action-orb-wrap__hint {
+  max-width: 260px;
+  margin: 0;
+  text-align: center;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@keyframes personal-orb-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 16px 34px var(--orb-shadow-color),
+      0 5px 12px rgba(15, 23, 42, 0.1),
+      inset 0 2px 7px rgba(255, 255, 255, 0.45),
+      inset 0 -9px 18px rgba(15, 23, 42, 0.16);
+  }
+  50% {
+    box-shadow:
+      0 18px 38px var(--orb-shadow-color-strong),
+      0 6px 14px rgba(15, 23, 42, 0.11),
+      inset 0 2px 7px rgba(255, 255, 255, 0.48),
+      inset 0 -9px 18px rgba(15, 23, 42, 0.16);
+  }
 }
 
 .personal-node-card {
@@ -642,14 +1173,171 @@ function withAlpha(hexColor, alpha) {
 }
 
 @media (max-width: 640px) {
+  .personal-workspace {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    gap: 12px;
+    padding-bottom: 110px;
+    overflow-x: hidden;
+  }
+
   .personal-focus-card,
   .personal-panel {
-    padding: 18px;
-    border-radius: 22px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 14px;
+    border-radius: 20px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  }
+
+  .personal-focus-card {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+  }
+
+  .personal-focus-card__header {
+    gap: 10px;
+    align-items: center;
+  }
+
+  .personal-focus-card__eyebrow {
+    margin-bottom: 4px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
   }
 
   .personal-focus-card__title {
-    font-size: 28px;
+    font-size: 24px;
+  }
+
+  .personal-focus-card__date {
+    margin-top: 5px;
+    font-size: 13px;
+  }
+
+  .personal-status {
+    min-height: 30px;
+    padding: 0 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .personal-notice {
+    grid-template-columns: auto 1fr;
+    gap: 6px;
+    align-items: center;
+    margin-top: 10px;
+    padding: 9px 11px;
+    border-radius: 14px;
+  }
+
+  .personal-notice strong {
+    font-size: 13px;
+  }
+
+  .personal-notice p {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .personal-action-orb-wrap {
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .personal-action-orb {
+    width: 124px;
+    height: 124px;
+    gap: 5px;
+  }
+
+  .personal-action-orb__time {
+    font-size: 29px;
+  }
+
+  .personal-action-orb strong {
+    font-size: 13px;
+  }
+
+  .personal-action-orb-wrap__hint {
+    max-width: 230px;
+    font-size: 11px;
+    line-height: 1.35;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .personal-today-list {
+    gap: 5px;
+    margin-top: 10px;
+    padding: 7px;
+    border-radius: 16px;
+  }
+
+  .personal-today-row {
+    grid-template-columns: minmax(68px, 1fr) 50px minmax(72px, 0.95fr) 58px;
+    gap: 5px;
+    min-height: 40px;
+    padding: 6px 7px;
+    border-radius: 13px;
+  }
+
+  .personal-today-row__name {
+    gap: 6px;
+  }
+
+  .personal-today-row__name strong,
+  .personal-today-row__rule {
+    font-size: 14px;
+  }
+
+  .personal-today-row__dot {
+    width: 6px;
+    height: 6px;
+  }
+
+  .personal-today-row__state {
+    gap: 4px;
+  }
+
+  .personal-today-row__badge {
+    min-height: 22px;
+    padding: 0 7px;
+    font-size: 11px;
+  }
+
+  .personal-today-row__state small {
+    font-size: 12px;
+  }
+
+  .personal-today-row__actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .personal-today-row__action {
+    min-height: 24px;
+    padding: 0 8px;
+    font-size: 11px;
+  }
+
+  .personal-focus-card__footer {
+    margin-top: 12px;
+  }
+
+  .personal-location,
+  .personal-week-item,
+  .personal-record {
+    gap: 5px;
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .personal-location strong,
+  .personal-week-item strong {
+    font-size: 18px;
   }
 
   .personal-node-grid {

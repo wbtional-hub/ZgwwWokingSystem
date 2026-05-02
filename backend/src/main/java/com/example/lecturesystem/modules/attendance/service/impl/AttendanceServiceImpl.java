@@ -58,6 +58,7 @@ import java.util.Map;
 public class AttendanceServiceImpl implements AttendanceService {
     private static final Logger log = LoggerFactory.getLogger(AttendanceServiceImpl.class);
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
     private static final double EARTH_RADIUS_METERS = 6371000D;
     private static final int DEFAULT_GOOD_ACCURACY_METERS = 100;
     private static final int DEFAULT_MAX_ACCURACY_METERS = 1000;
@@ -192,6 +193,7 @@ public Object queryCurrentAttendanceLocation() {
     result.put("status", scope.status);
     result.put("accuracyGoodThreshold", resolveGoodAccuracyThreshold());
     result.put("accuracyMaxThreshold", resolveMaxAccuracyThreshold());
+    result.put("ruleTimes", buildRuleTimes(findActiveAttendanceRule(currentUser.getUnitId())));
 
     if (scope.location != null) {
         result.put("locationName", scope.location.getLocationName());
@@ -219,6 +221,22 @@ public Object queryCurrentAttendanceLocation() {
         result.put("reason", resolvedState.isCurrentActionAvailable() ? null : resolvedState.getHint());
     }
     return result;
+}
+
+private Map<String, String> buildRuleTimes(AttendanceRuleEntity rule) {
+    Map<String, String> ruleTimes = new LinkedHashMap<>();
+    if (rule == null) {
+        return ruleTimes;
+    }
+    ruleTimes.put("amOn", formatRuleTime(rule.getWorkStartTime()));
+    ruleTimes.put("amOff", formatRuleTime(rule.getAmOffTime()));
+    ruleTimes.put("pmOn", formatRuleTime(rule.getPmOnTime()));
+    ruleTimes.put("pmOff", formatRuleTime(rule.getWorkEndTime()));
+    return ruleTimes;
+}
+
+private String formatRuleTime(LocalTime value) {
+    return value == null ? "" : TIME_FORMATTER.format(value);
 }
 
     @Override
