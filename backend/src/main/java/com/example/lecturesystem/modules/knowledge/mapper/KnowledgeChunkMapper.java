@@ -12,6 +12,7 @@ import java.util.List;
 @Mapper
 public interface KnowledgeChunkMapper {
     List<KnowledgeChunkListItemVO> queryByDocumentId(@Param("documentId") Long documentId);
+    List<KnowledgeChunkListItemVO> findByIds(@Param("ids") List<Long> ids);
     int batchInsert(@Param("list") List<KnowledgeChunkEntity> list);
     List<KnowledgeSearchResultVO> search(@Param("request") KnowledgeSearchRequest request);
     List<KnowledgeSearchResultVO> queryCatalogSourceByBaseId(@Param("baseId") Long baseId);

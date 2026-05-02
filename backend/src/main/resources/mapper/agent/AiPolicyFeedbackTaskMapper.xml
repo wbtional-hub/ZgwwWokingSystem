@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AiPolicyFeedbackTaskMapper">
+    <resultMap id="AiPolicyFeedbackTaskMap" type="com.example.lecturesystem.modules.agent.entity.AiPolicyFeedbackTaskEntity">
+        <id property="id" column="id"/>
+        <result property="feedbackId" column="feedback_id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="sessionId" column="session_id"/>
+        <result property="messageId" column="message_id"/>
+        <result property="traceId" column="trace_id"/>
+        <result property="answerLogId" column="answer_log_id"/>
+        <result property="question" column="question"/>
+        <result property="answer" column="answer"/>
+        <result property="feedbackType" column="feedback_type"/>
+        <result property="feedbackContent" column="feedback_content"/>
+        <result property="policyKey" column="policy_key"/>
+        <result property="policyName" column="policy_name"/>
+        <result property="topicType" column="topic_type"/>
+        <result property="questionType" column="question_type"/>
+        <result property="evidenceIds" column="evidence_ids"/>
+        <result property="evidenceSource" column="evidence_source"/>
+        <result property="routePlan" column="route_plan"/>
+        <result property="validationSummary" column="validation_summary"/>
+        <result property="status" column="status"/>
+        <result property="priority" column="priority"/>
+        <result property="handlerId" column="handler_id"/>
+        <result property="handleResult" column="handle_result"/>
+        <result property="handledAt" column="handled_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="TaskColumns">
+        id, feedback_id, base_id, user_id, session_id, message_id, trace_id, answer_log_id,
+        question, answer, feedback_type, feedback_content, policy_key, policy_name, topic_type,
+        question_type, evidence_ids, evidence_source, route_plan, validation_summary, status,
+        priority, handler_id, handle_result, handled_at, created_at, updated_at
+    </sql>
+
+    <sql id="TaskWhere">
+        WHERE 1 = 1
+        <if test="request.status != null and request.status != ''">
+            AND status = #{request.status}
+        </if>
+        <if test="request.feedbackType != null and request.feedbackType != ''">
+            AND feedback_type = #{request.feedbackType}
+        </if>
+        <if test="request.policyKey != null and request.policyKey != ''">
+            AND policy_key ILIKE CONCAT('%', #{request.policyKey}, '%')
+        </if>
+        <if test="request.topicType != null and request.topicType != ''">
+            AND topic_type ILIKE CONCAT('%', #{request.topicType}, '%')
+        </if>
+        <if test="request.keyword != null and request.keyword != ''">
+            AND (
+                question ILIKE CONCAT('%', #{request.keyword}, '%')
+                OR answer ILIKE CONCAT('%', #{request.keyword}, '%')
+                OR feedback_content ILIKE CONCAT('%', #{request.keyword}, '%')
+                OR policy_key ILIKE CONCAT('%', #{request.keyword}, '%')
+                OR policy_name ILIKE CONCAT('%', #{request.keyword}, '%')
+            )
+        </if>
+        <if test="request.startTime != null and request.startTime != ''">
+            AND created_at &gt;= CAST(#{request.startTime} AS timestamp)
+        </if>
+        <if test="request.endTime != null and request.endTime != ''">
+            AND created_at &lt;= CAST(#{request.endTime} AS timestamp)
+        </if>
+    </sql>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.agent.entity.AiPolicyFeedbackTaskEntity"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO ai_policy_feedback_task (
+            feedback_id, base_id, user_id, session_id, message_id, trace_id, answer_log_id,
+            question, answer, feedback_type, feedback_content, policy_key, policy_name, topic_type,
+            question_type, evidence_ids, evidence_source, route_plan, validation_summary, status,
+            priority, handler_id, handle_result, handled_at, created_at, updated_at
+        ) VALUES (
+            #{feedbackId}, #{baseId}, #{userId}, #{sessionId}, #{messageId}, #{traceId}, #{answerLogId},
+            #{question}, #{answer}, #{feedbackType}, #{feedbackContent}, #{policyKey}, #{policyName}, #{topicType},
+            #{questionType}, #{evidenceIds}, #{evidenceSource}, #{routePlan}, #{validationSummary}, #{status},
+            #{priority}, #{handlerId}, #{handleResult}, #{handledAt}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <select id="findById" resultMap="AiPolicyFeedbackTaskMap">
+        SELECT <include refid="TaskColumns"/>
+        FROM ai_policy_feedback_task
+        WHERE id = #{id}
+    </select>
+
+    <select id="queryPage" resultMap="AiPolicyFeedbackTaskMap">
+        SELECT <include refid="TaskColumns"/>
+        FROM ai_policy_feedback_task
+        <include refid="TaskWhere"/>
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countPage" resultType="int">
+        SELECT COUNT(1)
+        FROM ai_policy_feedback_task
+        <include refid="TaskWhere"/>
+    </select>
+
+    <update id="updateStatus">
+        UPDATE ai_policy_feedback_task
+        SET status = #{status},
+            handler_id = #{handlerId},
+            handle_result = #{handleResult},
+            handled_at = CASE WHEN #{markHandled} THEN CURRENT_TIMESTAMP ELSE handled_at END,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+    </update>
+</mapper>

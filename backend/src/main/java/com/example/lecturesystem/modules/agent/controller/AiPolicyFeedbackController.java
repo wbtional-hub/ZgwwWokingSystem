@@ -46,6 +46,28 @@ public class AiPolicyFeedbackController {
         return ApiResponse.success(writeFeedback(request, "correct"));
     }
 
+    @PostMapping("/submit")
+    public ApiResponse<?> submit(@RequestBody FeedbackSubmitRequest request) {
+        return ApiResponse.success(aiPolicyLearningService.submitFeedbackOnly(
+                request.baseId(),
+                request.userId(),
+                request.sessionId(),
+                request.messageId(),
+                request.traceId(),
+                request.intentId(),
+                request.question(),
+                request.question(),
+                request.answer(),
+                request.feedbackType(),
+                request.feedbackContent(),
+                request.policyKey(),
+                request.topicType(),
+                request.questionType(),
+                request.evidenceIds(),
+                request.evidenceSource()
+        ));
+    }
+
     private AiPolicyLearningService.LearningResult writeFeedback(FeedbackRequest request, String feedbackType) {
         return aiPolicyLearningService.feedback(
                 request.baseId(),
@@ -72,5 +94,23 @@ public class AiPolicyFeedbackController {
                                   String normalizedQuestion,
                                   String finalAnswer,
                                   String feedbackText) {
+    }
+
+    public record FeedbackSubmitRequest(Long baseId,
+                                        Long userId,
+                                        Long sessionId,
+                                        Long messageId,
+                                        String traceId,
+                                        String question,
+                                        String answer,
+                                        String feedbackType,
+                                        String feedbackContent,
+                                        Boolean submitContext,
+                                        String policyKey,
+                                        String topicType,
+                                        String questionType,
+                                        String evidenceIds,
+                                        String evidenceSource,
+                                        Long intentId) {
     }
 }

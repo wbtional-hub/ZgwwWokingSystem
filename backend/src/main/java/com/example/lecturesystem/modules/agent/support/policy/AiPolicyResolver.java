@@ -25,6 +25,9 @@ public class AiPolicyResolver {
         if (baseId == null || question == null) {
             return PolicyMatch.unmatched();
         }
+        if (isAnswerModeInstruction(question)) {
+            return PolicyMatch.unmatched();
+        }
         List<AiPolicyAliasEntity> aliases;
         try {
             aliases = aiPolicyAliasMapper.queryEnabledByBaseId(baseId);
@@ -64,6 +67,20 @@ public class AiPolicyResolver {
             preferredRegion = regionMatch.scope().getCode();
         }
         return new PolicyMatch(true, bestPolicyKey, resolveCanonicalPolicyName(bestPolicyKey), formalNames, matchedAliases, preferredRegion);
+    }
+
+    private boolean isAnswerModeInstruction(AiPolicyQuestionNormalizer.NormalizedQuestion question) {
+        if (question == null || question.compact() == null) {
+            return false;
+        }
+        String compact = question.compact();
+        return compact.contains("请使用AI帮我回答")
+                || compact.contains("用AI回答")
+                || compact.contains("用AI帮我答")
+                || compact.contains("调用AI回答")
+                || compact.contains("AI重新回答")
+                || compact.contains("AI再回答")
+                || compact.contains("AI帮我回答");
     }
 
     private String resolveCanonicalPolicyName(String policyKey) {

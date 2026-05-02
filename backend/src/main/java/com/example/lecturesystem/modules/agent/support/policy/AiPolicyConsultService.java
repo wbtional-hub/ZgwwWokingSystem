@@ -4,10 +4,14 @@ import com.example.lecturesystem.modules.agent.entity.AiPolicyAnswerLogEntity;
 import com.example.lecturesystem.modules.agent.entity.AiPolicyIntentAnswerEntity;
 import com.example.lecturesystem.modules.agent.entity.AiPolicyIntentEntity;
 import com.example.lecturesystem.modules.agent.entity.AiPolicyRetrievalLogEntity;
+import com.example.lecturesystem.modules.agent.mapper.AiPolicyChunkMapper;
 import com.example.lecturesystem.modules.agent.mapper.AiPolicyAnswerLogMapper;
 import com.example.lecturesystem.modules.agent.mapper.AiPolicyRetrievalLogMapper;
 import com.example.lecturesystem.modules.agent.support.KnowledgeCitationContext;
+import com.example.lecturesystem.modules.knowledge.vo.KnowledgeSearchResultVO;
 import com.example.lecturesystem.modules.logcenter.service.LogCenterService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -16,7 +20,11 @@ import java.util.List;
 @Service
 public class AiPolicyConsultService {
 
+    private static final Logger log = LoggerFactory.getLogger(AiPolicyConsultService.class);
     private static final String SOURCE_SCENE_MOBILE_POLICY_CONSULTANT = "MOBILE_POLICY_CONSULTANT";
+    private static final String SOURCE_SCENE_POLICY_STANDARDIZATION_PHASE1 = "POLICY_STANDARDIZATION_PHASE1";
+    private static final String TOPIC_TYPE_DEPARTMENT = "department";
+    private static final String TOPIC_TYPE_BENEFIT = "benefit";
 
     private final AiPolicyProperties properties;
     private final AiPolicyQuestionNormalizer normalizer;
@@ -31,6 +39,7 @@ public class AiPolicyConsultService {
     private final AiPolicyHybridRetrievalService hybridRetrievalService;
     private final AiPolicyEvidenceValidator evidenceValidator;
     private final AiPolicyAnswerComposer answerComposer;
+    private final AiPolicyChunkMapper aiPolicyChunkMapper;
     private final AiPolicyAnswerLogMapper answerLogMapper;
     private final AiPolicyRetrievalLogMapper retrievalLogMapper;
     private final LogCenterService logCenterService;
@@ -48,6 +57,7 @@ public class AiPolicyConsultService {
                                   AiPolicyHybridRetrievalService hybridRetrievalService,
                                   AiPolicyEvidenceValidator evidenceValidator,
                                   AiPolicyAnswerComposer answerComposer,
+                                  AiPolicyChunkMapper aiPolicyChunkMapper,
                                   AiPolicyAnswerLogMapper answerLogMapper,
                                   AiPolicyRetrievalLogMapper retrievalLogMapper,
                                   LogCenterService logCenterService) {
@@ -64,6 +74,7 @@ public class AiPolicyConsultService {
         this.hybridRetrievalService = hybridRetrievalService;
         this.evidenceValidator = evidenceValidator;
         this.answerComposer = answerComposer;
+        this.aiPolicyChunkMapper = aiPolicyChunkMapper;
         this.answerLogMapper = answerLogMapper;
         this.retrievalLogMapper = retrievalLogMapper;
         this.logCenterService = logCenterService;
@@ -120,6 +131,43 @@ public class AiPolicyConsultService {
             Long matchedIntentId = matchedIntent == null ? null : matchedIntent.getId();
             String matchedIntentCode = matchedIntent == null ? null : matchedIntent.getIntentCode();
             Long selectedIntentId = matchedIntentId;
+
+            ConsultResult directDepartmentTopicResult = tryAnswerDepartmentTopicCard(
+                    baseId,
+                    sessionId,
+                    userId,
+                    sourceScene,
+                    normalizedQuestion,
+                    regionMatch,
+                    policyMatch,
+                    effectiveIntentMatch,
+                    matchedIntentId,
+                    matchedIntentCode,
+                    suggestedIntents,
+                    selectedIntentId,
+                    persistLogs
+            );
+            if (directDepartmentTopicResult != null) {
+                return directDepartmentTopicResult;
+            }
+
+            ConsultResult directFinanceBenefitTopicResult = tryAnswerFinanceBenefitTopicCard(
+                    baseId,
+                    sessionId,
+                    userId,
+                    sourceScene,
+                    normalizedQuestion,
+                    regionMatch,
+                    policyMatch,
+                    matchedIntentId,
+                    matchedIntentCode,
+                    suggestedIntents,
+                    selectedIntentId,
+                    persistLogs
+            );
+            if (directFinanceBenefitTopicResult != null) {
+                return directFinanceBenefitTopicResult;
+            }
 
             if (properties.getFaq().isEnabled()) {
                 AiPolicyFaqService.FaqMatch faqMatch =
@@ -299,6 +347,362 @@ public class AiPolicyConsultService {
         }
     }
 
+    private ConsultResult tryAnswerDepartmentTopicCard(Long baseId,
+                                                       Long sessionId,
+                                                       Long userId,
+                                                       String sourceScene,
+                                                       AiPolicyQuestionNormalizer.NormalizedQuestion normalizedQuestion,
+                                                       AiPolicyRegionResolver.RegionMatch regionMatch,
+                                                       AiPolicyResolver.PolicyMatch policyMatch,
+                                                       AiPolicyIntentClassifier.IntentMatch effectiveIntentMatch,
+                                                       Long matchedIntentId,
+                                                       String matchedIntentCode,
+                                                       String suggestedIntents,
+                                                       Long selectedIntentId,
+                                                       boolean persistLogs) {
+        String questionText = valueOrBlank(normalizedQuestion == null ? null : normalizedQuestion.original())
+                + " "
+                + valueOrBlank(normalizedQuestion == null ? null : normalizedQuestion.normalized())
+                + " "
+                + valueOrBlank(normalizedQuestion == null ? null : normalizedQuestion.compact());
+        boolean departmentQuestion = isDepartmentQuestion(questionText);
+        String policyKey = resolveDepartmentPolicyKey(policyMatch, questionText);
+        boolean matchedPolicy = policyKey != null && !policyKey.isBlank();
+        if (!departmentQuestion) {
+            return null;
+        }
+        if (!matchedPolicy) {
+            log.info("AI_POLICY_DEPARTMENT_DIRECT_CHECK policyKey={} departmentQuestion={} exactTopic={} phase1DepartmentHit={} skipExactPolicy={}",
+                    valueOrBlank(policyKey), departmentQuestion, TOPIC_TYPE_DEPARTMENT, false, false);
+            return null;
+        }
+
+        KnowledgeSearchResultVO departmentCard = findPhaseOneDepartmentCard(baseId, policyKey);
+        boolean phase1DepartmentHit = departmentCard != null;
+        log.info("AI_POLICY_DEPARTMENT_DIRECT_CHECK policyKey={} departmentQuestion={} exactTopic={} phase1DepartmentHit={} skipExactPolicy={}",
+                policyKey, true, TOPIC_TYPE_DEPARTMENT, phase1DepartmentHit, phase1DepartmentHit);
+        if (!phase1DepartmentHit) {
+            return null;
+        }
+
+        AiPolicyIntentClassifier.IntentMatch departmentIntent =
+                new AiPolicyIntentClassifier.IntentMatch(AiPolicyIntentClassifier.IntentType.DEPARTMENT, true);
+        AiPolicyRouterService.RoutePlan routePlan = new AiPolicyRouterService.RoutePlan(
+                regionMatch == null || regionMatch.scope() == AiPolicyRegionResolver.RegionScope.UNKNOWN
+                        ? List.of()
+                        : List.of(regionMatch.scope().getCode()),
+                List.of(policyKey),
+                List.of("topic"),
+                List.of(TOPIC_TYPE_DEPARTMENT),
+                List.of(TOPIC_TYPE_DEPARTMENT),
+                List.of(TOPIC_TYPE_DEPARTMENT),
+                List.of("phase1-department-direct", "skipExactPolicy", "exactTopic=department"),
+                true,
+                false
+        );
+        AiPolicyEvidenceValidator.ValidationResult validationResult =
+                new AiPolicyEvidenceValidator.ValidationResult(
+                        AiPolicyEvidenceValidator.AnswerMode.DIRECT_CONFIRMED,
+                        List.of(departmentCard),
+                        "POLICY_STANDARDIZATION_PHASE1 department topic direct hit.",
+                        false,
+                        false,
+                        false,
+                        false
+                );
+        String answer = answerComposer.compose(
+                normalizedQuestion,
+                regionMatch,
+                departmentIntent,
+                policyMatch,
+                routePlan,
+                validationResult
+        );
+        KnowledgeCitationContext context = new KnowledgeCitationContext();
+        context.getChunks().add(departmentCard);
+
+        DiagnosticTrace trace = new DiagnosticTrace(
+                true,
+                normalizedQuestion.original(),
+                normalizedQuestion.normalized(),
+                regionMatch == null ? null : regionMatch.scope().getCode(),
+                policyKey,
+                TOPIC_TYPE_DEPARTMENT,
+                "phase1-department-direct | policyKey=" + policyKey
+                        + " | exactTopic=department"
+                        + " | phase1DepartmentHit=true"
+                        + " | skipExactPolicy=true",
+                false,
+                false,
+                matchedIntentId,
+                matchedIntentCode,
+                suggestedIntents,
+                selectedIntentId,
+                false,
+                false,
+                departmentCard.getChunkId() == null ? "" : String.valueOf(departmentCard.getChunkId()),
+                "direct_confirmed",
+                "POLICY_STANDARDIZATION_PHASE1 department topic card direct hit.",
+                answer,
+                "phase1_department_direct_hit"
+        );
+        if (persistLogs) {
+            writeAnswerLog(baseId, sessionId, userId, sourceScene, trace);
+        }
+        return new ConsultResult(true, answer, context, trace);
+    }
+
+    private KnowledgeSearchResultVO findPhaseOneDepartmentCard(Long baseId, String policyKey) {
+        if (baseId == null || policyKey == null || policyKey.isBlank()) {
+            return null;
+        }
+        AiPolicyChunkSearchQuery query = new AiPolicyChunkSearchQuery();
+        query.setBaseId(baseId);
+        query.setPolicyKey(policyKey);
+        query.setTopicTypes(List.of(TOPIC_TYPE_DEPARTMENT));
+        query.setDocTypes(List.of("topic"));
+        query.setEnabled(Boolean.TRUE);
+        query.setTopN(10);
+        List<KnowledgeSearchResultVO> hits;
+        try {
+            hits = aiPolicyChunkMapper.search(query);
+        } catch (Exception ex) {
+            log.info("AI_POLICY_DEPARTMENT_DIRECT_SEARCH_FAILED policyKey={} error={}", policyKey, ex.getClass().getSimpleName());
+            return null;
+        }
+        if (hits == null || hits.isEmpty()) {
+            return null;
+        }
+        for (KnowledgeSearchResultVO hit : hits) {
+            if (hit == null) {
+                continue;
+            }
+            if (SOURCE_SCENE_POLICY_STANDARDIZATION_PHASE1.equalsIgnoreCase(hit.getScenePriority())
+                    && TOPIC_TYPE_DEPARTMENT.equalsIgnoreCase(hit.getTopicType())) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    private ConsultResult tryAnswerFinanceBenefitTopicCard(Long baseId,
+                                                           Long sessionId,
+                                                           Long userId,
+                                                           String sourceScene,
+                                                           AiPolicyQuestionNormalizer.NormalizedQuestion normalizedQuestion,
+                                                           AiPolicyRegionResolver.RegionMatch regionMatch,
+                                                           AiPolicyResolver.PolicyMatch policyMatch,
+                                                           Long matchedIntentId,
+                                                           String matchedIntentCode,
+                                                           String suggestedIntents,
+                                                           Long selectedIntentId,
+                                                           boolean persistLogs) {
+        String policyKey = policyMatch == null ? null : policyMatch.policyKey();
+        if (!"xiamen_finance".equalsIgnoreCase(policyKey)) {
+            return null;
+        }
+        String questionText = valueOrBlank(normalizedQuestion == null ? null : normalizedQuestion.original())
+                + " "
+                + valueOrBlank(normalizedQuestion == null ? null : normalizedQuestion.normalized())
+                + " "
+                + valueOrBlank(normalizedQuestion == null ? null : normalizedQuestion.compact());
+        if (!isFinanceBenefitTopicQuestion(questionText)) {
+            return null;
+        }
+
+        KnowledgeSearchResultVO benefitCard = findPhaseOneTopicCard(baseId, policyKey, TOPIC_TYPE_BENEFIT);
+        if (benefitCard == null) {
+            return null;
+        }
+
+        AiPolicyIntentClassifier.IntentMatch benefitIntent =
+                new AiPolicyIntentClassifier.IntentMatch(AiPolicyIntentClassifier.IntentType.BENEFIT, true);
+        AiPolicyRouterService.RoutePlan routePlan = new AiPolicyRouterService.RoutePlan(
+                regionMatch == null || regionMatch.scope() == AiPolicyRegionResolver.RegionScope.UNKNOWN
+                        ? List.of()
+                        : List.of(regionMatch.scope().getCode()),
+                List.of(policyKey),
+                List.of("topic"),
+                List.of(TOPIC_TYPE_BENEFIT),
+                List.of(TOPIC_TYPE_BENEFIT),
+                List.of(TOPIC_TYPE_BENEFIT),
+                List.of("phase2-finance-benefit-direct", "skipExactPolicy", "exactTopic=benefit"),
+                true,
+                false
+        );
+        AiPolicyEvidenceValidator.ValidationResult validationResult =
+                new AiPolicyEvidenceValidator.ValidationResult(
+                        AiPolicyEvidenceValidator.AnswerMode.DIRECT_CONFIRMED,
+                        List.of(benefitCard),
+                        "POLICY_STANDARDIZATION_PHASE1 xiamen_finance benefit topic direct hit.",
+                        false,
+                        false,
+                        false,
+                        false
+                );
+        String answer = answerComposer.compose(
+                normalizedQuestion,
+                regionMatch,
+                benefitIntent,
+                policyMatch,
+                routePlan,
+                validationResult
+        );
+        KnowledgeCitationContext context = new KnowledgeCitationContext();
+        context.getChunks().add(benefitCard);
+
+        DiagnosticTrace trace = new DiagnosticTrace(
+                true,
+                normalizedQuestion.original(),
+                normalizedQuestion.normalized(),
+                regionMatch == null ? null : regionMatch.scope().getCode(),
+                policyKey,
+                TOPIC_TYPE_BENEFIT,
+                "phase2-finance-benefit-direct | policyKey=" + policyKey
+                        + " | exactTopic=benefit"
+                        + " | phase1BenefitHit=true"
+                        + " | skipExactPolicy=true",
+                false,
+                false,
+                matchedIntentId,
+                matchedIntentCode,
+                suggestedIntents,
+                selectedIntentId,
+                false,
+                false,
+                benefitCard.getChunkId() == null ? "" : String.valueOf(benefitCard.getChunkId()),
+                "direct_confirmed",
+                "POLICY_STANDARDIZATION_PHASE1 xiamen_finance benefit topic card direct hit.",
+                answer,
+                "phase2_finance_benefit_direct_hit"
+        );
+        if (persistLogs) {
+            writeAnswerLog(baseId, sessionId, userId, sourceScene, trace);
+        }
+        return new ConsultResult(true, answer, context, trace);
+    }
+
+    private KnowledgeSearchResultVO findPhaseOneTopicCard(Long baseId, String policyKey, String topicType) {
+        if (baseId == null || policyKey == null || policyKey.isBlank() || topicType == null || topicType.isBlank()) {
+            return null;
+        }
+        AiPolicyChunkSearchQuery query = new AiPolicyChunkSearchQuery();
+        query.setBaseId(baseId);
+        query.setPolicyKey(policyKey);
+        query.setTopicTypes(List.of(topicType));
+        query.setDocTypes(List.of("topic"));
+        query.setEnabled(Boolean.TRUE);
+        query.setTopN(10);
+        List<KnowledgeSearchResultVO> hits;
+        try {
+            hits = aiPolicyChunkMapper.search(query);
+        } catch (Exception ex) {
+            log.info("AI_POLICY_TOPIC_DIRECT_SEARCH_FAILED policyKey={} topicType={} error={}",
+                    policyKey, topicType, ex.getClass().getSimpleName());
+            return null;
+        }
+        if (hits == null || hits.isEmpty()) {
+            return null;
+        }
+        for (KnowledgeSearchResultVO hit : hits) {
+            if (hit == null) {
+                continue;
+            }
+            if (SOURCE_SCENE_POLICY_STANDARDIZATION_PHASE1.equalsIgnoreCase(hit.getScenePriority())
+                    && topicType.equalsIgnoreCase(hit.getTopicType())) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    private String resolveDepartmentPolicyKey(AiPolicyResolver.PolicyMatch policyMatch, String questionText) {
+        if (policyMatch != null
+                && policyMatch.matched()
+                && policyMatch.policyKey() != null
+                && !policyMatch.policyKey().isBlank()) {
+            return policyMatch.policyKey();
+        }
+        String compact = compactPolicyText(questionText);
+        if (compact != null && compact.contains("双百计划")) {
+            return "double_hundred";
+        }
+        return null;
+    }
+
+    private boolean isDepartmentQuestion(String text) {
+        String compact = compactPolicyText(text);
+        return containsAnyText(compact, List.of(
+                "主管部门",
+                "受理部门",
+                "责任部门",
+                "归口部门",
+                "办理部门",
+                "哪个部门",
+                "找谁办理",
+                "谁负责",
+                "由谁负责",
+                "由谁执行",
+                "谁执行",
+                "执行部门",
+                "谁审核",
+                "由谁审核",
+                "哪个部门审核",
+                "审核部门",
+                "谁牵头",
+                "牵头部门",
+                "谁组织",
+                "谁组织申报",
+                "办理主体",
+                "责任主体",
+                "执行主体",
+                "审核主体"
+        )) || (containsAnyText(compact, List.of(
+                "创业人才",
+                "创新人才",
+                "创新个人",
+                "创新团队",
+                "团队",
+                "创业",
+                "创新"
+        )) && containsAnyText(compact, List.of(
+                "谁",
+                "哪个部门",
+                "执行",
+                "审核",
+                "负责",
+                "牵头",
+                "组织"
+        )));
+    }
+
+    private boolean isFinanceBenefitTopicQuestion(String text) {
+        String compact = compactPolicyText(text);
+        if (compact == null || compact.isBlank()) {
+            return false;
+        }
+        boolean certificateApplyQuestion = containsAnyText(compact.toLowerCase(), List.of("cfa", "frm", "acca", "fsa"))
+                && containsAnyText(compact, List.of("可以申请", "能申请", "能不能申请", "是否可以申请", "能否申请"));
+        if (certificateApplyQuestion) {
+            return false;
+        }
+        return containsAnyText(compact.toLowerCase(), List.of("cfa", "frm", "acca", "fsa"))
+                || containsAnyText(compact, List.of(
+                "补贴多少",
+                "多少钱",
+                "有什么补贴",
+                "有什么支持",
+                "支持什么",
+                "报考费",
+                "考试费用",
+                "资格证书",
+                "专业资格证书",
+                "5万元",
+                "五万元",
+                "累计不超过"
+        ));
+    }
+
     private void writeAnswerLog(Long baseId,
                                 Long sessionId,
                                 Long userId,
@@ -392,6 +796,7 @@ public class AiPolicyConsultService {
             case "process" -> AiPolicyIntentClassifier.IntentType.PROCESS;
             case "condition" -> AiPolicyIntentClassifier.IntentType.CONDITION;
             case "benefit" -> AiPolicyIntentClassifier.IntentType.BENEFIT;
+            case "department" -> AiPolicyIntentClassifier.IntentType.DEPARTMENT;
             case "risk" -> AiPolicyIntentClassifier.IntentType.RISK;
             case "service" -> AiPolicyIntentClassifier.IntentType.SERVICE;
             case "compare" -> AiPolicyIntentClassifier.IntentType.COMPARE;
@@ -409,6 +814,7 @@ public class AiPolicyConsultService {
             case "process" -> "process";
             case "condition" -> "condition";
             case "benefit" -> "benefit";
+            case "department" -> "department";
             case "service" -> "service";
             case "risk" -> "risk";
             default -> "overview";

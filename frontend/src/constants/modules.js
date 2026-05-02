@@ -10,6 +10,7 @@ export const MODULE_CODES = Object.freeze({
   AI_WORKBENCH: 'ai_workbench',
   AI_LEDGER: 'ai_ledger',
   AI_MONTHLY_REPORT: 'ai_monthly_report',
+  AI_POLICY_CORRECTION: 'ai_policy_correction',
   EXPERT: 'expert',
   AI_PROVIDER: 'ai_provider',
   AI_PERMISSION: 'ai_permission',
@@ -41,6 +42,7 @@ export const AI_FLOW_MODULE_CODES = Object.freeze([
   MODULE_CODES.AI_WORKBENCH,
   MODULE_CODES.AI_LEDGER,
   MODULE_CODES.AI_MONTHLY_REPORT,
+  MODULE_CODES.AI_POLICY_CORRECTION,
   MODULE_CODES.EXPERT,
   MODULE_CODES.AI_PROVIDER,
   MODULE_CODES.AI_PERMISSION,
@@ -70,7 +72,7 @@ export const APP_MENU_ITEMS = [
   icon: 'user-o',
   alwaysVisible: true
 },
-  { path: '/policy-consultant', title: '手机端政策咨询', description: '面向客户的移动端智能体入口', moduleCode: MODULE_CODES.POLICY_CONSULTANT },
+  { path: '/policy-consultant', title: '政策智能体', description: '面向人才政策、产业政策与申报服务的智能咨询入口', moduleCode: MODULE_CODES.POLICY_CONSULTANT },
   {
     path: '/ai-result-flow',
     title: 'AI结果回流',
@@ -79,6 +81,7 @@ export const APP_MENU_ITEMS = [
   },
   { path: '/ai-ledger', title: '咨询台账', description: '查看 AI 咨询记录与统计', moduleCode: MODULE_CODES.AI_LEDGER },
   { path: '/ai-monthly-report', title: '月度报表', description: '查看 AI 咨询月度经营看板', moduleCode: MODULE_CODES.AI_MONTHLY_REPORT },
+  { path: '/ai-policy-corrections', title: '政策智能体纠错中心', description: '处理用户反馈、状态流转和人工处理意见', adminOnly: true, moduleCode: MODULE_CODES.AI_POLICY_CORRECTION },
   { path: '/log-center', title: '日志中台', description: '统一查看异常、定位与接口日志', adminOnly: true, moduleCode: MODULE_CODES.LOG_CENTER },
   { path: '/experts', title: '专家台账', description: '查看专家身份与技能归属', moduleCode: MODULE_CODES.EXPERT },
 

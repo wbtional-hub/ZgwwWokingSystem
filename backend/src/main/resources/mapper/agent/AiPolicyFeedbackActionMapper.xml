@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.agent.mapper.AiPolicyFeedbackActionMapper">
+    <resultMap id="AiPolicyFeedbackActionMap" type="com.example.lecturesystem.modules.agent.entity.AiPolicyFeedbackActionEntity">
+        <id property="id" column="id"/>
+        <result property="taskId" column="task_id"/>
+        <result property="actionType" column="action_type"/>
+        <result property="actionContent" column="action_content"/>
+        <result property="draftType" column="draft_type"/>
+        <result property="draftPayload" column="draft_payload"/>
+        <result property="targetTable" column="target_table"/>
+        <result property="targetId" column="target_id"/>
+        <result property="operatorId" column="operator_id"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.agent.entity.AiPolicyFeedbackActionEntity"
+            useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO ai_policy_feedback_action (
+            task_id, action_type, action_content, draft_type, draft_payload,
+            target_table, target_id, operator_id, created_at
+        ) VALUES (
+            #{taskId}, #{actionType}, #{actionContent}, #{draftType}, #{draftPayload},
+            #{targetTable}, #{targetId}, #{operatorId}, #{createdAt}
+        )
+    </insert>
+
+    <select id="queryByTaskId" resultMap="AiPolicyFeedbackActionMap">
+        SELECT id, task_id, action_type, action_content, draft_type, draft_payload,
+               target_table, target_id, operator_id, created_at
+        FROM ai_policy_feedback_action
+        WHERE task_id = #{taskId}
+        ORDER BY created_at DESC, id DESC
+    </select>
+</mapper>

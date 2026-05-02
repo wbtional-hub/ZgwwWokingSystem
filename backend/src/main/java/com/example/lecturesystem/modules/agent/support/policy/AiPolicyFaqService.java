@@ -169,6 +169,20 @@ private static final List<String> POLICY_AUTHORITY_TOPIC_KEYWORDS = List.of(
         "哪个部门",
         "哪个单位负责",
         "谁负责",
+        "由谁负责",
+        "由谁执行",
+        "谁执行",
+        "执行部门",
+        "谁审核",
+        "由谁审核",
+        "哪个部门审核",
+        "谁牵头",
+        "谁组织",
+        "谁组织申报",
+        "办理主体",
+        "责任主体",
+        "执行主体",
+        "审核主体",
         "找哪个部门",
         "咨询哪个部门"
 );
@@ -306,12 +320,14 @@ private static final List<String> ELECTRONIC_INFO_TALENT_COMPARE_KEYWORDS = List
             return FaqMatch.notMatched();
         }
         //第二步：在 match 里增加政策对比匹配
-FaqMatch exactPolicyMatch = tryMatchExactPolicy(baseId, question);
-if (exactPolicyMatch.matched()) {
-    return exactPolicyMatch;
+if (!isSpecificPolicyDepartmentQuestion(question, policyMatch)) {
+    FaqMatch exactPolicyMatch = tryMatchExactPolicy(baseId, question);
+    if (exactPolicyMatch.matched()) {
+        return exactPolicyMatch;
+    }
 }
 
-FaqMatch compareMatch = tryMatchPolicyCompareTopic(question);
+FaqMatch compareMatch = tryMatchPolicyCompareTopic(question, policyMatch);
 if (compareMatch.matched()) {
     return compareMatch;
 }
@@ -321,14 +337,18 @@ if (serviceBenefitMatch.matched()) {
     return serviceBenefitMatch;
 }
 
-FaqMatch handlingGuideMatch = tryMatchPolicyHandlingGuideTopic(question);
+FaqMatch handlingGuideMatch = tryMatchPolicyHandlingGuideTopic(question, policyMatch);
 if (handlingGuideMatch.matched()) {
     return handlingGuideMatch;
 }
 
-FaqMatch conditionMatch = tryMatchConditionIndex(baseId, question);
-if (conditionMatch.matched()) {
-    return conditionMatch;
+if (!isSpecificPolicyProcessQuestion(question, policyMatch)
+        && !isSpecificPolicyBoundaryQuestion(question, policyMatch)
+        && !isSpecificPolicyDepartmentQuestion(question, policyMatch)) {
+    FaqMatch conditionMatch = tryMatchConditionIndex(baseId, question);
+    if (conditionMatch.matched()) {
+        return conditionMatch;
+    }
 }
         /*
          * 第二优先级：原有 FAQ 直接命中逻辑
@@ -695,7 +715,8 @@ private boolean isIndustryTalentQuestion(String text) {
             "骨干人才"
     ));
 }
-private FaqMatch tryMatchPolicyCompareTopic(AiPolicyQuestionNormalizer.NormalizedQuestion question) {
+private FaqMatch tryMatchPolicyCompareTopic(AiPolicyQuestionNormalizer.NormalizedQuestion question,
+                                            AiPolicyResolver.PolicyMatch policyMatch) {
     String questionText = buildQuestionText(question);
     if (questionText == null || questionText.isBlank()) {
         return FaqMatch.notMatched();
@@ -705,6 +726,10 @@ private FaqMatch tryMatchPolicyCompareTopic(AiPolicyQuestionNormalizer.Normalize
     String matchText = questionText + " " + compact;
 
     if (!looksLikeCompareQuestion(matchText)) {
+        return FaqMatch.notMatched();
+    }
+
+    if (isSpecificPostdocCityProvinceBoundaryQuestion(policyMatch, matchText)) {
         return FaqMatch.notMatched();
     }
 
@@ -729,6 +754,16 @@ private FaqMatch tryMatchPolicyCompareTopic(AiPolicyQuestionNormalizer.Normalize
     }
 
     return FaqMatch.notMatched();
+}
+
+private boolean isSpecificPostdocCityProvinceBoundaryQuestion(AiPolicyResolver.PolicyMatch policyMatch,
+                                                              String matchText) {
+    return policyMatch != null
+            && policyMatch.matched()
+            && "postdoc".equalsIgnoreCase(policyMatch.policyKey())
+            && containsAnyText(matchText, XM_POLICY_KEYWORDS)
+            && containsAnyText(matchText, FJ_POLICY_KEYWORDS)
+            && containsAnyText(matchText, POLICY_COMPARE_INTENT_KEYWORDS);
 }
 
 private boolean looksLikeCompareQuestion(String text) {
@@ -1043,7 +1078,8 @@ private String buildTalentServiceCardTargetAdvice(String questionText) {
 
     return "";
 }
-private FaqMatch tryMatchPolicyHandlingGuideTopic(AiPolicyQuestionNormalizer.NormalizedQuestion question) {
+private FaqMatch tryMatchPolicyHandlingGuideTopic(AiPolicyQuestionNormalizer.NormalizedQuestion question,
+                                                  AiPolicyResolver.PolicyMatch policyMatch) {
     String questionText = buildQuestionText(question);
     if (questionText == null || questionText.isBlank()) {
         return FaqMatch.notMatched();
@@ -1053,22 +1089,81 @@ private FaqMatch tryMatchPolicyHandlingGuideTopic(AiPolicyQuestionNormalizer.Nor
     String matchText = questionText + " " + compact;
 
     if (containsAnyText(matchText, POLICY_AUTHORITY_TOPIC_KEYWORDS)) {
+        if (hasSpecificPolicyForProcessGuide(policyMatch, matchText)) {
+            return FaqMatch.notMatched();
+        }
         return new FaqMatch(true, null, buildPolicyAuthorityGuideAnswer(matchText));
     }
 
     if (containsAnyText(matchText, POLICY_MATERIAL_TOPIC_KEYWORDS)) {
+        if (hasSpecificPolicyForProcessGuide(policyMatch, matchText)) {
+            return FaqMatch.notMatched();
+        }
         return new FaqMatch(true, null, buildPolicyMaterialGuideAnswer(matchText));
     }
 
     if (containsAnyText(matchText, POLICY_ENTRY_TOPIC_KEYWORDS)) {
+        if (hasSpecificPolicyForProcessGuide(policyMatch, matchText)) {
+            return FaqMatch.notMatched();
+        }
         return new FaqMatch(true, null, buildPolicyEntryGuideAnswer(matchText));
     }
 
     if (containsAnyText(matchText, POLICY_PROCESS_TOPIC_KEYWORDS)) {
+        if (hasSpecificPolicyForProcessGuide(policyMatch, matchText)) {
+            return FaqMatch.notMatched();
+        }
         return new FaqMatch(true, null, buildPolicyProcessGuideAnswer(matchText));
     }
 
     return FaqMatch.notMatched();
+}
+
+private boolean hasSpecificPolicyForProcessGuide(AiPolicyResolver.PolicyMatch policyMatch, String questionText) {
+    if (policyMatch != null && policyMatch.matched() && policyMatch.policyKey() != null && !policyMatch.policyKey().isBlank()) {
+        return true;
+    }
+    String policyName = resolveHandlingGuidePolicyName(questionText);
+    return policyName != null && !policyName.isBlank();
+}
+
+private boolean isSpecificPolicyProcessQuestion(AiPolicyQuestionNormalizer.NormalizedQuestion question,
+                                                AiPolicyResolver.PolicyMatch policyMatch) {
+    String questionText = buildQuestionText(question);
+    if (questionText == null || questionText.isBlank()) {
+        return false;
+    }
+    String matchText = questionText + " " + valueOrBlank(compactText(questionText));
+    return containsAnyText(matchText, POLICY_PROCESS_TOPIC_KEYWORDS)
+            && hasSpecificPolicyForProcessGuide(policyMatch, matchText);
+}
+
+private boolean isSpecificPolicyBoundaryQuestion(AiPolicyQuestionNormalizer.NormalizedQuestion question,
+                                                 AiPolicyResolver.PolicyMatch policyMatch) {
+    String questionText = buildQuestionText(question);
+    if (questionText == null || questionText.isBlank()) {
+        return false;
+    }
+    String matchText = questionText + " " + valueOrBlank(compactText(questionText));
+    return policyMatch != null
+            && policyMatch.matched()
+            && policyMatch.policyKey() != null
+            && !policyMatch.policyKey().isBlank()
+            && looksLikeCompareQuestion(matchText);
+}
+
+private boolean isSpecificPolicyDepartmentQuestion(AiPolicyQuestionNormalizer.NormalizedQuestion question,
+                                                   AiPolicyResolver.PolicyMatch policyMatch) {
+    String questionText = buildQuestionText(question);
+    if (questionText == null || questionText.isBlank()) {
+        return false;
+    }
+    String matchText = questionText + " " + valueOrBlank(compactText(questionText));
+    return policyMatch != null
+            && policyMatch.matched()
+            && policyMatch.policyKey() != null
+            && !policyMatch.policyKey().isBlank()
+            && containsAnyText(matchText, POLICY_AUTHORITY_TOPIC_KEYWORDS);
 }
 private String resolveHandlingGuidePolicyName(String questionText) {
     if (questionText == null || questionText.isBlank()) {
@@ -1316,9 +1411,19 @@ private String buildFinanceVsElectronicInfoTalentAnswer(String questionText) {
         }
     }
 
-    if (policyMainHitMap.isEmpty()) {
+if (policyMainHitMap.isEmpty()) {
     return "结论：当前未命中明确的条件反查政策依据。\n"
             + "当前边界：建议继续命中对应专题文档、年度申报公告或原始条款后再确认。";
+}
+
+String financeCertificateAnswer = buildFinanceCertificateConditionAnswer(
+        policyMainHitMap,
+        policyConditionMap,
+        policyChunkMap,
+        allConditionCodes
+);
+if (notBlank(financeCertificateAnswer)) {
+    return financeCertificateAnswer;
 }
 
 if (isCompositeConditionAnalysis(analysis, allConditionCodes, policyConditionMap, policyMainHitMap)) {
@@ -1385,6 +1490,105 @@ sb.append("结论：根据当前知识库条件反查结果，您可以重点关
 
     return sb.toString();
 }
+
+private String buildFinanceCertificateConditionAnswer(
+        Map<String, AiPolicyConditionIndex> policyMainHitMap,
+        Map<String, Set<String>> policyConditionMap,
+        Map<String, Set<Long>> policyChunkMap,
+        Set<String> allConditionCodes) {
+    if (!hasFinanceCertificateCondition(allConditionCodes)) {
+        return "";
+    }
+
+    String financePolicyName = "";
+    for (String policyName : policyMainHitMap.keySet()) {
+        if (notBlank(policyName) && policyName.contains("金融服务产业人才项目")) {
+            financePolicyName = policyName;
+            break;
+        }
+    }
+    if (!notBlank(financePolicyName)) {
+        return "";
+    }
+
+    Set<String> certificateNames = new LinkedHashSet<>();
+    Set<String> conditions = policyConditionMap.get(financePolicyName);
+    if (conditions != null) {
+        for (String condition : conditions) {
+            addFinanceCertificateName(certificateNames, condition);
+        }
+    }
+    if (certificateNames.isEmpty() && allConditionCodes != null) {
+        for (String code : allConditionCodes) {
+            addFinanceCertificateName(certificateNames, code);
+        }
+    }
+    if (certificateNames.isEmpty()) {
+        return "";
+    }
+
+    String certificateText = String.join("、", certificateNames);
+    StringBuilder sb = new StringBuilder();
+    sb.append("结论：").append(certificateText)
+            .append(" 可以作为金融服务产业人才项目专业资格证书报考费补贴的关注条件之一，但不能单独等同于最终符合申报条件。\n\n");
+    sb.append("一、证书条件\n");
+    sb.append("取得 ").append(certificateText)
+            .append(" 等金融专业资格证书的人员，可重点关注金融服务产业人才项目中的资格证书报考费补贴方向。\n\n");
+    sb.append("二、工作年限和机构范围\n");
+    sb.append("除证书外，还需结合在厦连续全职工作满 2 年等要求核验；所在机构通常应属于金融机构、基金管理机构、地方金融组织、金融投资集团等政策覆盖范围。\n\n");
+    sb.append("三、补贴方向\n");
+    sb.append("符合条件的，可按报考费给予累计不超过 5 万元补贴。这里是报考费补贴口径，不应和其他人才项目支持或 B/C 类服务保障混为一谈。\n\n");
+    sb.append("四、材料建议\n");
+    sb.append("建议提前准备证书、报考费凭证、学历证明、劳动关系或在厦工作证明、社保或个税、所在机构推荐材料等，具体材料清单以年度通知为准。\n");
+
+    Set<Long> chunkIds = policyChunkMap.get(financePolicyName);
+    if (chunkIds != null && !chunkIds.isEmpty()) {
+        String chunkText = chunkIds.stream()
+                .limit(5)
+                .map(id -> "Chunk " + id)
+                .collect(Collectors.joining("、"));
+        sb.append("\n依据切片：").append(chunkText).append("。");
+    }
+
+    sb.append("\n\n当前边界：是否最终符合、补贴金额、证书范围、申报入口、年度批次、附件模板和兑现时间，均以当年度正式申报通知和主管部门审核为准。");
+    return sb.toString();
+}
+
+private boolean hasFinanceCertificateCondition(Set<String> allConditionCodes) {
+    if (allConditionCodes == null || allConditionCodes.isEmpty()) {
+        return false;
+    }
+    for (String code : allConditionCodes) {
+        String normalized = code == null ? "" : code.toLowerCase();
+        if (normalized.contains("cfa")
+                || normalized.contains("frm")
+                || normalized.contains("acca")
+                || normalized.contains("fsa")) {
+            return true;
+        }
+    }
+    return false;
+}
+
+private void addFinanceCertificateName(Set<String> certificateNames, String value) {
+    if (certificateNames == null || value == null) {
+        return;
+    }
+    String upper = value.toUpperCase();
+    if (upper.contains("CFA")) {
+        certificateNames.add("CFA");
+    }
+    if (upper.contains("FRM")) {
+        certificateNames.add("FRM");
+    }
+    if (upper.contains("ACCA")) {
+        certificateNames.add("ACCA");
+    }
+    if (upper.contains("FSA")) {
+        certificateNames.add("FSA");
+    }
+}
+
 private String buildCompositeConditionIndexAnswer(
         Map<String, AiPolicyConditionIndex> policyMainHitMap,
         Map<String, Set<String>> policyConditionMap,

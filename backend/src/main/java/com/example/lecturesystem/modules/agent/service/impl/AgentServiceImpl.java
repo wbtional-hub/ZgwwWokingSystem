@@ -577,8 +577,24 @@ private static final String SOURCE_SCENE_AI_WORKBENCH = "AI_WORKBENCH";
 
         SkillVersionEntity version = requireVersion(session.getSkillVersionId());
 String sourceScene = normalizeSourceScene(request == null ? null : request.getSourceScene(), session.getSourceScene());
+PolicyFollowupResolution followupResolution = resolvePolicyFollowupResolution(request, session);
+String originalQuestion = request.getQuestion();
+String effectiveQuestion = followupResolution.effectiveQuestion();
 
-String systemMetaAnswer = resolveSystemMetaAnswer(request.getQuestion(), session, version);
+if (normalizeText(followupResolution.clarificationAnswer()) != null) {
+    return buildAndSaveSystemMetaChatResult(
+            request,
+            user,
+            session,
+            sourceScene,
+            followupResolution.clarificationAnswer(),
+            resolveCurrentModelCodeForDisplay(session, version)
+    );
+}
+
+String systemMetaAnswer = followupResolution.bypassSystemMeta()
+        ? null
+        : resolveSystemMetaAnswer(originalQuestion, session, version);
 if (normalizeText(systemMetaAnswer) != null) {
     return buildAndSaveSystemMetaChatResult(
             request,
@@ -591,29 +607,31 @@ if (normalizeText(systemMetaAnswer) != null) {
 }
 
 AiPolicyConsultService.ConsultResult policyConsultResult =
-        aiPolicyConsultService.consult(session.getId(), user.getUserId(), session.getBaseId(), request.getQuestion(), sourceScene);
+        aiPolicyConsultService.consult(session.getId(), user.getUserId(), session.getBaseId(), effectiveQuestion, sourceScene);
 
 KnowledgeCitationContext context = resolvePolicyConsultContextOrSearch(
         session,
-        request.getQuestion(),
+        effectiveQuestion,
         sourceScene,
         policyConsultResult
 );
 
-PolicyQuestionType questionType = detectPolicyQuestionType(request.getQuestion());
-String regionScope = detectPreferredRegionScope(request.getQuestion(), questionType);
+PolicyQuestionType questionType = detectPolicyQuestionType(effectiveQuestion);
+String regionScope = detectPreferredRegionScope(effectiveQuestion, questionType);
 AgentUserPreferenceEntity preference = agentUserPreferenceMapper.findByUserId(user.getUserId());
 boolean canUseAi = permissionService.isSuperAdmin(user.getUserId()) || aiPermissionService.canUseAi(user.getUserId());
 ProviderResolution providerResolution = canUseAi ? resolveProvider(session, version) : null;
 
-String fastPathAnswer = shouldUsePolicyConsultAsFastPath(policyConsultResult, request.getQuestion())
+String fastPathAnswer = followupResolution.skipFastPath()
+        ? null
+        : (shouldUsePolicyConsultAsFastPath(policyConsultResult, effectiveQuestion)
         ? policyConsultResult.answer()
-        : resolveFastPathAnswer(request.getQuestion(), questionType, regionScope, sourceScene, session.getBaseId(), context, providerResolution);
+        : resolveFastPathAnswer(effectiveQuestion, questionType, regionScope, sourceScene, session.getBaseId(), context, providerResolution));
 
         AgentMessageEntity userMessage = new AgentMessageEntity();
         userMessage.setSessionId(session.getId());
         userMessage.setMessageRole("user");
-        userMessage.setMessageText(request.getQuestion());
+        userMessage.setMessageText(originalQuestion);
         userMessage.setCreateTime(LocalDateTime.now());
         agentMessageMapper.insert(userMessage);
 
@@ -623,7 +641,7 @@ safeExtractUserProfile(
         sourceScene,
         session.getId(),
         userMessage.getId(),
-        request.getQuestion()
+        originalQuestion
 );
 
 logCenterService.recordAiChainSuccess(
@@ -631,7 +649,7 @@ logCenterService.recordAiChainSuccess(
                 session.getId(),
                 user.getUserId(),
                 sourceScene,
-                "sessionId=" + session.getId() + ", questionLength=" + safeLength(request.getQuestion())
+                "sessionId=" + session.getId() + ", questionLength=" + safeLength(originalQuestion)
         );
         logCenterService.recordAiChainSuccess(
                 LOG_EVENT_KNOWLEDGE_HIT,
@@ -647,7 +665,7 @@ logCenterService.recordAiChainSuccess(
         String modelCode = providerResolution == null ? normalizeText(session.getModelCode()) : normalizeText(providerResolution.modelCode());
         String usageSource;
         String answerSource;
-        boolean noEvidenceForLlm = shouldBlockLlmBecauseNoPolicyEvidence(sourceScene, context, request.getQuestion());
+        boolean noEvidenceForLlm = shouldBlockLlmBecauseNoPolicyEvidence(sourceScene, context, effectiveQuestion);
 
 if (normalizeText(fastPathAnswer) != null) {
     answer = fastPathAnswer;
@@ -671,7 +689,7 @@ if (normalizeText(fastPathAnswer) != null) {
     answerSource = usageSource;
     answer = buildFallbackAnswer(
             session.getBaseId(),
-            request.getQuestion(),
+            effectiveQuestion,
             context,
             preference,
             sourceScene,
@@ -688,7 +706,7 @@ if (normalizeText(fastPathAnswer) != null) {
         user.getUserId(),
         session.getBaseId(),
         sourceScene,
-        request.getQuestion()
+        effectiveQuestion
 );
 
 String conversationContextPrompt = buildConversationContextPrompt(
@@ -699,15 +717,16 @@ String conversationContextPrompt = buildConversationContextPrompt(
 String repeatedQuestionHint = buildRepeatedQuestionHint(
         session.getId(),
         userMessage.getId(),
-        request.getQuestion()
+        effectiveQuestion
 );
 
-String systemPrompt = buildSystemPrompt(version, preference, request.getQuestion(), sourceScene);
-String userPrompt = buildPolicyAwareUserPrompt(version, request.getQuestion(), context, preference, sourceScene);
+String systemPrompt = buildSystemPrompt(version, preference, effectiveQuestion, sourceScene);
+String userPrompt = buildPolicyAwareUserPrompt(version, effectiveQuestion, context, preference, sourceScene);
 
 userPrompt = appendConversationContextPrompt(userPrompt, conversationContextPrompt);
 userPrompt = appendConversationContextPrompt(userPrompt, repeatedQuestionHint);
 userPrompt = appendUserProfilePrompt(userPrompt, userProfilePromptSummary);
+userPrompt = appendConversationContextPrompt(userPrompt, followupResolution.promptHint());
 
 chatResult = chatClient.chatForUsage(
         providerResolution.provider().getApiBaseUrl(),
@@ -739,12 +758,12 @@ chatResult = chatClient.chatForUsage(
                         "sessionId=" + session.getId() + ", provider=" + valueOrBlank(providerName) + ", model=" + valueOrBlank(providerResolution.modelCode())
                                 + ", error=" + valueOrBlank(normalizeText(ex.getMessage()))
                 );
-                answer = buildFallbackAnswer(session.getBaseId(), request.getQuestion(), context, preference,
+                answer = buildFallbackAnswer(session.getBaseId(), effectiveQuestion, context, preference,
                         sourceScene,
                         FALLBACK_REASON_AI_UNAVAILABLE + "原因：" + valueOrBlank(normalizeText(ex.getMessage())));
             }
         }
-answer = applyQuestionSubjectTone(answer, request.getQuestion());
+answer = applyQuestionSubjectTone(answer, originalQuestion);
         AgentMessageEntity assistantMessage = new AgentMessageEntity();
         assistantMessage.setSessionId(session.getId());
         assistantMessage.setMessageRole("assistant");
@@ -775,12 +794,12 @@ logCenterService.recordAiChainSuccess(
         Long monthTotalTokens = safeUsageLong(aiAgentUsageMapper.sumMonthTotalTokensByUserId(user.getUserId()));
 
         if (DEFAULT_SESSION_TITLE.equals(session.getSessionTitle())) {
-            String newTitle = buildSessionTitle(request.getQuestion());
+            String newTitle = buildSessionTitle(originalQuestion);
             session.setSessionTitle(newTitle);
             agentSessionMapper.updateTitle(session.getId(), newTitle);
         }
 
-        updateUserPreference(user.getUserId(), request.getQuestion(), preference);
+        updateUserPreference(user.getUserId(), originalQuestion, preference);
         operationLogService.log("AGENT", "CHAT", session.getId(), "chat in AI workbench");
 
         AgentChatResultVO result = new AgentChatResultVO();
@@ -834,7 +853,27 @@ public SseEmitter chatStream(AgentChatRequest request) {
             session.getSourceScene()
     );
 
-    String systemMetaAnswer = resolveSystemMetaAnswer(request.getQuestion(), session, version);
+    PolicyFollowupResolution followupResolution = resolvePolicyFollowupResolution(request, session);
+    String originalQuestion = request.getQuestion();
+    String effectiveQuestion = followupResolution.effectiveQuestion();
+
+    if (normalizeText(followupResolution.clarificationAnswer()) != null) {
+        SseEmitter emitter = new SseEmitter(0L);
+        CompletableFuture.runAsync(() -> executeSystemMetaChatStream(
+                emitter,
+                request,
+                user,
+                session,
+                sourceScene,
+                followupResolution.clarificationAnswer(),
+                resolveCurrentModelCodeForDisplay(session, version)
+        ));
+        return emitter;
+    }
+
+    String systemMetaAnswer = followupResolution.bypassSystemMeta()
+            ? null
+            : resolveSystemMetaAnswer(originalQuestion, session, version);
     if (normalizeText(systemMetaAnswer) != null) {
         SseEmitter emitter = new SseEmitter(0L);
         CompletableFuture.runAsync(() -> executeSystemMetaChatStream(
@@ -854,19 +893,19 @@ public SseEmitter chatStream(AgentChatRequest request) {
                     session.getId(),
                     user.getUserId(),
                     session.getBaseId(),
-                    request.getQuestion(),
+                    effectiveQuestion,
                     sourceScene
             );
 
     KnowledgeCitationContext context = resolvePolicyConsultContextOrSearch(
             session,
-            request.getQuestion(),
+            effectiveQuestion,
             sourceScene,
             policyConsultResult
     );
 
-    PolicyQuestionType questionType = detectPolicyQuestionType(request.getQuestion());
-    String regionScope = detectPreferredRegionScope(request.getQuestion(), questionType);
+    PolicyQuestionType questionType = detectPolicyQuestionType(effectiveQuestion);
+    String regionScope = detectPreferredRegionScope(effectiveQuestion, questionType);
     AgentUserPreferenceEntity preference = agentUserPreferenceMapper.findByUserId(user.getUserId());
 
     boolean canUseAi = permissionService.isSuperAdmin(user.getUserId())
@@ -884,9 +923,10 @@ public SseEmitter chatStream(AgentChatRequest request) {
             && policyConsultResult.applied()
             ? normalizeText(policyConsultResult.answer())
             : null;
+    boolean blockGenericProcessGuide = isGenericProcessGuideForSpecificPolicy(policyConsultResult, effectiveQuestion);
 
     String fastPathAnswer;
-    if (policyConsultAnswer != null) {
+    if (policyConsultAnswer != null && !followupResolution.skipFastPath() && !blockGenericProcessGuide) {
         fastPathAnswer = policyConsultResult.answer();
 
        
@@ -896,8 +936,10 @@ public SseEmitter chatStream(AgentChatRequest request) {
             context.getChunks().addAll(policyConsultResult.context().getChunks());
         }
     } else {
-        fastPathAnswer = resolveFastPathAnswer(
-                request.getQuestion(),
+        fastPathAnswer = followupResolution.skipFastPath()
+                ? null
+                : resolveFastPathAnswer(
+                effectiveQuestion,
                 questionType,
                 regionScope,
                 sourceScene,
@@ -923,7 +965,10 @@ public SseEmitter chatStream(AgentChatRequest request) {
             providerResolution,
             questionType,
             regionScope,
-            fastPathAnswer
+            fastPathAnswer,
+            originalQuestion,
+            effectiveQuestion,
+            followupResolution.promptHint()
     ));
 
     return emitter;
@@ -956,8 +1001,11 @@ public SseEmitter chatStream(AgentChatRequest request) {
                                    ProviderResolution providerResolution,
                                    PolicyQuestionType questionType,
                                    String regionScope,
-                                   String fastPathAnswer) {
-        boolean noEvidenceForLlm = shouldBlockLlmBecauseNoPolicyEvidence(sourceScene, context, request.getQuestion());
+                                   String fastPathAnswer,
+                                   String originalQuestion,
+                                   String effectiveQuestion,
+                                   String followupPromptHint) {
+        boolean noEvidenceForLlm = shouldBlockLlmBecauseNoPolicyEvidence(sourceScene, context, effectiveQuestion);
 
 String answerSource = normalizeText(fastPathAnswer) != null ? USAGE_SOURCE_FAST_PATH_STRUCTURED
         : ((providerResolution == null || noEvidenceForLlm)
@@ -970,7 +1018,7 @@ String answerSource = normalizeText(fastPathAnswer) != null ? USAGE_SOURCE_FAST_
             AgentMessageEntity userMessage = new AgentMessageEntity();
             userMessage.setSessionId(session.getId());
             userMessage.setMessageRole("user");
-            userMessage.setMessageText(request.getQuestion());
+            userMessage.setMessageText(originalQuestion);
             userMessage.setCreateTime(LocalDateTime.now());
            agentMessageMapper.insert(userMessage);
 
@@ -980,7 +1028,7 @@ safeExtractUserProfile(
         sourceScene,
         session.getId(),
         userMessage.getId(),
-        request.getQuestion()
+        originalQuestion
 );
 
 logCenterService.recordAiChainSuccess(
@@ -988,7 +1036,7 @@ logCenterService.recordAiChainSuccess(
                     session.getId(),
                     user.getUserId(),
                     sourceScene,
-                    "sessionId=" + session.getId() + ", questionLength=" + safeLength(request.getQuestion()) + ", stream=true"
+                    "sessionId=" + session.getId() + ", questionLength=" + safeLength(originalQuestion) + ", stream=true"
             );
             logCenterService.recordAiChainSuccess(
                     LOG_EVENT_KNOWLEDGE_HIT,
@@ -1046,7 +1094,7 @@ logCenterService.recordAiChainSuccess(
     answerSource = ANSWER_SOURCE_KNOWLEDGE_FALLBACK_STRUCTURED;
     answer = buildFallbackAnswer(
             session.getBaseId(),
-            request.getQuestion(),
+            effectiveQuestion,
             context,
             preference,
             sourceScene,
@@ -1057,11 +1105,11 @@ logCenterService.recordAiChainSuccess(
 } else {
                 validateMonthlyTokenQuota(user.getUserId());
                 providerName = resolveProviderName(providerResolution.provider());
-                String userProfilePromptSummary = safeBuildUserProfilePromptSummary(
+String userProfilePromptSummary = safeBuildUserProfilePromptSummary(
         user.getUserId(),
         session.getBaseId(),
         sourceScene,
-        request.getQuestion()
+        effectiveQuestion
 );
 
 String conversationContextPrompt = buildConversationContextPrompt(
@@ -1072,15 +1120,16 @@ String conversationContextPrompt = buildConversationContextPrompt(
 String repeatedQuestionHint = buildRepeatedQuestionHint(
         session.getId(),
         userMessage.getId(),
-        request.getQuestion()
+        effectiveQuestion
 );
 
-String systemPrompt = buildSystemPrompt(version, preference, request.getQuestion(), sourceScene);
-String userPrompt = buildPolicyAwareUserPrompt(version, request.getQuestion(), context, preference, sourceScene);
+String systemPrompt = buildSystemPrompt(version, preference, effectiveQuestion, sourceScene);
+String userPrompt = buildPolicyAwareUserPrompt(version, effectiveQuestion, context, preference, sourceScene);
 
 userPrompt = appendConversationContextPrompt(userPrompt, conversationContextPrompt);
 userPrompt = appendConversationContextPrompt(userPrompt, repeatedQuestionHint);
 userPrompt = appendUserProfilePrompt(userPrompt, userProfilePromptSummary);
+userPrompt = appendConversationContextPrompt(userPrompt, followupPromptHint);
 
 try {
                     String apiToken = aiTokenCipherSupport.decrypt(providerResolution.provider().getApiTokenCipher());
@@ -1215,7 +1264,7 @@ try {
                     );
                     answer = buildFallbackAnswer(
                             session.getBaseId(),
-                            request.getQuestion(),
+                            effectiveQuestion,
                             context,
                             preference,
                             sourceScene,
@@ -1224,8 +1273,8 @@ try {
                 }
             }
 
-            if (!streamDeltaSent[0]) {
-    answer = applyQuestionSubjectTone(answer, request.getQuestion());
+if (!streamDeltaSent[0]) {
+    answer = applyQuestionSubjectTone(answer, originalQuestion);
 }
 
 answer = ensureNonEmptyStreamAnswer(answer, session.getId(), user.getUserId(), sourceScene, answerSource);
@@ -1277,12 +1326,12 @@ logCenterService.recordAiChainSuccess(
             Long monthTotalTokens = safeUsageLong(aiAgentUsageMapper.sumMonthTotalTokensByUserId(user.getUserId()));
 
             if (DEFAULT_SESSION_TITLE.equals(session.getSessionTitle())) {
-                String newTitle = buildSessionTitle(request.getQuestion());
+                String newTitle = buildSessionTitle(originalQuestion);
                 session.setSessionTitle(newTitle);
                 agentSessionMapper.updateTitle(session.getId(), newTitle);
             }
 
-            updateUserPreference(user.getUserId(), request.getQuestion(), preference);
+            updateUserPreference(user.getUserId(), originalQuestion, preference);
             operationLogService.log("AGENT", "CHAT_STREAM", session.getId(), "chat stream in AI workbench");
 
             AgentChatResultVO result = buildChatResultVO(session, sourceScene, answer, context, usageEntity, monthTotalTokens);
@@ -2033,6 +2082,195 @@ private boolean isCorrectionFeedback(String question) {
             || question.contains("不准确")
             || question.contains("重新回答")
             || question.contains("不是这个");
+}
+
+private PolicyFollowupResolution resolvePolicyFollowupResolution(AgentChatRequest request,
+                                                                 AgentSessionEntity session) {
+    String originalQuestion = request == null ? null : request.getQuestion();
+    String normalizedQuestion = normalizeText(originalQuestion);
+    if (normalizedQuestion == null) {
+        return new PolicyFollowupResolution(originalQuestion, originalQuestion, false, false, "", null);
+    }
+    if (!isPolicyReanswerInstruction(normalizedQuestion)) {
+        return new PolicyFollowupResolution(originalQuestion, originalQuestion, false, false, "", null);
+    }
+    String recoveredQuestion = resolveLastEffectivePolicyQuestion(session == null ? null : session.getId(), request, originalQuestion);
+    if (normalizeText(recoveredQuestion) == null) {
+        recoveredQuestion = buildEffectivePolicyQuestionFromRequestPayload(request);
+    }
+    if (normalizeText(recoveredQuestion) == null) {
+        return new PolicyFollowupResolution(
+                originalQuestion,
+                originalQuestion,
+                true,
+                true,
+                "",
+                "我可以按 AI 重答方式继续处理，但当前会话里还没有定位到上一轮具体政策问题。请直接补充政策名称或完整问题，例如“双百计划申报流程是什么”或“厦门AI人才专项有哪些支持”。"
+        );
+    }
+    return new PolicyFollowupResolution(
+            originalQuestion,
+            recoveredQuestion,
+            true,
+            shouldSkipFastPathForPolicyReanswer(normalizedQuestion),
+            buildPolicyReanswerPromptHint(recoveredQuestion, normalizedQuestion),
+            null
+    );
+}
+
+private boolean isPolicyFollowupRepairInstruction(String text) {
+    String normalized = normalizeText(text);
+    return normalized != null && containsAny(normalized, List.of(
+            "我已经说了",
+            "我已经说双百计划了",
+            "我已经说",
+            "你没理解",
+            "不是这个意思",
+            "这个回答不合适",
+            "换一种方式回答",
+            "重新回答",
+            "详细一点",
+            "还有其他解释吗"
+    ));
+}
+
+private boolean isAiAnswerModeInstruction(String text) {
+    String compact = compactQuestionText(text);
+    return compact != null && containsAny(compact, List.of(
+            "请使用AI帮我回答",
+            "用AI回答",
+            "用AI帮我答",
+            "调用AI回答",
+            "AI重新回答",
+            "AI再回答",
+            "AI帮我回答"
+    ));
+}
+
+private boolean isDissatisfiedReanswerInstruction(String text) {
+    String normalized = normalizeText(text);
+    return normalized != null && containsAny(normalized, List.of(
+            "不对",
+            "不合适",
+            "不是这个意思",
+            "你没理解",
+            "重新回答",
+            "详细一点",
+            "还有其他解释吗"
+    ));
+}
+
+private boolean isPolicyReanswerInstruction(String text) {
+    return isPolicyFollowupRepairInstruction(text)
+            || isAiAnswerModeInstruction(text)
+            || isDissatisfiedReanswerInstruction(text);
+}
+
+private String resolveLastEffectivePolicyQuestion(Long sessionId,
+                                                  AgentChatRequest request,
+                                                  String currentQuestion) {
+    if (sessionId == null) {
+        return null;
+    }
+    List<AgentMessageEntity> recentMessages = agentMessageMapper.queryRecentEntityBySessionId(sessionId, 30);
+    if (recentMessages == null || recentMessages.isEmpty()) {
+        return buildEffectivePolicyQuestionFromRequestPayload(request);
+    }
+    String currentCompact = compactQuestionText(currentQuestion);
+    boolean skippedCurrentLike = false;
+    for (AgentMessageEntity item : recentMessages) {
+        if (item == null || !"user".equalsIgnoreCase(item.getMessageRole())) {
+            continue;
+        }
+        String candidate = normalizeText(item.getMessageText());
+        if (candidate == null) {
+            continue;
+        }
+        String candidateCompact = compactQuestionText(candidate);
+        if (!skippedCurrentLike && currentCompact != null && currentCompact.equals(candidateCompact)) {
+            skippedCurrentLike = true;
+            continue;
+        }
+        if (isPolicyReanswerInstruction(candidate)
+                || isModelQuestion(candidate)
+                || isAssistantIdentityQuestion(candidate)
+                || isClearlyOutOfPolicyQuestion(candidate)) {
+            continue;
+        }
+        if (looksLikePolicyQuestion(candidate)) {
+            return candidate;
+        }
+    }
+    return buildEffectivePolicyQuestionFromRequestPayload(request);
+}
+
+private String buildEffectivePolicyQuestionFromRequestPayload(AgentChatRequest request) {
+    if (request == null) {
+        return null;
+    }
+    String policyKey = normalizeText(request.getPolicyKey());
+    if (policyKey == null) {
+        return null;
+    }
+    String policyName = resolvePolicyCanonicalName(policyKey);
+    String questionType = normalizeText(request.getQuestionType());
+    String regionLabel = resolveRegionLabel(normalizeText(request.getRegionScope()));
+    StringBuilder builder = new StringBuilder();
+    if (regionLabel != null) {
+        builder.append(regionLabel).append(' ');
+    }
+    builder.append(policyName);
+    if ("PROCESS".equalsIgnoreCase(questionType)) {
+        builder.append("申报流程是什么");
+    } else if ("CONDITION".equalsIgnoreCase(questionType)) {
+        builder.append("申报条件是什么");
+    } else if ("BENEFIT".equalsIgnoreCase(questionType)) {
+        builder.append("有哪些支持");
+    } else {
+        builder.append("是什么政策");
+    }
+    return builder.toString();
+}
+
+private String resolvePolicyCanonicalName(String policyKey) {
+    return switch (policyKey) {
+        case "double_hundred" -> "双百计划";
+        case "special_post" -> "特聘岗位";
+        case "special_fund" -> "专项资金";
+        case "ai_talent" -> "AI人才专项";
+        case "housing" -> "住房补贴";
+        case "postdoc" -> "博士后";
+        case "service_support" -> "人才服务保障";
+        default -> policyKey;
+    };
+}
+
+private boolean shouldSkipFastPathForPolicyReanswer(String instruction) {
+    return normalizeText(instruction) != null;
+}
+
+private String buildPolicyReanswerPromptHint(String effectiveQuestion, String currentInstruction) {
+    if (normalizeText(effectiveQuestion) == null || normalizeText(currentInstruction) == null) {
+        return "";
+    }
+    return "Follow-up repair instruction:\n"
+            + "The user's current message is a follow-up correction, dissatisfaction feedback, or AI re-answer instruction, not a new policy topic.\n"
+            + "Recovered effective policy question: " + effectiveQuestion + "\n"
+            + "Current instruction: " + currentInstruction + "\n"
+            + "Rules:\n"
+            + "1. Answer strictly around the recovered policy question.\n"
+            + "2. Do not treat 'AI' in the current instruction as a policy keyword or alias.\n"
+            + "3. Do not simply repeat the previous answer.\n"
+            + "4. If evidence is insufficient, first provide a conservative explanation or process framework, then state evidence boundaries.\n"
+            + "5. Do not fabricate exact dates, portals, departments, subsidy amounts, or detailed material lists.\n";
+}
+
+private record PolicyFollowupResolution(String originalQuestion,
+                                        String effectiveQuestion,
+                                        boolean bypassSystemMeta,
+                                        boolean skipFastPath,
+                                        String promptHint,
+                                        String clarificationAnswer) {
 }
 
 private boolean isAssistantIdentityQuestion(String question) {
@@ -3092,13 +3330,21 @@ return builder.toString();
                     .append("For undergraduate/bachelor questions, pay special attention to clauses like 本科及以上学历、学士学位、所在机构推荐、CFA、FRM、CPA、精算、法律职业资格、高级职称. ")
                     .append("Answer in Chinese with a warm policy-consultant tone.\n\n");
         }
-        if (isUserCorrectionOrEvidenceSupplement(question)) {
+if (isUserCorrectionOrEvidenceSupplement(question)) {
     rules.append("The user is correcting the previous answer or supplementing policy evidence. ")
             .append("You must acknowledge the user's supplement first, then re-check the knowledge context. ")
             .append("Do not mechanically answer that evidence is insufficient. ")
             .append("If the user's provided clause is not fully verified by the knowledge base, say that the supplement is useful but still needs official source verification. ")
             .append("Use a warm correction style such as: “您这个补充很关键，我先按您提到的政策方向重新核对。” ")
             .append("Then explain what can be preliminarily judged and what still requires official policy text.\n\n");
+}
+        if (isPolicyReanswerInstruction(question)) {
+    rules.append("The user's current message is a follow-up repair, dissatisfaction, or AI re-answer instruction. ")
+            .append("If the effective question has already been recovered from session context, answer strictly around that recovered policy question. ")
+            .append("Do not treat AI inside this instruction as a policy keyword. ")
+            .append("Do not repeat the previous answer mechanically. ")
+            .append("If evidence is insufficient, first provide a conservative explanation or process framework, then explain the evidence boundary. ")
+            .append("Do not fabricate exact application dates, portals, departments, subsidy amounts, or detailed material checklists.\n\n");
 }
         if (SOURCE_SCENE_MOBILE_POLICY_CONSULTANT.equals(sourceScene)) {
             if (questionType == PolicyQuestionType.LIST) {
@@ -3161,6 +3407,10 @@ if (isUserCorrectionOrEvidenceSupplement(question)) {
     return false;
 }
 
+    if (isGenericProcessGuideForSpecificPolicy(result, question)) {
+        return false;
+    }
+
     // 1. 精准 FAQ 命中：继续快速返回，0 Token
     if (trace.faqHit()) {
         return true;
@@ -3190,6 +3440,30 @@ if (isUserCorrectionOrEvidenceSupplement(question)) {
 
     // 5. 其他已命中知识库证据的问题，交给 glm-4.7 组织答案
     return false;
+}
+
+private boolean isGenericProcessGuideForSpecificPolicy(AiPolicyConsultService.ConsultResult result,
+                                                       String question) {
+    if (result == null || result.trace() == null) {
+        return false;
+    }
+    AiPolicyConsultService.DiagnosticTrace trace = result.trace();
+    if (!trace.faqHit()
+            || normalizeText(trace.policyKey()) == null
+            || !"process".equalsIgnoreCase(normalizeText(trace.questionType()))) {
+        return false;
+    }
+    String answer = normalizeText(trace.finalAnswer());
+    if (answer == null) {
+        answer = normalizeText(result.answer());
+    }
+    return answer != null
+            && containsAny(answer, List.of(
+            "这是政策申报流程类问题",
+            "是否能给出完整流程，取决于",
+            "如果只是泛问",
+            "建议先补充具体政策名称"
+    ));
 }
 
 private boolean isConditionReverseQuestion(String question) {
@@ -5162,6 +5436,11 @@ return false;
             return builder.toString();
         }
         if (context == null || context.getChunks().isEmpty()) {
+            if (detectPolicyQuestionType(question) == PolicyQuestionType.PROCESS
+                    && isDoubleHundredApplyFlowQuestion(question, PolicyQuestionType.PROCESS)) {
+                builder.append(buildDoubleHundredApplyFlowConservativeFallbackAnswer());
+                return builder.toString();
+            }
             builder.append("暂未在知识库中检索到与该问题直接对应的政策依据。\n")
                     .append("建议补充以下信息后再提问：\n")
                     .append("1. 所在地区，例如厦门市、福建省。\n")
@@ -5317,6 +5596,28 @@ private String buildDoubleHundredApplyFlowAnswer() {
 """;
 }
 
+private String buildDoubleHundredApplyFlowConservativeFallbackAnswer() {
+    return """
+**结论**
+当前可以先按“双百计划”申报流程的保守框架理解，但知识库里暂未命中完整的当年度申报通知、申报入口和材料清单，以下内容不能替代正式通知。
+
+**可先把握的申报流程框架**
+1. 确认申报类别：先区分创新团队、创业人才或其他对应申报类别。
+2. 关注年度申报通知：以当年度专项申报通知明确申报时间、入口和适用对象。
+3. 准备申报材料：通常需围绕申报人或项目基本情况、业绩成果、计划书等准备材料。
+4. 单位推荐或主管部门审核：一般会经过所在单位、园区、区级或主管部门推荐审核。
+5. 提交申报：按正式通知要求，通过指定渠道或系统提交。
+6. 资格初审：核对申报资格、材料完整性和基础条件。
+7. 专家评审或综合评审：可能包含材料评审、答辩、现场考察或综合审议。
+8. 公示：拟入选名单通常需要公示。
+9. 发文确认：公示无异议后，进入正式确认或发文环节。
+10. 政策兑现：后续再按正式规则办理资金拨付或配套支持。
+
+**边界说明**
+具体申报时间、申报入口、材料清单、主管部门、补贴金额等，必须以当年度正式申报通知和正式政策文件为准；当前知识库未命中的内容我不能编造。
+""";
+}
+
 private boolean shouldForceProcessEvidenceMissingPrompt(String question, KnowledgeCitationContext context) {
     if (!hasStructuredSpecificPolicyHitWithoutProcessEvidence(question, context)) {
         return false;
@@ -5393,6 +5694,11 @@ private boolean shouldForceProcessEvidenceMissingPrompt(String question, Knowled
     private String buildProcessFallbackAnswer(String question,
                                           String regionScope,
                                           List<KnowledgeSearchResultVO> chunks) {
+
+    if (isDoubleHundredApplyFlowQuestion(question, PolicyQuestionType.PROCESS)
+            && !hasDoubleHundredApplyFlowEvidence(chunks)) {
+        return buildDoubleHundredApplyFlowConservativeFallbackAnswer();
+    }
 
     if (isDoubleHundredApplyFlowQuestion(question, PolicyQuestionType.PROCESS)) {
         List<KnowledgeSearchResultVO> doubleHundredChunks = new ArrayList<>();

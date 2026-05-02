@@ -24,6 +24,28 @@
         <result property="chunkNo" column="chunk_no"/>
     </resultMap>
 
+    <resultMap id="AiPolicyChunkEntityMap" type="com.example.lecturesystem.modules.agent.entity.AiPolicyChunkEntity">
+        <id property="id" column="id"/>
+        <result property="baseId" column="base_id"/>
+        <result property="documentId" column="document_id"/>
+        <result property="regionScope" column="region_scope"/>
+        <result property="policyKey" column="policy_key"/>
+        <result property="policyName" column="policy_name"/>
+        <result property="policyAliases" column="policy_aliases"/>
+        <result property="docType" column="doc_type"/>
+        <result property="topicType" column="topic_type"/>
+        <result property="questionType" column="question_type"/>
+        <result property="title" column="title"/>
+        <result property="content" column="content"/>
+        <result property="answerLevel" column="answer_level"/>
+        <result property="priority" column="priority"/>
+        <result property="sourceScene" column="source_scene"/>
+        <result property="sortNo" column="sort_no"/>
+        <result property="enabled" column="enabled"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
     <insert id="insert" parameterType="com.example.lecturesystem.modules.agent.entity.AiPolicyChunkEntity"
             useGeneratedKeys="true" keyProperty="id" keyColumn="id">
         INSERT INTO ai_policy_chunk (
@@ -60,6 +82,18 @@
         SELECT COUNT(1)
         FROM ai_policy_chunk
         WHERE base_id = #{baseId}
+    </select>
+
+    <select id="findByIds" resultMap="AiPolicyChunkEntityMap">
+        SELECT id, base_id, document_id, region_scope, policy_key, policy_name, policy_aliases,
+               doc_type, topic_type, question_type, title, content, answer_level, priority,
+               source_scene, sort_no, enabled, created_at, updated_at
+        FROM ai_policy_chunk
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" close=")" separator=",">
+            #{id}
+        </foreach>
+        ORDER BY id ASC
     </select>
 
     <select id="search" resultMap="AiPolicySearchResultMap">
@@ -115,10 +149,13 @@
             </foreach>
         </if>
         <if test="query.questionTypes != null and query.questionTypes.size() > 0">
-            AND chunk.question_type IN
-            <foreach collection="query.questionTypes" item="item" open="(" close=")" separator=",">
-                #{item}
-            </foreach>
+            AND (
+                LOWER(chunk.question_type) IN
+                <foreach collection="query.questionTypes" item="item" open="(" close=")" separator=",">
+                    LOWER(#{item})
+                </foreach>
+                OR chunk.source_scene = 'POLICY_STANDARDIZATION_PHASE1'
+            )
         </if>
         <if test="query.keywords != null and query.keywords != ''">
             AND (

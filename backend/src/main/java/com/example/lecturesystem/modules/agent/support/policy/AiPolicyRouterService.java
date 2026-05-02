@@ -84,6 +84,13 @@ public class AiPolicyRouterService {
                 topicTypes.add("management_period");
                 questionTypes.add("benefit");
             }
+            case DEPARTMENT -> {
+                docTypes.add("topic");
+                docTypes.add("main");
+                topicTypes.add("department");
+                questionTypes.add("department");
+                routeLabels.add("phase1-topic:department");
+            }
             case SERVICE -> {
                 docTypes.add("topic");
                 docTypes.add("main");
@@ -167,7 +174,14 @@ public class AiPolicyRouterService {
             questionTypes.add(matchedIntent.getQuestionType());
         }
         if (matchedIntent.getTopicType() != null && !matchedIntent.getTopicType().isBlank()) {
-            topicTypes.add(matchedIntent.getTopicType());
+            if (isPhaseOneTopicType(matchedIntent.getTopicType())) {
+                topicTypes.clear();
+                topicTypes.add(matchedIntent.getTopicType());
+                docTypes.add("topic");
+                routeLabels.add("phase1-topic:" + matchedIntent.getTopicType());
+            } else {
+                topicTypes.add(matchedIntent.getTopicType());
+            }
         }
         if (matchedIntent.getStandardQuestion() != null && !matchedIntent.getStandardQuestion().isBlank()) {
             queryKeywords.add(matchedIntent.getStandardQuestion());
@@ -185,7 +199,9 @@ public class AiPolicyRouterService {
                 new ArrayList<>(questionTypes),
                 queryKeywords.stream().filter(item -> item != null && !item.isBlank()).limit(20).toList(),
                 new ArrayList<>(routeLabels),
-                basePlan.detailIntent() || isDetailQuestionType(matchedIntent.getQuestionType()),
+                basePlan.detailIntent()
+                        || isDetailQuestionType(matchedIntent.getQuestionType())
+                        || topicTypes.stream().anyMatch(this::isPhaseOneTopicType),
                 basePlan.compareIntent()
         );
     }
@@ -201,9 +217,11 @@ public class AiPolicyRouterService {
         switch (policyMatch.policyKey()) {
             case "double_hundred" -> {
                 routeLabels.add("double-hundred-topic-first");
-                topicTypes.add("process");
-                topicTypes.add("condition");
-                topicTypes.add("benefit");
+                if (!hasPhaseOneDirectTopic(topicTypes)) {
+                    topicTypes.add("process");
+                    topicTypes.add("condition");
+                    topicTypes.add("benefit");
+                }
                 queryKeywords.add("双百计划");
             }
             case "special_post" -> routeLabels.add("special-post-topic-first");
@@ -272,6 +290,7 @@ public class AiPolicyRouterService {
         return intentType == IntentType.PROCESS
                 || intentType == IntentType.CONDITION
                 || intentType == IntentType.BENEFIT
+                || intentType == IntentType.DEPARTMENT
                 || intentType == IntentType.SERVICE
                 || intentType == IntentType.RISK;
     }
@@ -281,7 +300,21 @@ public class AiPolicyRouterService {
             return false;
         }
         return switch (questionType.toLowerCase()) {
-            case "process", "condition", "benefit", "service", "risk" -> true;
+            case "process", "condition", "benefit", "department", "service", "risk" -> true;
+            default -> false;
+        };
+    }
+
+    private boolean hasPhaseOneDirectTopic(LinkedHashSet<String> topicTypes) {
+        return topicTypes != null && topicTypes.stream().anyMatch(this::isPhaseOneTopicType);
+    }
+
+    private boolean isPhaseOneTopicType(String topicType) {
+        if (topicType == null) {
+            return false;
+        }
+        return switch (topicType.toLowerCase()) {
+            case "material", "department", "boundary", "city_province_boundary", "station" -> true;
             default -> false;
         };
     }

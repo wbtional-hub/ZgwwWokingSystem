@@ -14,5 +14,6 @@ public interface AiPolicyChunkMapper {
     int batchInsert(@Param("list") List<AiPolicyChunkEntity> list);
     int deleteByBaseId(@Param("baseId") Long baseId);
     Integer countByBaseId(@Param("baseId") Long baseId);
+    List<AiPolicyChunkEntity> findByIds(@Param("ids") List<Long> ids);
     List<KnowledgeSearchResultVO> search(@Param("query") AiPolicyChunkSearchQuery query);
 }

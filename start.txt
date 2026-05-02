@@ -3,8 +3,24 @@ cd D:\softwave\postgresql-18.3-1-windows-x64-binaries\pgsql\bin
 .\pg_ctl.exe -D "D:\data\pgdata18" -l "D:\data\pglogs\pg.log" start
 
 D:\softwave\postgresql-18.3-1-windows-x64-binaries\pgsql\bin\pg_isready.exe -h 127.0.0.1 -p 5432
+数据库
+export PGPASSWORD='Pg@123456'
 
+pg_dump \
+  -h 127.0.0.1 \
+  -p 5432 \
+  -U postgres \
+  -d lecture_team \
+  -F c \
+  -Z 9 \
+  -v \
+  --no-owner \
+  --no-privileges \
+  -f /tmp/zgww_pg_backup/zgww_full_20260430.dump
 
+unset PGPASSWORD
+
+ls -lh /tmp/zgww_pg_backup/zgww_full_20260430.dump
 执行页面
 进入后端目录：
 

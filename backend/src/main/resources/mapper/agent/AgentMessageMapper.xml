@@ -5,6 +5,18 @@
         INSERT INTO ai_agent_message (session_id, message_role, message_text, cited_chunk_ids, create_time)
         VALUES (#{sessionId}, #{messageRole}, #{messageText}, #{citedChunkIds}, #{createTime})
     </insert>
+    <select id="findById" resultType="com.example.lecturesystem.modules.agent.entity.AgentMessageEntity">
+        SELECT
+            id,
+            session_id AS sessionId,
+            message_role AS messageRole,
+            message_text AS messageText,
+            cited_chunk_ids AS citedChunkIds,
+            create_time AS createTime
+        FROM ai_agent_message
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
     <select id="queryBySessionId" resultType="com.example.lecturesystem.modules.agent.vo.AgentMessageVO">
         SELECT id, message_role, message_text, cited_chunk_ids, create_time
         FROM ai_agent_message

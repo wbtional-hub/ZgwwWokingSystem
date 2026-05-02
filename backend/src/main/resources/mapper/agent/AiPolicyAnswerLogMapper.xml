@@ -23,4 +23,52 @@
     <delete id="deleteByBaseId">
         DELETE FROM ai_policy_answer_log WHERE base_id = #{baseId}
     </delete>
+
+    <sql id="AnswerLogColumns">
+        id,
+        base_id AS baseId,
+        session_id AS sessionId,
+        user_id AS userId,
+        source_scene AS sourceScene,
+        applied_new_chain AS appliedNewChain,
+        raw_question AS rawQuestion,
+        normalized_question AS normalizedQuestion,
+        region_scope AS regionScope,
+        policy_key AS policyKey,
+        question_type AS questionType,
+        route_plan AS routePlan,
+        faq_hit AS faqHit,
+        fallback_flag AS fallbackFlag,
+        matched_intent_id AS matchedIntentId,
+        matched_intent_code AS matchedIntentCode,
+        suggested_intents AS suggestedIntents,
+        selected_intent_id AS selectedIntentId,
+        learning_signal_written AS learningSignalWritten,
+        candidate_generated AS candidateGenerated,
+        hit_chunk_ids AS hitChunkIds,
+        answer_mode AS answerMode,
+        validation_summary AS validationSummary,
+        final_answer AS finalAnswer,
+        created_at AS createdAt
+    </sql>
+
+    <select id="findById" resultType="com.example.lecturesystem.modules.agent.entity.AiPolicyAnswerLogEntity">
+        SELECT
+            <include refid="AnswerLogColumns"/>
+        FROM ai_policy_answer_log
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="findLatestForFeedback" resultType="com.example.lecturesystem.modules.agent.entity.AiPolicyAnswerLogEntity">
+        SELECT
+            <include refid="AnswerLogColumns"/>
+        FROM ai_policy_answer_log
+        WHERE session_id = #{sessionId}
+          <if test="rawQuestion != null and rawQuestion != ''">
+            AND raw_question = #{rawQuestion}
+          </if>
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+    </select>
 </mapper>

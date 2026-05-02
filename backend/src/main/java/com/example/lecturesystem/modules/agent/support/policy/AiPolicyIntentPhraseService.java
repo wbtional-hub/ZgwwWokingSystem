@@ -145,11 +145,16 @@ public class AiPolicyIntentPhraseService {
         }
         if (intentMatch != null
                 && intent.getQuestionType() != null
-                && !"topic".equalsIgnoreCase(intent.getQuestionType())
+                && !isGenericPolicyQuestionType(intent.getQuestionType())
                 && !intent.getQuestionType().equalsIgnoreCase(intentMatch.intentType().name().toLowerCase())) {
             return false;
         }
         return true;
+    }
+
+    private boolean isGenericPolicyQuestionType(String questionType) {
+        return "topic".equalsIgnoreCase(questionType)
+                || "policy_qa".equalsIgnoreCase(questionType);
     }
 
     private boolean shouldRelaxQuestionType(AiPolicyIntentEntity intent,

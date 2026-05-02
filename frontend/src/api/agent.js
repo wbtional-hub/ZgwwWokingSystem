@@ -178,6 +178,66 @@ export function selectPolicyIntentSuggestion(data) {
   })
 }
 
+export function submitPolicyFeedback(data) {
+  return request.post('/agent/policy-feedback/submit', data, {
+    timeout: AI_SESSION_TIMEOUT
+  })
+}
+
+export function queryPolicyCorrectionTasks(data) {
+  return request.post('/agent/policy-corrections/list', data, {
+    timeout: AI_SESSION_TIMEOUT
+  })
+}
+
+export function getPolicyCorrectionTask(id) {
+  return request.get(`/agent/policy-corrections/${id}`, {
+    timeout: AI_SESSION_TIMEOUT
+  })
+}
+
+export function getPolicyCorrectionTrace(id) {
+  return request.get(`/agent/policy-corrections/${id}/trace`, {
+    timeout: AI_SESSION_TIMEOUT
+  })
+}
+
+export function getPolicyCorrectionEvidence(id) {
+  return request.get(`/agent/policy-corrections/${id}/evidence`, {
+    timeout: AI_SESSION_TIMEOUT
+  })
+}
+
+export function updatePolicyCorrectionStatus(id, data) {
+  return request.post(`/agent/policy-corrections/${id}/status`, data, {
+    timeout: AI_SESSION_TIMEOUT
+  })
+}
+
+export function commentPolicyCorrectionTask(id, data) {
+  return request.post(`/agent/policy-corrections/${id}/comment`, data, {
+    timeout: AI_SESSION_TIMEOUT
+  })
+}
+
+export function savePolicyCorrectionFaqDraft(id, data) {
+  return request.post(`/agent/policy-corrections/${id}/draft/faq`, data, {
+    timeout: AI_SESSION_TIMEOUT
+  })
+}
+
+export function savePolicyCorrectionChunkDraft(id, data) {
+  return request.post(`/agent/policy-corrections/${id}/draft/policy-chunk`, data, {
+    timeout: AI_SESSION_TIMEOUT
+  })
+}
+
+export function closePolicyCorrectionTask(id, data = {}) {
+  return request.post(`/agent/policy-corrections/${id}/close`, data, {
+    timeout: AI_SESSION_TIMEOUT
+  })
+}
+
 async function consumeSseBuffer(buffer, streamState, handlers) {
   let working = String(buffer || '').replace(/\r\n/g, '\n')
   let boundary = working.indexOf('\n\n')

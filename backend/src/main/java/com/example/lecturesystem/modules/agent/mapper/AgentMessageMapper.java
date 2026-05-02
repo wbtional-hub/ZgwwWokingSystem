@@ -12,6 +12,8 @@ public interface AgentMessageMapper {
 
     int insert(AgentMessageEntity entity);
 
+    AgentMessageEntity findById(@Param("id") Long id);
+
     List<AgentMessageVO> queryBySessionId(@Param("sessionId") Long sessionId);
 
     List<AgentMessageEntity> queryRecentEntityBySessionId(@Param("sessionId") Long sessionId,

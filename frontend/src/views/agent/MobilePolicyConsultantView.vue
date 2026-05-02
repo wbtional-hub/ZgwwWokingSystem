@@ -3,31 +3,44 @@
   class="policy-page"
   :class="{
     'policy-page--with-tabbar': showBottomTabbar,
-    'policy-page--keyboard': state.composerFocused
+    'policy-page--keyboard': state.composerFocused,
+    'policy-page--chat': state.messageList.length
   }"
 >
     <div class="policy-shell">
       <section v-if="!hasToken" class="panel panel--empty">
-        <h1>手机端政策咨询</h1>
-        <p>需要先登录后再进入问答链路。</p>
+        <h1>政策智能体</h1>
+        <p>需要先登录后再进入智能咨询链路。</p>
         <button type="button" class="primary-button" @click="goToLogin">去登录</button>
       </section>
 
       <template v-else>
-  <section class="mobile-policy-header">
-    <div>
-      <div class="mobile-policy-title">政策咨询</div>
-      <div class="mobile-policy-subtitle">人才政策智能问答</div>
+  <section class="mobile-policy-header" :class="{ 'mobile-policy-header--compact': state.messageList.length }">
+    <div class="mobile-policy-hero">
+      <div v-if="!state.messageList.length" class="mobile-policy-eyebrow">AI Policy Agent · 政策匹配 / 申报指引 / 依据追溯 / 智能纠错</div>
+      <div class="mobile-policy-title">政策智能体</div>
+      <div v-if="!state.messageList.length" class="mobile-policy-subtitle">面向人才政策、产业政策与申报服务的智能咨询助手</div>
+      <div v-if="!state.messageList.length" class="mobile-policy-status-row">
+        <span>政策知识库已连接</span>
+        <span>专题卡优先</span>
+        <span>依据可追溯</span>
+        <span>人审纠错闭环</span>
+      </div>
     </div>
     <div class="mobile-policy-actions">
-      <button type="button" class="mobile-icon-button" @click="openHistoryDrawer">历史</button>
-      <button type="button" class="mobile-icon-button mobile-icon-button--primary" :disabled="state.asking" @click="handleResetSession">
-        新会话
-      </button>
+      <div class="mobile-policy-action-row">
+        <button type="button" class="mobile-icon-button" @click="openHistoryDrawer">历史</button>
+        <button type="button" class="mobile-icon-button mobile-icon-button--primary" :disabled="state.asking" @click="handleResetSession">
+          新会话
+        </button>
+      </div>
+      <div v-if="state.messageList.length" class="mobile-policy-usage-line">
+        本次 {{ currentTotalTokensText }} Token · 本月 {{ monthTotalTokensText }} Token · {{ currentModelText }}
+      </div>
     </div>
   </section>
 
-  <section class="mobile-token-card">
+  <section v-if="!state.messageList.length" class="mobile-token-card">
     <div class="mobile-token-item">
       <span>本次</span>
       <strong>{{ currentTotalTokensText }}</strong>
@@ -77,13 +90,49 @@
               依据：{{ formatCitations(item).join(' / ') }}
             </div>
           </div>
+          <div v-if="item.messageRole !== 'user' && !item.isStreaming" class="mobile-feedback">
+            <div v-if="feedbackSubmitted(item)" class="mobile-feedback__done">
+              已收到反馈，我们会用于优化政策智能体。
+            </div>
+            <template v-else>
+              <button
+                v-for="option in feedbackOptions"
+                :key="option.type"
+                type="button"
+                class="mobile-feedback__chip"
+                :disabled="isFeedbackSubmitting(item)"
+                @click="handleFeedbackClick(item, option)"
+              >
+                {{ option.label }}
+              </button>
+            </template>
+          </div>
+
+          <div v-if="state.feedbackDraft.messageId === item.id && !feedbackSubmitted(item)" class="mobile-feedback-editor">
+            <div class="mobile-feedback-editor__title">{{ state.feedbackDraft.label }}，请补充说明</div>
+            <textarea
+              v-model="state.feedbackDraft.content"
+              class="mobile-feedback-editor__input"
+              rows="3"
+              maxlength="300"
+              placeholder="例如：依据不够明确、材料清单缺项、政策可能已更新..."
+            ></textarea>
+            <div class="mobile-feedback-editor__actions">
+              <button type="button" class="mobile-feedback-editor__cancel" :disabled="state.feedbackSubmittingMessageId" @click="cancelFeedbackDraft">
+                取消
+              </button>
+              <button type="button" class="mobile-feedback-editor__submit" :disabled="state.feedbackSubmittingMessageId" @click="submitFeedbackDraft">
+                {{ state.feedbackSubmittingMessageId ? '提交中...' : '提交反馈' }}
+              </button>
+            </div>
+          </div>
         </article>
       </template>
 
       <div v-else class="mobile-welcome">
-        <div class="mobile-welcome__title">您好，我可以帮您查询人才政策</div>
+        <div class="mobile-welcome__title">您好，我是政策智能体</div>
         <div class="mobile-welcome__text">
-          可以直接咨询补助标准、申报条件、办理流程、材料清单和政策依据。
+          可以直接咨询政策匹配、申报流程、材料清单、省市边界和政策依据；涉及动态事项会提示以正式通知为准。
         </div>
         <div class="quick-question-list">
           <button
@@ -126,7 +175,7 @@
   class="mobile-question-input"
   rows="1"
   maxlength="500"
-  placeholder="请输入人才政策问题"
+  placeholder="请输入政策问题，例如：双百计划怎么申请、金融服务产业人才项目需要什么材料"
   :disabled="state.asking || !permissionFlags.canUseAgent"
   @focus="handleComposerFocus"
   @blur="handleComposerBlur"
@@ -193,6 +242,7 @@ import {
   queryAgentSessions,
   selectPolicyIntentSuggestion,
   sendAgentQuestion,
+  submitPolicyFeedback,
   suggestPolicyIntents,
   streamAgentQuestion
 } from '@/api/agent'
@@ -241,8 +291,25 @@ const state = reactive({
   lastChatMeta: null,
   policySuggestLoading: false,
   policySuggestLogId: null,
-  policySuggestItems: []
+  policySuggestItems: [],
+  feedbackSubmitted: {},
+  feedbackSubmittingMessageId: null,
+  feedbackDraft: {
+    messageId: null,
+    type: '',
+    label: '',
+    content: ''
+  }
 })
+
+const feedbackOptions = [
+  { type: 'HELPFUL', label: '有帮助', direct: true },
+  { type: 'INACCURATE', label: '不准确' },
+  { type: 'MISSING_EVIDENCE', label: '缺少依据' },
+  { type: 'INCOMPLETE_MATERIAL', label: '材料不完整' },
+  { type: 'POLICY_UPDATED', label: '政策已更新' },
+  { type: 'OTHER', label: '其他' }
+]
 
 const hasToken = computed(() => Boolean(userStore.token || localStorage.getItem('token')))
 const showMobileTabbar = computed(() => hasToken.value && isMobileClient())
@@ -306,11 +373,11 @@ const currentModelText = computed(() => {
 })
 
 const quickQuestions = computed(() => [
-  '双百计划补助标准是什么',
-  '住房补贴怎么申请',
-  '福建省百人计划补助多少',
-  '人工智能人才有什么支持',
-  '人才服务保障包括什么'
+  '我可以申请哪些政策？',
+  '双百计划怎么申请？',
+  '金融服务产业人才项目需要什么材料？',
+  '博士后工作站怎么申请？',
+  '厦门政策和福建政策有什么区别？'
 ])
 const helperText = computed(() => {
   if (state.errorMessage) {
@@ -436,6 +503,118 @@ function formatCitations(message) {
     return message.citedChunkIdList.map((item) => `Chunk ${item}`)
   }
   return []
+}
+
+function feedbackKey(message) {
+  return String(message?.id || '')
+}
+
+function feedbackSubmitted(message) {
+  const key = feedbackKey(message)
+  return Boolean(key && state.feedbackSubmitted[key])
+}
+
+function isFeedbackSubmitting(message) {
+  return state.feedbackSubmittingMessageId === feedbackKey(message)
+}
+
+function handleFeedbackClick(message, option) {
+  if (!message || !option || feedbackSubmitted(message) || isFeedbackSubmitting(message)) {
+    return
+  }
+  if (option.direct) {
+    submitMessageFeedback(message, option.type, '')
+    return
+  }
+  state.feedbackDraft = {
+    messageId: message.id,
+    type: option.type,
+    label: option.label,
+    content: ''
+  }
+}
+
+function cancelFeedbackDraft() {
+  state.feedbackDraft = {
+    messageId: null,
+    type: '',
+    label: '',
+    content: ''
+  }
+}
+
+function clearFeedbackState() {
+  state.feedbackSubmitted = {}
+  state.feedbackSubmittingMessageId = null
+  cancelFeedbackDraft()
+}
+
+function submitFeedbackDraft() {
+  const message = findMessageById(state.feedbackDraft.messageId)
+  if (!message) {
+    cancelFeedbackDraft()
+    return
+  }
+  submitMessageFeedback(message, state.feedbackDraft.type, state.feedbackDraft.content)
+}
+
+async function submitMessageFeedback(message, feedbackType, feedbackContent) {
+  const key = feedbackKey(message)
+  if (!key || state.feedbackSubmitted[key]) {
+    return
+  }
+  state.feedbackSubmittingMessageId = key
+  try {
+    ensureSuccess(await submitPolicyFeedback(buildFeedbackPayload(message, feedbackType, feedbackContent)), '提交反馈失败')
+    state.feedbackSubmitted[key] = true
+    cancelFeedbackDraft()
+    showToast('反馈已提交，我们会用于优化政策智能体')
+  } catch (error) {
+    showToast(error.message || '反馈提交失败，请稍后重试')
+  } finally {
+    state.feedbackSubmittingMessageId = null
+  }
+}
+
+function buildFeedbackPayload(message, feedbackType, feedbackContent) {
+  return {
+    baseId: POLICY_BASE_ID,
+    userId: userStore.userInfo?.userId || userStore.userInfo?.id || null,
+    sessionId: state.sessionInfo?.id || null,
+    messageId: typeof message?.id === 'number' ? message.id : null,
+    traceId: message?.traceId || state.lastChatMeta?.traceId || '',
+    question: findPreviousUserQuestion(message),
+    answer: message?.messageText || '',
+    feedbackType,
+    feedbackContent: feedbackContent || '',
+    submitContext: true,
+    policyKey: message?.policyKey || state.lastChatMeta?.policyKey || '',
+    topicType: message?.topicType || state.lastChatMeta?.topicType || '',
+    questionType: message?.questionType || state.lastChatMeta?.questionType || '',
+    evidenceIds: formatEvidenceIds(message),
+    evidenceSource: formatCitations(message).join(' / '),
+    intentId: message?.intentId || state.lastChatMeta?.intentId || null
+  }
+}
+
+function findPreviousUserQuestion(message) {
+  const index = state.messageList.findIndex((item) => item.id === message?.id)
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (state.messageList[i]?.messageRole === 'user') {
+      return state.messageList[i].messageText || ''
+    }
+  }
+  return state.question || ''
+}
+
+function formatEvidenceIds(message) {
+  if (Array.isArray(message?.citedChunkIdList) && message.citedChunkIdList.length) {
+    return message.citedChunkIdList.join(',')
+  }
+  if (Array.isArray(message?.evidenceIds) && message.evidenceIds.length) {
+    return message.evidenceIds.join(',')
+  }
+  return ''
 }
 
 function stripSkillMentions(question) {
@@ -734,6 +913,14 @@ function applyDoneMeta(assistantId, payload) {
   if (message && Array.isArray(payload?.citations)) {
     message.citedTitles = payload.citations
   }
+  if (message) {
+    message.traceId = payload?.traceId || message.traceId || ''
+    message.policyKey = payload?.policyKey || message.policyKey || ''
+    message.topicType = payload?.topicType || message.topicType || ''
+    message.questionType = payload?.questionType || message.questionType || ''
+    message.intentId = payload?.intentId || message.intentId || null
+    message.evidenceIds = Array.isArray(payload?.evidenceIds) ? payload.evidenceIds : message.evidenceIds
+  }
   state.lastChatMeta = {
     ...(state.lastChatMeta || {}),
     answerSource: payload?.answerSource || '',
@@ -742,7 +929,12 @@ function applyDoneMeta(assistantId, payload) {
     totalTokens: Number(payload?.totalTokens ?? 0),
     monthTotalTokens: Number(payload?.monthTotalTokens ?? 0),
     durationMs: Number(payload?.durationMs ?? 0),
-    modelCode: payload?.modelCode || ''
+    modelCode: payload?.modelCode || '',
+    traceId: payload?.traceId || state.lastChatMeta?.traceId || '',
+    policyKey: payload?.policyKey || state.lastChatMeta?.policyKey || '',
+    topicType: payload?.topicType || state.lastChatMeta?.topicType || '',
+    questionType: payload?.questionType || state.lastChatMeta?.questionType || '',
+    intentId: payload?.intentId || state.lastChatMeta?.intentId || null
   }
 }
 
@@ -873,6 +1065,7 @@ async function selectSession(item) {
   state.sessionPinned = true
   forceCreateNextSession.value = false
   state.showHistoryDrawer = false
+  cancelFeedbackDraft()
   syncActiveSkillFromSession(item)
   state.lastChatMeta = {
     skillName: item?.skillName || '',
@@ -889,6 +1082,7 @@ async function handleResetSession() {
   state.lastChatMeta = null
   state.messageList = []
   state.question = ''
+  clearFeedbackState()
   clearSelectedPolicySuggestion()
 
   syncActiveSkillFromSession(null, resolveFunctionBoundSkill())
@@ -1079,13 +1273,20 @@ onMounted(async () => {
 .policy-page {
   --tabbar-space: 0px;
   --composer-bottom: env(safe-area-inset-bottom);
+  --agent-navy: #061a3d;
+  --agent-blue: #1d4ed8;
+  --agent-cyan: #22d3ee;
+  --agent-violet: #7c3aed;
   height: 100vh;
   height: 100dvh;
   min-height: 100vh;
   padding: 10px 12px 0;
   overflow: hidden;
   box-sizing: border-box;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(34, 211, 238, 0.34), transparent 28%),
+    radial-gradient(circle at 88% 12%, rgba(124, 58, 237, 0.28), transparent 30%),
+    linear-gradient(180deg, #061a3d 0%, #0f2f68 38%, #eff6ff 100%);
 }
 
 .policy-page--with-tabbar {
@@ -1096,6 +1297,10 @@ onMounted(async () => {
 .policy-page--keyboard {
   --tabbar-space: 0px;
   --composer-bottom: env(safe-area-inset-bottom);
+}
+
+.policy-page--chat {
+  padding-top: 8px;
 }
 
 
@@ -1398,47 +1603,174 @@ onMounted(async () => {
   top: 0;
   z-index: 20;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 4px 10px;
-  background: linear-gradient(180deg, #f8fafc 0%, rgba(248, 250, 252, 0.92) 100%);
-  backdrop-filter: blur(12px);
+  margin-bottom: 10px;
+  padding: 18px 16px 16px;
+  overflow: hidden;
+  border: 1px solid rgba(147, 197, 253, 0.28);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 85% 12%, rgba(34, 211, 238, 0.28), transparent 34%),
+    linear-gradient(135deg, rgba(8, 26, 61, 0.96), rgba(30, 64, 175, 0.88) 55%, rgba(88, 28, 135, 0.86));
+  box-shadow: 0 22px 54px rgba(6, 26, 61, 0.28);
+  backdrop-filter: blur(18px);
+  transition: padding 0.22s ease, border-radius 0.22s ease, min-height 0.22s ease, box-shadow 0.22s ease;
+}
+
+.mobile-policy-header::before {
+  content: '';
+  position: absolute;
+  inset: -45% auto auto -18%;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.2);
+  filter: blur(2px);
+  animation: agent-glow 6s ease-in-out infinite alternate;
+}
+
+.mobile-policy-header--compact {
+  min-height: 66px;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 12px 12px;
+  border-radius: 22px;
+  box-shadow: 0 14px 36px rgba(6, 26, 61, 0.24);
+}
+
+.mobile-policy-header--compact::before {
+  inset: -90px auto auto -90px;
+  width: 170px;
+  height: 170px;
+  opacity: 0.72;
+}
+
+.mobile-policy-hero {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-policy-eyebrow {
+  display: inline-flex;
+  max-width: 100%;
+  color: rgba(224, 242, 254, 0.88);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
 }
 
 .mobile-policy-title {
-  color: #0f172a;
-  font-size: 20px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 8px;
+  color: #f8fbff;
+  font-size: clamp(26px, 7vw, 38px);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+}
+
+.mobile-policy-title::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #67e8f9;
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.14), 0 0 18px rgba(103, 232, 249, 0.95);
+  animation: agent-pulse 2.4s ease-in-out infinite;
+}
+
+.mobile-policy-header--compact .mobile-policy-title {
+  margin-top: 0;
+  font-size: clamp(24px, 6.4vw, 28px);
   font-weight: 800;
-  line-height: 1.2;
+  letter-spacing: 0.01em;
+  text-shadow: 0 0 18px rgba(147, 197, 253, 0.32);
+}
+
+.mobile-policy-header--compact .mobile-policy-title::before {
+  width: 7px;
+  height: 7px;
 }
 
 .mobile-policy-subtitle {
-  margin-top: 3px;
-  color: #64748b;
-  font-size: 12px;
+  margin-top: 8px;
+  color: rgba(219, 234, 254, 0.92);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.mobile-policy-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.mobile-policy-status-row span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border: 1px solid rgba(186, 230, 253, 0.3);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.18);
+  color: #e0f2fe;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .mobile-policy-actions {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.mobile-policy-action-row {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 
 .mobile-icon-button {
   height: 32px;
   padding: 0 10px;
-  border: 1px solid #dbe4f0;
+  border: 1px solid rgba(191, 219, 254, 0.32);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #334155;
+  background: rgba(255, 255, 255, 0.12);
+  color: #eff6ff;
   font-size: 12px;
   font-weight: 700;
+  backdrop-filter: blur(10px);
+}
+
+.mobile-policy-usage-line {
+  max-width: 180px;
+  color: rgba(219, 234, 254, 0.74);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: right;
+  white-space: nowrap;
+  transform: translateY(-1px);
 }
 
 .mobile-icon-button--primary {
-  border-color: #2563eb;
-  background: #2563eb;
+  border-color: rgba(34, 211, 238, 0.68);
+  background: linear-gradient(135deg, #0891b2, #2563eb);
   color: #fff;
 }
 
@@ -1447,12 +1779,13 @@ onMounted(async () => {
   grid-template-columns: 1fr auto 1fr auto 1.2fr;
   align-items: center;
   gap: 10px;
-  margin: 4px 0 12px;
-  padding: 10px 12px;
-  border: 1px solid #dbeafe;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 10px 28px rgba(37, 99, 235, 0.08);
+  margin: 0 0 12px;
+  padding: 11px 12px;
+  border: 1px solid rgba(147, 197, 253, 0.34);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(16px);
 }
 
 .mobile-token-item {
@@ -1471,7 +1804,7 @@ onMounted(async () => {
 .mobile-token-item strong {
   display: block;
   margin: 3px 0;
-  color: #1d4ed8;
+  color: #0f3f9f;
   font-size: 15px;
   font-weight: 800;
   word-break: break-all;
@@ -1494,6 +1827,10 @@ onMounted(async () => {
   padding-bottom: calc(92px + var(--tabbar-space));
 }
 
+.policy-page--chat .mobile-chat-card {
+  padding-bottom: calc(84px + var(--tabbar-space));
+}
+
 .mobile-message-list {
   display: flex;
   flex-direction: column;
@@ -1511,6 +1848,10 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   max-width: 86%;
+}
+
+.policy-page--chat .mobile-message {
+  max-width: 94%;
 }
 
 .mobile-message--user {
@@ -1564,16 +1905,112 @@ onMounted(async () => {
   line-height: 1.5;
 }
 
+.mobile-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+  margin: 7px 8px 0;
+}
+
+.mobile-feedback__chip,
+.mobile-feedback-editor__cancel,
+.mobile-feedback-editor__submit {
+  border: 1px solid rgba(147, 197, 253, 0.42);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.mobile-feedback__chip {
+  min-height: 26px;
+  padding: 0 9px;
+  background: rgba(239, 246, 255, 0.86);
+  color: #1d4ed8;
+}
+
+.mobile-feedback__chip:disabled {
+  opacity: 0.58;
+}
+
+.mobile-feedback__done {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(236, 254, 255, 0.86);
+  color: #0e7490;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.mobile-feedback-editor {
+  width: min(100%, 420px);
+  margin: 8px 8px 0;
+  padding: 10px;
+  border: 1px solid rgba(147, 197, 253, 0.38);
+  border-radius: 16px;
+  background: rgba(248, 251, 255, 0.95);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.mobile-feedback-editor__title {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mobile-feedback-editor__input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.mobile-feedback-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.mobile-feedback-editor__cancel,
+.mobile-feedback-editor__submit {
+  min-height: 28px;
+  padding: 0 12px;
+}
+
+.mobile-feedback-editor__cancel {
+  background: #fff;
+  color: #475569;
+}
+
+.mobile-feedback-editor__submit {
+  border-color: rgba(34, 211, 238, 0.55);
+  background: linear-gradient(135deg, #0891b2, #2563eb);
+  color: #fff;
+}
+
 .mobile-empty-state,
 .mobile-welcome {
   margin: auto 0;
   padding: 24px 18px;
-  border: 1px solid #dbeafe;
+  border: 1px solid rgba(147, 197, 253, 0.5);
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.9);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(34, 211, 238, 0.16), transparent 32%),
+    rgba(255, 255, 255, 0.9);
   color: #64748b;
   text-align: center;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.09);
+  backdrop-filter: blur(14px);
 }
 
 .mobile-empty-state--warning {
@@ -1584,8 +2021,8 @@ onMounted(async () => {
 
 .mobile-welcome__title {
   color: #0f172a;
-  font-size: 18px;
-  font-weight: 800;
+  font-size: 19px;
+  font-weight: 900;
 }
 
 .mobile-welcome__text {
@@ -1598,18 +2035,24 @@ onMounted(async () => {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
+  gap: 9px;
   margin-top: 16px;
 }
 
 .quick-question {
-  padding: 8px 11px;
-  border: 1px solid #bfdbfe;
+  padding: 9px 12px;
+  border: 1px solid rgba(59, 130, 246, 0.24);
   border-radius: 999px;
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(236, 254, 255, 0.96));
+  color: #0f3f9f;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.quick-question:active {
+  transform: scale(0.98);
 }
 
 .mobile-composer-wrap {
@@ -1619,9 +2062,9 @@ onMounted(async () => {
   bottom: var(--composer-bottom);
   z-index: 40;
   padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
-  background: rgba(248, 250, 252, 0.96);
-  border-top: 1px solid rgba(226, 232, 240, 0.9);
-  box-shadow: 0 -8px 28px rgba(15, 23, 42, 0.08);
+  background: rgba(241, 247, 255, 0.88);
+  border-top: 1px solid rgba(147, 197, 253, 0.32);
+  box-shadow: 0 -14px 36px rgba(15, 23, 42, 0.12);
   backdrop-filter: blur(16px);
 }
 
@@ -1666,9 +2109,9 @@ onMounted(async () => {
   min-height: 46px;
   max-height: 92px;
   padding: 12px 14px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid rgba(37, 99, 235, 0.18);
   border-radius: 20px;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.96);
   color: #0f172a;
   font-size: 16px;
   line-height: 1.45;
@@ -1678,8 +2121,8 @@ onMounted(async () => {
 }
 
 .mobile-question-input:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+  border-color: #0891b2;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.18), 0 10px 28px rgba(37, 99, 235, 0.08);
 }
 
 .mobile-send-button {
@@ -1688,7 +2131,7 @@ onMounted(async () => {
   height: 46px;
   border: none;
   border-radius: 20px;
-  background: #2563eb;
+  background: linear-gradient(135deg, #0891b2, #2563eb 58%, #4f46e5);
   color: #fff;
   font-size: 15px;
   font-weight: 800;
@@ -1796,6 +2239,29 @@ onMounted(async () => {
 
   .mobile-message-list {
     max-height: 62vh;
+  }
+}
+
+@keyframes agent-glow {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.76;
+  }
+  to {
+    transform: translate3d(18px, 8px, 0) scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes agent-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
   }
 }
 </style>

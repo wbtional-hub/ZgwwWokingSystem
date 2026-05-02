@@ -36,7 +36,7 @@ public class AiPolicyHybridRetrievalService {
             AiPolicyChunkSearchQuery query = new AiPolicyChunkSearchQuery();
             query.setBaseId(baseId);
             query.setKeywords(keyword);
-            query.setRegionScopes(routePlan.regionScopes());
+            query.setRegionScopes(expandRegionScopes(routePlan.regionScopes()));
             query.setPolicyKeys(routePlan.policyKeys());
             query.setDocTypes(routePlan.docTypes());
             query.setTopicTypes(routePlan.topicTypes());
@@ -83,6 +83,35 @@ public class AiPolicyHybridRetrievalService {
             result.add(value.toLowerCase());
         }
         return result;
+    }
+
+    private List<String> expandRegionScopes(List<String> regionScopes) {
+        if (regionScopes == null || regionScopes.isEmpty()) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (String scope : regionScopes) {
+            if (scope == null || scope.isBlank()) {
+                continue;
+            }
+            addRegionScope(result, scope);
+            if ("xiamen_city".equalsIgnoreCase(scope) || "XM".equalsIgnoreCase(scope) || "厦门市".equals(scope)) {
+                addRegionScope(result, "xiamen_city");
+                addRegionScope(result, "XM");
+                addRegionScope(result, "厦门市");
+            } else if ("fujian_province".equalsIgnoreCase(scope) || "FJ".equalsIgnoreCase(scope) || "福建省".equals(scope)) {
+                addRegionScope(result, "fujian_province");
+                addRegionScope(result, "FJ");
+                addRegionScope(result, "福建省");
+            }
+        }
+        return result;
+    }
+
+    private void addRegionScope(List<String> scopes, String scope) {
+        if (scope != null && !scope.isBlank() && !scopes.contains(scope)) {
+            scopes.add(scope);
+        }
     }
 
     private int scoreHit(KnowledgeSearchResultVO hit,

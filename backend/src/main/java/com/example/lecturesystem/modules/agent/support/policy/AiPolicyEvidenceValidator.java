@@ -106,16 +106,38 @@ public class AiPolicyEvidenceValidator {
                                                          List<KnowledgeSearchResultVO> hits) {
         if (routePlan.compareIntent()) {
             return hits.stream()
-                    .filter(hit -> "xiamen_city".equalsIgnoreCase(hit.getRegionScope())
-                            || "fujian_province".equalsIgnoreCase(hit.getRegionScope()))
+                    .filter(hit -> isXiamenScope(hit.getRegionScope()) || isFujianScope(hit.getRegionScope()))
                     .toList();
         }
         if (regionMatch == null || regionMatch.scope() == AiPolicyRegionResolver.RegionScope.UNKNOWN) {
             return new ArrayList<>(hits);
         }
         return hits.stream()
-                .filter(hit -> regionMatch.scope().getCode().equalsIgnoreCase(hit.getRegionScope()))
+                .filter(hit -> sameRegionScope(regionMatch.scope().getCode(), hit.getRegionScope()))
                 .toList();
+    }
+
+    private boolean sameRegionScope(String expected, String actual) {
+        if (expected == null || actual == null) {
+            return false;
+        }
+        if (expected.equalsIgnoreCase(actual)) {
+            return true;
+        }
+        return (isXiamenScope(expected) && isXiamenScope(actual))
+                || (isFujianScope(expected) && isFujianScope(actual));
+    }
+
+    private boolean isXiamenScope(String scope) {
+        return "xiamen_city".equalsIgnoreCase(scope)
+                || "XM".equalsIgnoreCase(scope)
+                || "厦门市".equals(scope);
+    }
+
+    private boolean isFujianScope(String scope) {
+        return "fujian_province".equalsIgnoreCase(scope)
+                || "FJ".equalsIgnoreCase(scope)
+                || "福建省".equals(scope);
     }
 
     private List<KnowledgeSearchResultVO> filterByPolicy(AiPolicyResolver.PolicyMatch policyMatch,

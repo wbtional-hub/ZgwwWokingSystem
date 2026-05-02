@@ -26,6 +26,7 @@ import AIWorkbenchView from '@/views/agent/AIWorkbenchView.vue'
 import AIConsultationLedgerView from '@/views/agent/AIConsultationLedgerView.vue'
 import AIConsultationMonthlyReportView from '@/views/agent/AIConsultationMonthlyReportView.vue'
 import AIResultFlowView from '@/views/agent/AIResultFlowView.vue'
+import AIPolicyCorrectionCenterView from '@/views/agent/AIPolicyCorrectionCenterView.vue'
 import MobilePolicyConsultantView from '@/views/agent/MobilePolicyConsultantView.vue'
 import ExpertListView from '@/views/expert/ExpertListView.vue'
 import AiUserProfileView from '@/views/ai/AiUserProfileView.vue'
@@ -91,6 +92,7 @@ const routes = [
       { path: 'ai-result-flow', component: AIResultFlowView, meta: { title: 'AI结果回流', accessAnyModuleCodes: AI_FLOW_MODULE_CODES } },
       { path: 'ai-ledger', component: AIConsultationLedgerView, meta: { moduleCode: MODULE_CODES.AI_LEDGER } },
       { path: 'ai-monthly-report', component: AIConsultationMonthlyReportView, meta: { moduleCode: MODULE_CODES.AI_MONTHLY_REPORT } },
+      { path: 'ai-policy-corrections', component: AIPolicyCorrectionCenterView, meta: { adminOnly: true, moduleCode: MODULE_CODES.AI_POLICY_CORRECTION, title: '政策智能体纠错中心' } },
       { path: 'experts', component: ExpertListView, meta: { moduleCode: MODULE_CODES.EXPERT } },
       { path: 'operation-logs', component: OperationLogListView, meta: { adminOnly: true, moduleCode: MODULE_CODES.OPERATION_LOG } },
       { path: 'log-center', component: LogCenterView, meta: { adminOnly: true, moduleCode: MODULE_CODES.LOG_CENTER, title: '日志中台' } },

@@ -56,6 +56,18 @@
         ORDER BY sort_no ASC, id ASC
     </select>
 
+    <select id="findByIds" resultMap="KnowledgeChunkListMap">
+        SELECT id, document_id, chunk_no, chunk_type, heading_path, content_text, keyword_text,
+               region_scope, doc_type, topic_type, policy_name, policy_aliases, policy_no,
+               chapter_title, section_title, scene_priority, searchable, content_length, sort_no
+        FROM ai_knowledge_chunk
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" close=")" separator=",">
+            #{id}
+        </foreach>
+        ORDER BY id ASC
+    </select>
+
     <insert id="batchInsert">
         INSERT INTO ai_knowledge_chunk (
             document_id, base_id, category_id, chunk_no, chunk_type, heading_path,
