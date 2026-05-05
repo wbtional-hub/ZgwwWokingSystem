@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { showToast } from 'vant'
 import router from '@/router'
+import { useUserStore } from '@/stores/user'
 import { LOG_TYPES, reportLog, resolveModuleFromUrl, resolveSubModuleFromUrl } from '@/utils/log-center'
 import { TRACE_ID_HEADER, createTraceId } from '@/utils/trace'
 
@@ -110,6 +111,56 @@ function isWechatLoginRecovering() {
   }
 }
 
+function getStoredToken() {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+  try {
+    return window.localStorage.getItem('token') || ''
+  } catch (error) {
+    return ''
+  }
+}
+
+function clearAuthState() {
+  try {
+    useUserStore().clearLogin()
+    clearPermissionSessionCache()
+    return
+  } catch (error) {
+    // Pinia may not be active during very early module evaluation.
+  }
+  if (typeof window === 'undefined') {
+    return
+  }
+  localStorage.removeItem('token')
+  localStorage.removeItem('userInfo')
+  localStorage.removeItem('userAccessReady')
+  localStorage.removeItem('forcePasswordChange')
+  localStorage.removeItem('userAccessSyncedAt')
+  clearPermissionSessionCache()
+}
+
+function clearPermissionSessionCache() {
+  if (typeof window === 'undefined') {
+    return
+  }
+  try {
+    window.sessionStorage.removeItem('attendance_tab_permission_codes')
+  } catch (error) {
+    // ignore sessionStorage access errors
+  }
+}
+
+function isAuthRecoveryPage() {
+  const path = router.currentRoute.value?.path || ''
+  return path === '/login'
+    || path === '/mobile'
+    || path === '/mobile-dev'
+    || path.startsWith('/mobile/qr-confirm')
+    || isWechatLoginRecovering()
+}
+
 function setWechatLoginRecovering() {
   if (typeof window === 'undefined') {
     return
@@ -154,10 +205,7 @@ function startWechatMobileAuthRecovery() {
 
   authRedirecting = true
   setWechatLoginRecovering()
-  localStorage.removeItem('token')
-  localStorage.removeItem('userInfo')
-  localStorage.removeItem('userAccessReady')
-  localStorage.removeItem('forcePasswordChange')
+  clearAuthState()
 
   const redirect = normalizeWechatRedirect(router.currentRoute.value.fullPath || '/mobile-workspace')
   router.replace({
@@ -167,10 +215,6 @@ function startWechatMobileAuthRecovery() {
     authRedirecting = false
   })
   return true
-}
-
-function waitForWechatMobileAuthRecovery() {
-  return new Promise(() => {})
 }
 
 function isLoginRequest(config) {
@@ -227,17 +271,18 @@ if (
   && !authRedirecting
   && isBusinessAuthExpired(response.data)
 ) {
-  if (startWechatMobileAuthRecovery()) {
-    return waitForWechatMobileAuthRecovery()
+  const hadToken = Boolean(getStoredToken())
+  if (hadToken && startWechatMobileAuthRecovery()) {
+    return Promise.reject(new Error(response.data?.message || '登录状态已失效'))
   }
 
-  if (isWechatLoginRecovering()) {
+  if (!hadToken || isAuthRecoveryPage()) {
+    clearAuthState()
     return response.data
   }
 
   authRedirecting = true
-  localStorage.removeItem('token')
-  localStorage.removeItem('userInfo')
+  clearAuthState()
   showToast('登录状态已失效，请重新登录')
 
   const redirect = router.currentRoute.value.fullPath || '/'
@@ -294,16 +339,16 @@ if (isAiTimeout) {
 }
 
 if ((status === 401 || status === 403) && !isLoginRequest(error.config) && !authRedirecting) {
-      if (startWechatMobileAuthRecovery()) {
-        return waitForWechatMobileAuthRecovery()
+      const hadToken = Boolean(getStoredToken())
+      if (hadToken && startWechatMobileAuthRecovery()) {
+        return Promise.reject(error)
       }
-      // FIX: wechat login recovery protection
-      if (isWechatLoginRecovering()) {
+      if (!hadToken || isAuthRecoveryPage()) {
+        clearAuthState()
         return Promise.reject(error)
       }
       authRedirecting = true
-      localStorage.removeItem('token')
-      localStorage.removeItem('userInfo')
+      clearAuthState()
       showToast('登录状态已失效，请重新登录')
       const redirect = router.currentRoute.value.fullPath || '/'
       router.replace({

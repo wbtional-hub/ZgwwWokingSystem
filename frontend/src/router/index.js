@@ -46,6 +46,7 @@ import { isMobileClient } from '@/utils/device'
 
 const WECHAT_LOGIN_RECOVERING_KEY = 'wechat_login_recovering'
 const WECHAT_MOBILE_AUTH_ENTRY_PATHS = new Set(['/mobile-workspace', '/attendance'])
+const MOBILE_ACCESS_CONTEXT_REFRESH_MS = 60 * 1000
 
 const routes = [
   { path: '/login', component: LoginView, meta: { public: true, title: '登录' } },
@@ -103,6 +104,7 @@ const routes = [
 { path: 'attendance/patch-apply', component: () => import('@/views/attendance/AttendancePatchApplyView.vue'), meta: { moduleCode: 'attendance_patch_apply', title: '考勤申请' } },
 { path: 'attendance/patch-approvals', component: () => import('@/views/attendance/AttendancePatchApprovalView.vue'), meta: { moduleCode: 'attendance_patch_approvals', title: '考勤审批' } },
 { path: 'attendance/rules', component: () => import('@/views/attendance/AttendanceRuleConfigView.vue'), meta: { moduleCode: 'attendance_rules', title: '考勤规则' } },
+{ path: 'attendance/holiday-calendar', component: () => import('@/views/attendance/AttendanceHolidayCalendarView.vue'), meta: { adminOnly: true, moduleCode: 'attendance_rules', title: '节假日维护' } },
       { path: 'weekly-work', component: WeeklyWorkEditView, meta: { moduleCode: MODULE_CODES.WEEKLY_WORK, title: '周报管理' } },
       { path: 'weekly-work/editor', component: WeeklyWorkEditView, meta: { moduleCode: MODULE_CODES.WEEKLY_WORK, title: '周报管理' } },
       { path: 'scores', component: ScoreView, meta: { adminOnly: true, moduleCode: MODULE_CODES.SCORE } },
@@ -127,6 +129,12 @@ const router = createRouter({
 })
 
 let accessContextLoadingPromise = null
+let accessContextLoadingToken = ''
+
+export function resetAccessContextLoading() {
+  accessContextLoadingPromise = null
+  accessContextLoadingToken = ''
+}
 
 function clearWechatLoginRecoveryFlag() {
   if (typeof window === 'undefined') {
@@ -159,6 +167,27 @@ function isWechatLoginRecovering() {
   } catch (error) {
     return false
   }
+}
+
+function getStoredToken() {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+  try {
+    return window.localStorage.getItem('token') || ''
+  } catch (error) {
+    return ''
+  }
+}
+
+function hasValidToken(userStore) {
+  const storedToken = getStoredToken()
+  return Boolean(userStore.token && storedToken && userStore.token === storedToken)
+}
+
+function clearInvalidLoginState(userStore) {
+  resetAccessContextLoading()
+  userStore.clearLogin()
 }
 
 function isWechatBrowser() {
@@ -201,33 +230,48 @@ function ensureSuccess(response, fallbackMessage) {
   return response.data
 }
 
-async function ensureAccessContext(userStore) {
-  if (!userStore.token) {
+async function ensureAccessContext(userStore, options = {}) {
+  if (!hasValidToken(userStore) || isWechatLoginRecovering()) {
+    if (userStore.token || getStoredToken()) {
+      clearInvalidLoginState(userStore)
+    }
     return
   }
-  if (userStore.userInfo?.userId && userStore.accessReady) {
+
+  const tokenSnapshot = userStore.token
+  const mobileClient = isMobileClient()
+  const hasRecentMobileAccessContext = mobileClient
+    && userStore.userInfo?.userId
+    && userStore.accessReady
+    && Number(userStore.accessSyncedAt || 0) > 0
+    && (Date.now() - Number(userStore.accessSyncedAt || 0)) < MOBILE_ACCESS_CONTEXT_REFRESH_MS
+
+  if (!options.force && ((userStore.userInfo?.userId && userStore.accessReady && !mobileClient) || hasRecentMobileAccessContext)) {
     return
   }
-  if (!accessContextLoadingPromise) {
-    accessContextLoadingPromise = Promise.all([
-      queryCurrentUserApi(),
-      queryCurrentUserModulePermissionsApi()
-    ])
-      .then(([userResponse, moduleResponse]) => {
-        const userInfo = ensureSuccess(userResponse, '获取当前用户信息失败') || {}
-        const moduleData = ensureSuccess(moduleResponse, '获取当前用户模块权限失败') || {}
-        userStore.setAccessContext({
-          userInfo,
-          moduleCodes: Array.isArray(moduleData.moduleCodes) ? moduleData.moduleCodes : []
+
+  if (!accessContextLoadingPromise || accessContextLoadingToken !== tokenSnapshot) {
+    accessContextLoadingToken = tokenSnapshot
+    accessContextLoadingPromise = queryCurrentUserApi()
+      .then((userResponse) => {
+        const userInfo = ensureSuccess(userResponse, 'Failed to load current user') || {}
+        return queryCurrentUserModulePermissionsApi().then((moduleResponse) => {
+          const moduleData = ensureSuccess(moduleResponse, 'Failed to load current module permissions') || {}
+          userStore.setAccessContext({
+            userInfo,
+            moduleCodes: Array.isArray(moduleData.moduleCodes) ? moduleData.moduleCodes : []
+          })
+          clearWechatLoginRecoveryFlag()
         })
-        clearWechatLoginRecoveryFlag()
       })
       .finally(() => {
         accessContextLoadingPromise = null
+        accessContextLoadingToken = ''
       })
   }
   return accessContextLoadingPromise
 }
+
 
 router.beforeEach(async (to, from) => {
   if (to.path.startsWith('/api/auth/wechat-mp-callback')) {
@@ -247,18 +291,29 @@ router.beforeEach(async (to, from) => {
   }
 
   if (to.meta.public) {
-    if (to.path === '/login' && userStore.token) {
+    if (to.path === '/login' && hasValidToken(userStore) && !isWechatLoginRecovering()) {
       if (userStore.forcePasswordChange) {
         return '/profile?forcePasswordChange=1'
       }
-      await ensureAccessContext(userStore)
+      try {
+        await ensureAccessContext(userStore, { force: true })
+      } catch (error) {
+        clearInvalidLoginState(userStore)
+        return true
+      }
       const accessContext = buildAccessContext(userStore.userInfo)
       return isMobileClient() ? findFirstMobileWorkspacePath(accessContext) : findFirstAccessiblePath(accessContext)
+    }
+    if (to.path === '/login' && (userStore.token || getStoredToken()) && !hasValidToken(userStore)) {
+      clearInvalidLoginState(userStore)
     }
     return true
   }
 
-  if (!userStore.token) {
+  if (!hasValidToken(userStore)) {
+    if (userStore.token || getStoredToken()) {
+      clearInvalidLoginState(userStore)
+    }
     return {
       path: '/login',
       query: { redirect: to.fullPath }
@@ -269,11 +324,26 @@ router.beforeEach(async (to, from) => {
     return to.path === '/profile' ? true : '/profile?forcePasswordChange=1'
   }
 
-  await ensureAccessContext(userStore)
+  try {
+    await ensureAccessContext(userStore)
+  } catch (error) {
+    clearInvalidLoginState(userStore)
+    return {
+      path: '/login',
+      query: { redirect: to.fullPath }
+    }
+  }
   const accessContext = buildAccessContext(userStore.userInfo)
 
   if (isMobileClient() && to.path === '/home') {
     return findFirstMobileWorkspacePath(accessContext)
+  }
+
+  if (isMobileClient() && to.path === MOBILE_WORKSPACE_PATH) {
+    const targetPath = findFirstMobileWorkspacePath(accessContext)
+    if (targetPath && targetPath !== MOBILE_WORKSPACE_PATH) {
+      return targetPath
+    }
   }
 
   if (to.meta.adminOnly && !accessContext.isAdmin) {

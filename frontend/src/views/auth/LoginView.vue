@@ -161,10 +161,13 @@ import {
   createQrSession,
   getQrStatus,
   loginApi,
+  queryCurrentUserApi,
   queryMobileLoginOptionsApi,
   queryWechatMpAuthorizeUrlApi
 } from '@/api/auth'
+import { queryCurrentUserModulePermissionsApi } from '@/api/user-module-permission'
 import { useUserStore } from '@/stores/user'
+import { resetAccessContextLoading } from '@/router'
 import { isMobileClient } from '@/utils/device'
 import { isTestIpLoginEnv } from '@/utils/runtime-origin'
 
@@ -541,46 +544,42 @@ function consumeWechatFailureNotice() {
   showFailToast(message)
 }
 
-async function applyLoginResult(loginInfo, message, targetPath, options = {}) {
+async function applyLoginResult(loginInfo, message, targetPath) {
   if (!loginInfo?.token) {
     throw new Error('登录结果缺少 token')
   }
   if (state.processingLogin) {
     return
   }
-  const wechatRecoveryProtection = Boolean(options.wechatRecoveryProtection)
   state.processingLogin = true
   try {
     clearExistingLoginState()
     userStore.setLogin(loginInfo)
-    // FIX: wechat login recovery protection
-    if (wechatRecoveryProtection) {
-      setWechatLoginRecoveryFlag()
-    }
+    clearWechatLoginRecoveryFlag()
+    resetAccessContextLoading()
+    await restoreAccessContextAfterLogin()
     if (message === 'FORCE_PASSWORD_CHANGE' || loginInfo.forcePasswordChange) {
       await router.replace('/profile?forcePasswordChange=1')
-      // FIX: wechat login recovery protection
-      if (wechatRecoveryProtection) {
-        await router.isReady()
-        clearWechatLoginRecoveryFlag()
-      }
       return
     }
     await router.replace(targetPath || '/')
-    // FIX: wechat login recovery protection
-    if (wechatRecoveryProtection) {
-      await router.isReady()
-      clearWechatLoginRecoveryFlag()
-    }
   } catch (error) {
-    // FIX: wechat login recovery protection
-    if (wechatRecoveryProtection) {
-      clearWechatLoginRecoveryFlag()
-    }
+    clearWechatLoginRecoveryFlag()
     throw error
   } finally {
     state.processingLogin = false
   }
+}
+
+async function restoreAccessContextAfterLogin() {
+  const userResponse = await queryCurrentUserApi()
+  const userInfo = ensureSuccess(userResponse, '获取当前用户信息失败') || {}
+  const moduleResponse = await queryCurrentUserModulePermissionsApi()
+  const moduleData = ensureSuccess(moduleResponse, '获取当前用户模块权限失败') || {}
+  userStore.setAccessContext({
+    userInfo,
+    moduleCodes: Array.isArray(moduleData.moduleCodes) ? moduleData.moduleCodes : []
+  })
 }
 
 function clearExistingLoginState() {

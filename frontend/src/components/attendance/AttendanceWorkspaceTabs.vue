@@ -18,9 +18,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import request from '@/utils/request'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const STORAGE_KEY = 'attendance_tab_permission_codes'
 
@@ -54,6 +56,13 @@ const tabs = [
     path: '/attendance/rules',
     label: '考勤规则',
     description: '配置上下班与宽限时间'
+  },
+  {
+    code: 'attendance_rules',
+    path: '/attendance/holiday-calendar',
+    label: '节假日维护',
+    description: '维护法定节假日、调整休息日与补班工作日',
+    adminOnly: true
   }
 ]
 
@@ -63,17 +72,30 @@ const permissionLoaded = ref(permissionCodes.value.size > 0)
 const visibleTabs = computed(() => {
   if (permissionCodes.value.size > 0) {
     return tabs.filter((item) => {
+      if (item.adminOnly && !isCurrentUserAdmin.value) {
+        return false
+      }
       return permissionCodes.value.has(item.code) || permissionCodes.value.has(item.path)
     })
   }
 
   // 首次加载权限前，不再先显示全部按钮，避免“先显示后隐藏”的闪烁
   // 这里只保留当前页面对应按钮，权限加载完成后再补齐用户真正有权限的按钮
-  return tabs.filter((item) => item.path === route.path)
+  return tabs.filter((item) => item.path === route.path && (!item.adminOnly || isCurrentUserAdmin.value))
+})
+
+const isCurrentUserAdmin = computed(() => {
+  const info = userStore.userInfo || {}
+  const role = info.role || (info.superAdmin ? 'ADMIN' : 'USER')
+  return Boolean(info.superAdmin || info.isAdmin || role === 'ADMIN')
 })
 
 onMounted(() => {
-  loadCurrentUserModules()
+  if (canLoadCurrentUserModules()) {
+    loadCurrentUserModules()
+  } else {
+    permissionLoaded.value = true
+  }
 })
 
 function goTab(path) {
@@ -104,6 +126,34 @@ async function loadCurrentUserModules() {
     )
   } finally {
     permissionLoaded.value = true
+  }
+}
+
+function canLoadCurrentUserModules() {
+  const storedToken = getStoredToken()
+  return Boolean(
+    storedToken
+      && userStore.token
+      && storedToken === userStore.token
+      && route.path !== '/login'
+      && !isWechatLoginRecovering()
+      && userStore.userInfo?.userId
+  )
+}
+
+function getStoredToken() {
+  try {
+    return localStorage.getItem('token') || ''
+  } catch (error) {
+    return ''
+  }
+}
+
+function isWechatLoginRecovering() {
+  try {
+    return sessionStorage.getItem('wechat_login_recovering') === '1'
+  } catch (error) {
+    return false
   }
 }
 
@@ -174,6 +224,10 @@ function resolveModuleCode(item) {
 }
 
 function loadCachedPermissionCodes() {
+  const storedToken = getStoredToken()
+  if (!storedToken || !userStore.token || storedToken !== userStore.token || isWechatLoginRecovering()) {
+    return new Set()
+  }
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY)
     const list = raw ? JSON.parse(raw) : []
