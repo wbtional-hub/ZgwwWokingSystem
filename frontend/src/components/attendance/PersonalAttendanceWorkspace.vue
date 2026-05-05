@@ -11,8 +11,8 @@
             <h2 class="personal-focus-card__title">今日考勤</h2>
             <p class="personal-focus-card__date">{{ todayDateText }}</p>
           </div>
-          <span class="personal-status" :class="`personal-status--${todayStatusTone}`">
-            {{ todayStatusLabel || '未打卡' }}
+          <span class="personal-status" :class="`personal-status--${displayStatusTone}`">
+            {{ displayStatusLabel }}
           </span>
         </header>
 
@@ -35,7 +35,8 @@
             <div class="personal-today-row__rule">{{ node.ruleTimeText }}</div>
             <div class="personal-today-row__state">
               <span class="personal-today-row__badge">{{ node.displayStatusLabel }}</span>
-              <small v-if="node.actualTimeText">{{ node.actualTimeText }}</small>
+              <small v-if="node.actualTimeText">实际 {{ node.actualTimeText }}</small>
+              <em v-if="node.alertText" class="personal-today-row__alert">{{ node.alertText }}</em>
             </div>
             <div class="personal-today-row__actions">
               <button
@@ -95,13 +96,14 @@
           </div>
         </article>
 
-        <article class="personal-panel">
-          <div class="personal-panel__head">
+        <details class="personal-panel personal-panel--fold">
+          <summary class="personal-panel__summary">
             <div>
               <p class="personal-panel__eyebrow">最近记录</p>
-              <h3 class="personal-panel__title">最近 5 条</h3>
+              <h3 class="personal-panel__title">最近记录（辅助）</h3>
             </div>
-          </div>
+            <span class="personal-panel__summary-action">展开</span>
+          </summary>
 
           <van-empty v-if="!recentRecords.length" description="暂无最近打卡记录" />
 
@@ -115,7 +117,7 @@
               <div class="personal-record__meta">{{ item.addressText || '-' }}</div>
             </article>
           </div>
-        </article>
+        </details>
       </div>
     </template>
   </section>
@@ -142,6 +144,10 @@ const props = defineProps({
     default: 'pending'
   },
   notice: {
+    type: Object,
+    default: null
+  },
+  workdayInfo: {
     type: Object,
     default: null
   },
@@ -244,15 +250,53 @@ const currentClockText = computed(() => {
   return `${pad2(now.value.getHours())}:${pad2(now.value.getMinutes())}`
 })
 
+const normalizedWorkdayInfo = computed(() => {
+  const info = props.workdayInfo
+  return info && typeof info === 'object' ? info : null
+})
+
+const isNonWorkday = computed(() => normalizedWorkdayInfo.value?.workday === false)
+
+const displayStatusLabel = computed(() => {
+  const info = normalizedWorkdayInfo.value
+  if (info?.dayType === 'HOLIDAY') {
+    return info.name || '法定节假日'
+  }
+  if (info?.dayType === 'WEEKDAY_REST') {
+    return '调整休息日'
+  }
+  if (info?.dayType === 'MAKEUP_WORKDAY') {
+    return '补班工作日'
+  }
+  if (info?.dayType === 'WEEKEND') {
+    return '周末'
+  }
+  if (info?.dayType === 'WEEKDAY') {
+    return '工作日'
+  }
+  return props.todayStatusLabel || '未打卡'
+})
+
+const displayStatusTone = computed(() => {
+  if (normalizedWorkdayInfo.value?.dayType === 'MAKEUP_WORKDAY') {
+    return 'late'
+  }
+  if (normalizedWorkdayInfo.value?.workday === false) {
+    return 'pending'
+  }
+  return props.todayStatusTone
+})
+
 const todayNodeRows = computed(() => {
   return props.nodeCards.map((node) => {
-    const actualTimeText = formatNodeActualTime(node?.actualPunchTime)
+    const actualTimeText = isNonWorkday.value ? '' : formatNodeActualTime(node?.actualPunchTime)
     return {
       ...node,
       fullTitle: resolveNodeFullTitle(node),
       ruleTimeText: resolveNodeRuleTime(node),
       actualTimeText,
       displayStatusLabel: resolveDisplayStatusLabel(node, actualTimeText),
+      alertText: resolveNodeAlertText(node, actualTimeText),
       rowAction: resolveNodeRowAction(node)
     }
   })
@@ -260,6 +304,14 @@ const todayNodeRows = computed(() => {
 
 const primaryAction = computed(() => {
   const node = mainActionNode.value
+  if (isNonWorkday.value) {
+    return {
+      key: 'none',
+      label: '今日无需打卡',
+      disabled: true,
+      node
+    }
+  }
   if (!node) {
     return {
       key: 'none',
@@ -408,6 +460,9 @@ function resolveNodeShortTitle(node) {
 }
 
 function resolveDisplayStatusLabel(node, actualTimeText) {
+  if (isNonWorkday.value) {
+    return '无需打卡'
+  }
   const isOffNode = String(node?.nodeCode || '').endsWith('_OFF')
   const label = String(node?.statusLabel || '').trim()
   const code = String(node?.statusCode || '').toUpperCase()
@@ -440,6 +495,13 @@ function resolveDisplayStatusLabel(node, actualTimeText) {
 }
 
 function resolveNodeRowAction(node) {
+  if (isNonWorkday.value) {
+    return {
+      key: node?.canEvidence ? 'evidence' : 'makeup',
+      label: '补打卡',
+      tone: node?.canEvidence ? 'primary' : 'warning'
+    }
+  }
   if (node?.canEvidence) {
     return {
       key: 'evidence',
@@ -474,6 +536,24 @@ function resolveNodeRuleTime(node) {
   return String(node?.nodeCode || '').endsWith('_OFF') ? times[times.length - 1] : times[0]
 }
 
+function resolveNodeAlertText(node, actualTimeText) {
+  if (!actualTimeText) {
+    return ''
+  }
+  const tone = String(node?.statusTone || '')
+  if (tone !== 'late' && tone !== 'early') {
+    return ''
+  }
+  const actualMinutes = parseClockMinutes(actualTimeText)
+  const ruleMinutes = parseClockMinutes(resolveNodeRuleTime(node))
+  if (actualMinutes == null || ruleMinutes == null) {
+    return tone === 'late' ? '迟到提醒' : '早退提醒'
+  }
+  const delta = tone === 'late' ? actualMinutes - ruleMinutes : ruleMinutes - actualMinutes
+  const safeDelta = Math.max(delta, 0)
+  return tone === 'late' ? `迟到 ${safeDelta} 分钟` : `早退 ${safeDelta} 分钟`
+}
+
 function formatNodeActualTime(value) {
   if (!value || value === '未打卡') {
     return ''
@@ -481,6 +561,14 @@ function formatNodeActualTime(value) {
   const text = String(value)
   const matched = text.match(/\d{1,2}:\d{2}/)
   return matched ? matched[0] : text
+}
+
+function parseClockMinutes(value) {
+  const matched = String(value || '').match(/(\d{1,2}):(\d{2})/)
+  if (!matched) {
+    return null
+  }
+  return Number(matched[1]) * 60 + Number(matched[2])
 }
 
 function pad2(value) {
@@ -558,6 +646,31 @@ function withAlpha(hexColor, alpha) {
 
 .personal-panel {
   padding: 22px;
+}
+
+.personal-panel--fold {
+  padding: 0;
+}
+
+.personal-panel__summary {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 22px 22px 0;
+  cursor: pointer;
+}
+
+.personal-panel__summary::-webkit-details-marker {
+  display: none;
+}
+
+.personal-panel__summary-action {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
 }
 
 .personal-panel__title {
@@ -752,10 +865,9 @@ function withAlpha(hexColor, alpha) {
 }
 
 .personal-today-row__state {
-  display: inline-flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 6px;
+  display: grid;
+  justify-items: end;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -772,9 +884,31 @@ function withAlpha(hexColor, alpha) {
 
 .personal-today-row__state small {
   color: #64748b;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.personal-today-row__alert {
+  position: relative;
+  padding-left: 12px;
+  color: #c2410c;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.personal-today-row__alert::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: translateY(-50%);
 }
 
 .personal-today-row--normal .personal-today-row__badge,
@@ -790,6 +924,19 @@ function withAlpha(hexColor, alpha) {
 .personal-today-row--rejected .personal-today-row__badge {
   background: rgba(249, 115, 22, 0.14);
   color: #c2410c;
+}
+
+.personal-today-row--late,
+.personal-today-row--early {
+  border-color: rgba(249, 115, 22, 0.3);
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.08), 0 10px 20px rgba(249, 115, 22, 0.08);
+}
+
+.personal-today-row--late .personal-today-row__badge,
+.personal-today-row--early .personal-today-row__badge,
+.personal-today-row--late .personal-today-row__alert::before,
+.personal-today-row--early .personal-today-row__alert::before {
+  animation: personalAttendanceAlertPulse 1.8s ease-in-out infinite;
 }
 
 .personal-today-row--evidence .personal-today-row__badge,
@@ -832,6 +979,18 @@ function withAlpha(hexColor, alpha) {
   border-color: rgba(231, 169, 59, 0.24);
   background: rgba(231, 169, 59, 0.12);
   color: #b7791f;
+}
+
+@keyframes personalAttendanceAlertPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.72;
+  }
 }
 
 .personal-action-orb-wrap {
@@ -1151,6 +1310,7 @@ function withAlpha(hexColor, alpha) {
   display: grid;
   gap: 12px;
   margin-top: 16px;
+  padding: 0 22px 22px;
 }
 
 .personal-record__main {

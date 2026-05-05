@@ -251,7 +251,7 @@ import { querySkillList } from '@/api/skill'
 import { useUserStore } from '@/stores/user'
 import { getAgentFunctionBinding } from '@/constants/agent-function-bindings'
 import { buildAccessContext } from '@/constants/modules'
-import { resolveMobileWorkspaceItems } from '@/constants/mobile-workspace'
+import { resolveMobileNavigationItems } from '@/constants/mobile-workspace'
 import { isMobileClient } from '@/utils/device'
 
 const router = useRouter()
@@ -314,7 +314,7 @@ const feedbackOptions = [
 const hasToken = computed(() => Boolean(userStore.token || localStorage.getItem('token')))
 const showMobileTabbar = computed(() => hasToken.value && isMobileClient())
 const showBottomTabbar = computed(() => showMobileTabbar.value && !state.composerFocused)
-const mobileNavItems = computed(() => resolveMobileWorkspaceItems(buildAccessContext(userStore.userInfo)))
+const mobileNavItems = computed(() => resolveMobileNavigationItems(buildAccessContext(userStore.userInfo)))
 const permissionFlags = computed(() => {
   const aiPermissions = state.permissionInfo?.aiPermissions || []
   return {

@@ -168,6 +168,8 @@ export const MOBILE_WORKSPACE_ITEMS = [
   }
 ]
 
+const MOBILE_NAV_HIDDEN_KEYS = new Set(['workspace'])
+
 export function canAccessMobileWorkspaceItem(item, accessContext) {
   if (!item) {
     return false
@@ -185,8 +187,12 @@ export function resolveMobileWorkspaceItems(accessContext) {
   return MOBILE_WORKSPACE_ITEMS.filter((item) => canAccessMobileWorkspaceItem(item, accessContext))
 }
 
+export function resolveMobileNavigationItems(accessContext) {
+  return resolveMobileWorkspaceItems(accessContext).filter((item) => !MOBILE_NAV_HIDDEN_KEYS.has(item.key))
+}
+
 export function findFirstMobileWorkspacePath(accessContext) {
-  return resolveMobileWorkspaceItems(accessContext)[0]?.path || MOBILE_WORKSPACE_PATH
+  return resolveMobileNavigationItems(accessContext)[0]?.path || '/profile'
 }
 
 export function findMobileWorkspaceItemByPath(path) {

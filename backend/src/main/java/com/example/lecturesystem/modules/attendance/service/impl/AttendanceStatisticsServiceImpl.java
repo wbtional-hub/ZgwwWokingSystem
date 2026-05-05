@@ -5,15 +5,19 @@ import com.example.lecturesystem.modules.attendance.entity.AttendanceRuleEntity;
 import com.example.lecturesystem.modules.attendance.mapper.AttendanceRuleMapper;
 import com.example.lecturesystem.modules.attendance.mapper.AttendanceStatisticsMapper;
 import com.example.lecturesystem.modules.attendance.service.AttendanceStatisticsService;
+import com.example.lecturesystem.modules.attendance.service.AttendanceWorkdayService;
 import com.example.lecturesystem.modules.attendance.support.AttendanceWeeklyReadonlyScopeService;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceScopedUserVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceStatsRecordVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceTeamMemberStatusVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceTeamStatisticsVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceWeeklyOverviewPointVO;
+import com.example.lecturesystem.modules.attendance.vo.WorkdayInfoVO;
 import com.example.lecturesystem.modules.permission.support.CurrentUserFacade;
 import com.example.lecturesystem.modules.permission.support.DataScopeService;
 import com.example.lecturesystem.modules.user.entity.UserEntity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
@@ -31,22 +35,27 @@ import java.util.Set;
 
 @Service
 public class AttendanceStatisticsServiceImpl implements AttendanceStatisticsService {
+    private static final Logger log = LoggerFactory.getLogger(AttendanceStatisticsServiceImpl.class);
+
     private final AttendanceStatisticsMapper attendanceStatisticsMapper;
     private final AttendanceRuleMapper attendanceRuleMapper;
     private final CurrentUserFacade currentUserFacade;
     private final DataScopeService dataScopeService;
     private final AttendanceWeeklyReadonlyScopeService attendanceWeeklyReadonlyScopeService;
+    private final AttendanceWorkdayService attendanceWorkdayService;
 
     public AttendanceStatisticsServiceImpl(AttendanceStatisticsMapper attendanceStatisticsMapper,
                                            AttendanceRuleMapper attendanceRuleMapper,
                                            CurrentUserFacade currentUserFacade,
                                            DataScopeService dataScopeService,
-                                           AttendanceWeeklyReadonlyScopeService attendanceWeeklyReadonlyScopeService) {
+                                           AttendanceWeeklyReadonlyScopeService attendanceWeeklyReadonlyScopeService,
+                                           AttendanceWorkdayService attendanceWorkdayService) {
         this.attendanceStatisticsMapper = attendanceStatisticsMapper;
         this.attendanceRuleMapper = attendanceRuleMapper;
         this.currentUserFacade = currentUserFacade;
         this.dataScopeService = dataScopeService;
         this.attendanceWeeklyReadonlyScopeService = attendanceWeeklyReadonlyScopeService;
+        this.attendanceWorkdayService = attendanceWorkdayService;
     }
 
     @Override
@@ -59,10 +68,11 @@ public class AttendanceStatisticsServiceImpl implements AttendanceStatisticsServ
         LocalDate weekStart = targetDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         LocalDate weekEnd = weekStart.plusDays(6);
         Map<Long, Map<LocalDate, AttendanceStatsRecordVO>> recordMap = queryRecordMap(scopedUsers, weekStart, weekEnd);
+        WorkdayInfoVO targetWorkdayInfo = resolveWorkdayInfo(targetDate);
 
         AttendanceTeamStatisticsVO result = new AttendanceTeamStatisticsVO();
         result.setDate(targetDate);
-        result.setWorkday(isWorkday(targetDate));
+        result.setWorkday(Boolean.TRUE.equals(targetWorkdayInfo.getWorkday()));
         result.setScopeUserCount((long) scopedUsers.size());
         result.setScopeDescription(resolveScopeDescription(currentUser, scopedUsers.size(), readonlyScope));
         result.setWeeklyOverview(buildWeeklyOverview(scopedUsers, ruleMap, recordMap, weekStart));
@@ -125,7 +135,7 @@ public class AttendanceStatisticsServiceImpl implements AttendanceStatisticsServ
         result.setOvertimeUsers(overtimeUsers);
         result.setRecentMembers(recentMembers);
         if (!result.getWorkday()) {
-            result.setNonWorkdayNotice("今日为非工作日，未打卡不会计入异常，已打卡人员按加班/值班记录展示。");
+            result.setNonWorkdayNotice(resolveNonWorkdayNotice(targetWorkdayInfo));
         }
         return result;
     }
@@ -400,9 +410,35 @@ public class AttendanceStatisticsServiceImpl implements AttendanceStatisticsServ
                 .thenComparing(AttendanceTeamMemberStatusVO::getUserId));
     }
 
+    private WorkdayInfoVO resolveWorkdayInfo(LocalDate date) {
+        if (attendanceWorkdayService != null) {
+            try {
+                return attendanceWorkdayService.resolveWorkdayInfo(date);
+            } catch (RuntimeException ex) {
+                log.warn("resolve attendance statistics workday failed date={}, fallback to weekday/weekend rule", date, ex);
+            }
+        }
+        return fallbackWorkdayInfo(date);
+    }
+
     private boolean isWorkday(LocalDate date) {
-        DayOfWeek dayOfWeek = date.getDayOfWeek();
-        return dayOfWeek != DayOfWeek.SATURDAY && dayOfWeek != DayOfWeek.SUNDAY;
+        return Boolean.TRUE.equals(resolveWorkdayInfo(date).getWorkday());
+    }
+
+    private WorkdayInfoVO fallbackWorkdayInfo(LocalDate date) {
+        LocalDate targetDate = date == null ? LocalDate.now() : date;
+        DayOfWeek dayOfWeek = targetDate.getDayOfWeek();
+        if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) {
+            return WorkdayInfoVO.weekend();
+        }
+        return WorkdayInfoVO.weekday();
+    }
+
+    private String resolveNonWorkdayNotice(WorkdayInfoVO workdayInfo) {
+        if (workdayInfo != null && workdayInfo.getNotice() != null && !workdayInfo.getNotice().isBlank()) {
+            return workdayInfo.getNotice();
+        }
+        return "今日为非工作日，未打卡不会计入异常，已打卡人员按加班/值班记录展示。";
     }
 
     private LocalDate resolveTargetDate(AttendanceStatsQueryRequest request) {

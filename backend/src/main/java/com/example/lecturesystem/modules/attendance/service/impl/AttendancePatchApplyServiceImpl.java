@@ -11,6 +11,7 @@ import com.example.lecturesystem.modules.attendance.mapper.AttendanceMapper;
 import com.example.lecturesystem.modules.attendance.mapper.AttendancePatchApplyLogMapper;
 import com.example.lecturesystem.modules.attendance.mapper.AttendancePatchApplyMapper;
 import com.example.lecturesystem.modules.attendance.mapper.AttendancePatchApplyNodeMapper;
+import com.example.lecturesystem.modules.attendance.service.AttendancePatchApprovalNoticeService;
 import com.example.lecturesystem.modules.attendance.service.AttendancePatchApplyService;
 import com.example.lecturesystem.modules.attendance.support.AttendanceApplyType;
 import com.example.lecturesystem.modules.attendance.support.AttendanceCheckInStatus;
@@ -23,6 +24,8 @@ import com.example.lecturesystem.modules.permission.support.CurrentUserFacade;
 import com.example.lecturesystem.modules.permission.support.DataScopeService;
 import com.example.lecturesystem.modules.user.entity.UserEntity;
 import com.example.lecturesystem.modules.user.mapper.UserMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,6 +42,8 @@ import java.util.Set;
 
 @Service
 public class AttendancePatchApplyServiceImpl implements AttendancePatchApplyService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(AttendancePatchApplyServiceImpl.class);
+
     private static final String PATCH_TYPE_AM_ON = "AM_ON";
     private static final String PATCH_TYPE_AM_OFF = "AM_OFF";
     private static final String PATCH_TYPE_PM_ON = "PM_ON";
@@ -85,6 +90,7 @@ private static final String PATCH_ADDRESS_TEXT_EVIDENCE = "取证审批";
     private final UserMapper userMapper;
     private final PermissionService permissionService;
     private final AttendanceWeeklyReadonlyScopeService attendanceWeeklyReadonlyScopeService;
+    private final AttendancePatchApprovalNoticeService attendancePatchApprovalNoticeService;
 
     public AttendancePatchApplyServiceImpl(AttendancePatchApplyMapper attendancePatchApplyMapper,
                                            AttendancePatchApplyNodeMapper attendancePatchApplyNodeMapper,
@@ -94,7 +100,8 @@ private static final String PATCH_ADDRESS_TEXT_EVIDENCE = "取证审批";
                                            DataScopeService dataScopeService,
                                            UserMapper userMapper,
                                            PermissionService permissionService,
-                                           AttendanceWeeklyReadonlyScopeService attendanceWeeklyReadonlyScopeService) {
+                                           AttendanceWeeklyReadonlyScopeService attendanceWeeklyReadonlyScopeService,
+                                           AttendancePatchApprovalNoticeService attendancePatchApprovalNoticeService) {
         this.attendancePatchApplyMapper = attendancePatchApplyMapper;
         this.attendancePatchApplyNodeMapper = attendancePatchApplyNodeMapper;
         this.attendancePatchApplyLogMapper = attendancePatchApplyLogMapper;
@@ -104,6 +111,7 @@ private static final String PATCH_ADDRESS_TEXT_EVIDENCE = "取证审批";
         this.userMapper = userMapper;
         this.permissionService = permissionService;
         this.attendanceWeeklyReadonlyScopeService = attendanceWeeklyReadonlyScopeService;
+        this.attendancePatchApprovalNoticeService = attendancePatchApprovalNoticeService;
     }
 
     @Override
@@ -133,6 +141,18 @@ private static final String PATCH_ADDRESS_TEXT_EVIDENCE = "取证审批";
         AttendanceRecordEntity existedRecord = attendanceMapper.findByUserIdAndDate(currentUser.getId(), attendanceDate);
         validatePatchSubmitAgainstRecord(existedRecord, patchType, patchTime);
 
+        List<UserEntity> approvalChain = resolveApprovalChain(currentUser);
+        if (approvalChain.isEmpty()) {
+            LOGGER.warn(
+                    "No attendance patch approver found, applyType={}, submitterUserId={}, submitterName={}, parentUserId={}, action=configure_parent_user_or_patch_approver",
+                    applyType,
+                    currentUser.getId(),
+                    resolveDisplayName(currentUser),
+                    currentUser.getParentUserId()
+            );
+            throw new IllegalArgumentException("\u672a\u627e\u5230\u53ef\u7528\u5ba1\u6279\u4eba\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u914d\u7f6e\u76f4\u5c5e\u4e0a\u7ea7\u6216\u8865\u6253\u5361\u5ba1\u6279\u4eba\u3002");
+        }
+
         AttendancePatchApplyEntity entity = new AttendancePatchApplyEntity();
         entity.setUserId(currentUser.getId());
         entity.setUnitId(currentUser.getUnitId());
@@ -146,7 +166,6 @@ private static final String PATCH_ADDRESS_TEXT_EVIDENCE = "取证审批";
         entity.setValidFlag(1);
         attendancePatchApplyMapper.insert(entity);
 
-        List<UserEntity> approvalChain = resolveApprovalChain(currentUser);
         List<AttendancePatchApplyNodeEntity> nodes = buildApprovalNodes(entity.getId(), approvalChain);
         if (!nodes.isEmpty()) {
             attendancePatchApplyNodeMapper.batchInsert(nodes);
@@ -181,6 +200,7 @@ private static final String PATCH_ADDRESS_TEXT_EVIDENCE = "取证审批";
                     firstNode.getNodeName(),
                     "流转至" + firstNode.getApproverName()
             ));
+            notifyPendingApproval(entity, firstNode);
         }
         return entity.getId();
     }
@@ -274,6 +294,7 @@ private static final String PATCH_ADDRESS_TEXT_EVIDENCE = "取证审批";
                     nextNode.getNodeName(),
                     "流转至" + nextNode.getApproverName()
             ));
+            notifyPendingApproval(entity, nextNode);
             return;
         }
 
@@ -547,6 +568,22 @@ private static final String PATCH_ADDRESS_TEXT_EVIDENCE = "取证审批";
                 .filter(node -> currentNodeOrder == null || node.getNodeOrder() > currentNodeOrder)
                 .min(Comparator.comparing(AttendancePatchApplyNodeEntity::getNodeOrder))
                 .orElse(null);
+    }
+
+    private void notifyPendingApproval(AttendancePatchApplyEntity entity, AttendancePatchApplyNodeEntity pendingNode) {
+        if (attendancePatchApprovalNoticeService == null || pendingNode == null) {
+            return;
+        }
+        try {
+            attendancePatchApprovalNoticeService.notifyPendingApproval(entity, pendingNode);
+        } catch (RuntimeException ex) {
+            LOGGER.warn("attendance patch approval notice ignored: applyId={}, nodeId={}, approverUserId={}, reason={}",
+                    entity == null ? null : entity.getId(),
+                    pendingNode.getId(),
+                    pendingNode.getApproverUserId(),
+                    ex.getMessage(),
+                    ex);
+        }
     }
 
     private List<AttendancePatchApplyNodeEntity> buildApprovalNodes(Long applyId, List<UserEntity> approvalChain) {

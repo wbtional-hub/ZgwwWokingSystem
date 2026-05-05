@@ -63,6 +63,10 @@ public class AttendanceRecordListItemVO {
     private Boolean canManage;
     private Boolean readonlyMode;
     private Boolean canViewCrossDept;
+    private Boolean workday;
+    private String dayType;
+    private String dayTypeLabel;
+    private String nonWorkdayNotice;
 
     public Long getId() {
         return id;
@@ -350,5 +354,37 @@ public class AttendanceRecordListItemVO {
 
     public void setCanViewCrossDept(Boolean canViewCrossDept) {
         this.canViewCrossDept = canViewCrossDept;
+    }
+
+    public Boolean getWorkday() {
+        return workday;
+    }
+
+    public void setWorkday(Boolean workday) {
+        this.workday = workday;
+    }
+
+    public String getDayType() {
+        return dayType;
+    }
+
+    public void setDayType(String dayType) {
+        this.dayType = dayType;
+    }
+
+    public String getDayTypeLabel() {
+        return dayTypeLabel;
+    }
+
+    public void setDayTypeLabel(String dayTypeLabel) {
+        this.dayTypeLabel = dayTypeLabel;
+    }
+
+    public String getNonWorkdayNotice() {
+        return nonWorkdayNotice;
+    }
+
+    public void setNonWorkdayNotice(String nonWorkdayNotice) {
+        this.nonWorkdayNotice = nonWorkdayNotice;
     }
 }

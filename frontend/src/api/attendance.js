@@ -68,6 +68,29 @@ export function saveAttendanceRuleApi(data) {
   return request.post('/attendance/rule/save', data)
 }
 
+export function queryAttendanceHolidayCalendarApi(params) {
+  return request.get('/attendance/holiday-calendar', { params })
+}
+
+export function generateAttendanceHolidayCalendarAiApi(year) {
+  return request.post('/attendance/holiday-calendar/generate-ai', null, {
+    params: { year },
+    skipErrorToast: true
+  })
+}
+
+export function saveAttendanceHolidayCalendarApi(data) {
+  return request.post('/attendance/holiday-calendar/save', data)
+}
+
+export function deleteAttendanceHolidayCalendarApi(id) {
+  return request.delete(`/attendance/holiday-calendar/${id}`)
+}
+
+export function confirmAttendanceHolidayCalendarYearApi(year) {
+  return request.post('/attendance/holiday-calendar/confirm-year', null, { params: { year } })
+}
+
 export function queryAttendanceTeamStatisticsApi(data) {
   return request.post('/attendance/team-statistics/query', data)
 }

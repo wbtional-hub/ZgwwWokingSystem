@@ -6,6 +6,7 @@ import com.example.lecturesystem.modules.attendance.entity.AttendanceReminderLog
 import com.example.lecturesystem.modules.attendance.mapper.AttendanceReminderLogMapper;
 import com.example.lecturesystem.modules.attendance.mapper.AttendanceReminderQueryMapper;
 import com.example.lecturesystem.modules.attendance.service.AttendanceReminderService;
+import com.example.lecturesystem.modules.attendance.service.AttendanceWorkdayService;
 import com.example.lecturesystem.modules.attendance.support.AttendanceReminderProperties;
 import com.example.lecturesystem.modules.attendance.support.AttendanceReminderType;
 import com.example.lecturesystem.modules.auth.security.LoginUser;
@@ -17,6 +18,7 @@ import com.example.lecturesystem.modules.user.entity.UserEntity;
 import com.example.lecturesystem.modules.user.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
@@ -49,6 +51,8 @@ public class AttendanceReminderServiceImpl implements AttendanceReminderService 
     private final CurrentUserFacade currentUserFacade;
     private final PermissionService permissionService;
     private final UserMapper userMapper;
+    @Autowired(required = false)
+    private AttendanceWorkdayService attendanceWorkdayService;
 
     public AttendanceReminderServiceImpl(AttendanceReminderQueryMapper attendanceReminderQueryMapper,
                                          AttendanceReminderLogMapper attendanceReminderLogMapper,
@@ -516,6 +520,13 @@ public class AttendanceReminderServiceImpl implements AttendanceReminderService 
     private boolean isWorkday(LocalDate date) {
         if (date == null) {
             return false;
+        }
+        if (attendanceWorkdayService != null) {
+            try {
+                return attendanceWorkdayService.isWorkday(date);
+            } catch (RuntimeException ex) {
+                log.warn("resolve attendance reminder workday failed date={}, fallback to weekday/weekend rule", date, ex);
+            }
         }
         DayOfWeek dayOfWeek = date.getDayOfWeek();
         return dayOfWeek != DayOfWeek.SATURDAY && dayOfWeek != DayOfWeek.SUNDAY;

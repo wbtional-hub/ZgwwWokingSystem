@@ -102,10 +102,10 @@
             </div>
             <div class="leadership-node-card__title">{{ node.nodeTitleShort }}</div>
             <div class="leadership-node-card__time-row">
-              <strong class="leadership-node-card__time">{{ node.actualPunchTime || '未打卡' }}</strong>
+              <strong class="leadership-node-card__time">{{ node.ruleTimeText || '--:--' }}</strong>
               <span v-if="node.summaryText" class="leadership-node-card__summary">{{ node.summaryText }}</span>
             </div>
-            <div v-if="node.timeRangeText" class="leadership-node-card__range">{{ node.timeRangeText }}</div>
+            <div v-if="node.timeRangeText && node.timeRangeText !== node.ruleTimeText" class="leadership-node-card__range">{{ node.timeRangeText }}</div>
             <p v-if="node.simpleRemark" class="leadership-node-card__remark">{{ node.simpleRemark }}</p>
             <div v-if="node.actions?.length" class="leadership-node-card__actions">
               <button
@@ -287,6 +287,39 @@ function formatShortTime(value) {
   return match ? match[1] : text
 }
 
+function resolveRuleTimeText(nodeCode, timeRangeText = '') {
+  const text = String(timeRangeText || '').trim()
+  if (!text || text === '-') {
+    return '--:--'
+  }
+  const times = text.match(/\d{1,2}:\d{2}/g) || []
+  if (!times.length) {
+    return text
+  }
+  if (nodeCode === 'AM_OFF' || nodeCode === 'PM_OFF') {
+    return times[times.length - 1] || '--:--'
+  }
+  return times[0] || '--:--'
+}
+
+function buildNodeSummary(actualPunchTime, simpleRemark) {
+  if (actualPunchTime) {
+    return `实际 ${actualPunchTime}`
+  }
+  return simpleRemark ? '' : '暂无记录'
+}
+
+function buildNodeRemark(actualPunchTime, simpleRemark, statusTone) {
+  const remark = String(simpleRemark || '').trim()
+  if (!remark) {
+    return ''
+  }
+  if (actualPunchTime && (statusTone === 'normal' || statusTone === 'approved')) {
+    return ''
+  }
+  return remark
+}
+
 function collectMemberTexts(member) {
   return [
     member?.statusLabel,
@@ -402,16 +435,18 @@ function resolveNodeToneByLabel(label, fallbackTone = 'pending') {
 function normalizeExistingNode(node, member) {
   const actualPunchTime = formatShortTime(node?.actualPunchTime)
   const statusLabel = node?.statusLabel || '待处理'
+  const statusTone = node?.statusTone || resolveNodeToneByLabel(statusLabel, member?.statusTone || 'pending')
   return {
     nodeCode: node?.nodeCode || '',
     stepLabel: node?.stepLabel || '-',
     nodeTitleShort: node?.nodeTitleShort || '-',
     timeRangeText: node?.timeRangeText || '',
+    ruleTimeText: resolveRuleTimeText(node?.nodeCode, node?.timeRangeText),
     actualPunchTime,
-    simpleRemark: node?.simpleRemark || '',
-    summaryText: actualPunchTime ? `时间 ${actualPunchTime}` : '等待处理',
+    simpleRemark: buildNodeRemark(actualPunchTime, node?.simpleRemark, statusTone),
+    summaryText: buildNodeSummary(actualPunchTime, node?.simpleRemark),
     statusLabel,
-    statusTone: node?.statusTone || resolveNodeToneByLabel(statusLabel, member?.statusTone || 'pending'),
+    statusTone,
     accentColor: node?.accentColor || '#64748b',
     accentSoft: node?.accentSoft || 'rgba(148, 163, 184, 0.14)',
     accentBorder: node?.accentBorder || 'rgba(148, 163, 184, 0.18)',
@@ -423,16 +458,18 @@ function buildFallbackNode(meta, member) {
   const record = member?.todayRecord || {}
   const actualPunchTime = formatShortTime(record?.[meta.timeField])
   const statusLabel = resolveFallbackNodeStatus(meta, member, record)
+  const statusTone = resolveNodeToneByLabel(statusLabel, member?.statusTone || 'pending')
   return {
     nodeCode: meta.nodeCode,
     stepLabel: meta.stepLabel,
     nodeTitleShort: meta.nodeTitleShort,
     timeRangeText: '',
+    ruleTimeText: '--:--',
     actualPunchTime,
     simpleRemark: '',
-    summaryText: actualPunchTime ? `时间 ${actualPunchTime}` : '暂无记录',
+    summaryText: buildNodeSummary(actualPunchTime, ''),
     statusLabel,
-    statusTone: resolveNodeToneByLabel(statusLabel, member?.statusTone || 'pending'),
+    statusTone,
     accentColor: meta.accentColor,
     accentSoft: meta.accentSoft,
     accentBorder: meta.accentBorder,

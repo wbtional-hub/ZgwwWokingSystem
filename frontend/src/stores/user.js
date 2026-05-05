@@ -5,7 +5,8 @@ export const useUserStore = defineStore('user', {
     token: localStorage.getItem('token') || '',
     userInfo: JSON.parse(localStorage.getItem('userInfo') || 'null'),
     accessReady: localStorage.getItem('userAccessReady') === '1',
-    forcePasswordChange: localStorage.getItem('forcePasswordChange') === '1'
+    forcePasswordChange: localStorage.getItem('forcePasswordChange') === '1',
+    accessSyncedAt: Number(localStorage.getItem('userAccessSyncedAt') || '0')
   }),
   actions: {
     setLogin(loginInfo) {
@@ -22,10 +23,12 @@ export const useUserStore = defineStore('user', {
         forcePasswordChange: this.forcePasswordChange
       }
       this.accessReady = Array.isArray(loginInfo.moduleCodes)
+      this.accessSyncedAt = this.accessReady ? Date.now() : 0
       localStorage.setItem('token', loginInfo.token)
       localStorage.setItem('userInfo', JSON.stringify(this.userInfo))
       localStorage.setItem('userAccessReady', this.accessReady ? '1' : '0')
       localStorage.setItem('forcePasswordChange', this.forcePasswordChange ? '1' : '0')
+      localStorage.setItem('userAccessSyncedAt', String(this.accessSyncedAt))
     },
     setAccessContext({ userInfo, moduleCodes }) {
       const currentUserInfo = this.userInfo || {}
@@ -41,19 +44,23 @@ export const useUserStore = defineStore('user', {
         forcePasswordChange
       }
       this.accessReady = true
+      this.accessSyncedAt = Date.now()
       localStorage.setItem('userInfo', JSON.stringify(this.userInfo))
       localStorage.setItem('userAccessReady', '1')
       localStorage.setItem('forcePasswordChange', forcePasswordChange ? '1' : '0')
+      localStorage.setItem('userAccessSyncedAt', String(this.accessSyncedAt))
     },
     clearLogin() {
       this.token = ''
       this.userInfo = null
       this.accessReady = false
       this.forcePasswordChange = false
+      this.accessSyncedAt = 0
       localStorage.removeItem('token')
       localStorage.removeItem('userInfo')
       localStorage.removeItem('userAccessReady')
       localStorage.removeItem('forcePasswordChange')
+      localStorage.removeItem('userAccessSyncedAt')
     }
   }
 })

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <AppPageShell title="考勤管理" description="当前页已接入最小可用考勤工作流：列表、查询、打卡、补录编辑和删除。">
     <template #title-extra>
       <PageHelp page-key="attendance" />
@@ -18,6 +18,7 @@
       :today-status-label="personalWorkspaceStatus.label"
       :today-status-tone="personalWorkspaceStatus.tone"
       :notice="personalWorkspaceNotice"
+      :workday-info="state.locationInfo.workdayInfo"
       :check-in-time="personalWorkspaceTodayCard.checkInTime"
       :check-out-time="personalWorkspaceTodayCard.checkOutTime"
       :location-text="personalWorkspaceTodayCard.locationText"
@@ -34,11 +35,210 @@
       @node-action="handlePersonalNodeAction"
     />
 
+    <section v-if="showPersonalHistorySection" class="personal-history-section">
+      <div class="personal-history-section__header">
+        <div>
+          <p class="personal-history-section__eyebrow">我的记录</p>
+          <h3>我的打卡历史</h3>
+        </div>
+        <span class="personal-history-section__range">{{ personalHistoryRangeText }}</span>
+      </div>
+
+      <div class="personal-history-query">
+        <div class="personal-history-query__dates">
+          <input
+            v-model="state.personalHistory.query.dateFrom"
+            class="personal-history-query__input"
+            type="date"
+            :disabled="state.personalHistory.loading"
+          >
+          <input
+            v-model="state.personalHistory.query.dateTo"
+            class="personal-history-query__input"
+            type="date"
+            :disabled="state.personalHistory.loading"
+          >
+        </div>
+        <div class="personal-history-query__actions">
+          <button
+            type="button"
+            class="personal-history-query__button personal-history-query__button--primary"
+            :disabled="state.personalHistory.loading"
+            @click="handlePersonalHistorySearch"
+          >
+            查询
+          </button>
+          <button
+            type="button"
+            class="personal-history-query__button"
+            :disabled="state.personalHistory.loading"
+            @click="handlePersonalHistoryReset"
+          >
+            最近 5 条
+          </button>
+        </div>
+      </div>
+
+      <van-loading v-if="state.personalHistory.loading" class="state-block" size="22px" vertical>
+        正在加载我的打卡历史...
+      </van-loading>
+      <div v-else-if="!state.personalHistory.list.length" class="mobile-approval-empty">
+        暂无个人打卡记录
+      </div>
+      <div v-else class="mobile-history-list">
+        <article
+          v-for="item in state.personalHistory.list"
+          :key="`self-${item.id}`"
+          class="mobile-history-card personal-history-card"
+        >
+          <div class="mobile-history-card__top">
+            <div>
+              <div class="mobile-history-card__name">{{ item.attendanceDate || '-' }}</div>
+              <div class="mobile-history-card__date">
+                {{ mobileWeekdayText(item.attendanceDate) }}
+                <span>｜{{ resolveExportDayTypeLabel(item) }}</span>
+              </div>
+            </div>
+            <van-tag :type="resultTagType(item.checkInResult)" size="small">
+              {{ resolveMobileHistoryStatusLabel(item) }}
+            </van-tag>
+          </div>
+
+          <div class="mobile-history-card__nodes">
+            <div
+              v-for="node in mobileHistoryNodeRows(item)"
+              :key="`self-${item.id}-${node.key}`"
+              class="mobile-history-node"
+            >
+              <span class="mobile-history-node__label">{{ node.label }}</span>
+              <div class="mobile-history-node__time-group">
+                <div class="mobile-history-node__time-line">
+                  <span class="mobile-history-node__time-caption">要求</span>
+                  <span class="mobile-history-node__time">{{ node.ruleTime }}</span>
+                </div>
+                <div v-if="node.actualTime" class="mobile-history-node__actual-line">
+                  <span class="mobile-history-node__actual-caption">实际打卡</span>
+                  <strong class="mobile-history-node__actual-time">{{ node.actualTime }}</strong>
+                </div>
+              </div>
+              <span class="mobile-history-node__status" :class="`mobile-history-node__status--${node.tone}`">
+                {{ node.status }}
+              </span>
+            </div>
+          </div>
+
+          <p v-if="mobileHistoryRemark(item)" class="mobile-history-card__remark">
+            说明：{{ mobileHistoryRemark(item) }}
+          </p>
+        </article>
+
+        <van-pagination
+          v-if="state.personalHistory.total > state.personalHistory.pageSize"
+          v-model="state.personalHistory.pageNo"
+          :total-items="state.personalHistory.total"
+          :items-per-page="state.personalHistory.pageSize"
+          mode="simple"
+          @change="handlePersonalHistoryPageChange"
+        />
+      </div>
+    </section>
+
+    <section v-if="showMobilePendingApprovalSection" class="mobile-pending-approvals">
+      <div class="mobile-section-heading">
+        <div>
+          <p class="mobile-section-eyebrow">待办审批</p>
+          <h3>待审核事项</h3>
+        </div>
+        <button
+          type="button"
+          class="mobile-section-refresh"
+          :disabled="state.mobileApprovalLoading"
+          @click="fetchMobilePendingApprovals"
+        >
+          刷新
+        </button>
+      </div>
+
+      <van-loading v-if="state.mobileApprovalLoading" class="state-block" size="22px" vertical>
+        正在加载待审申请...
+      </van-loading>
+      <div v-else-if="state.mobileApprovalError" class="mobile-approval-empty mobile-approval-empty--warn">
+        {{ state.mobileApprovalError }}
+      </div>
+      <div v-else-if="!state.mobilePendingApprovals.length" class="mobile-approval-empty">
+        暂无待审核补打卡
+      </div>
+      <div v-else class="mobile-approval-list">
+        <article
+          v-for="item in state.mobilePendingApprovals"
+          :key="item.id"
+          class="mobile-approval-card"
+        >
+          <div class="mobile-approval-card__top">
+            <div>
+              <div class="mobile-approval-card__name">{{ item.realName || item.username || '未命名用户' }}</div>
+              <div class="mobile-approval-card__meta">
+                {{ mobileApplyTypeLabel(item.applyType) }} · {{ mobilePatchTypeLabel(item.patchType) }}
+              </div>
+            </div>
+            <span class="mobile-approval-card__status">待审核</span>
+          </div>
+          <div class="mobile-approval-card__grid">
+            <span>日期：{{ item.attendanceDate || '-' }}</span>
+            <span>时间：{{ formatTimeOnly(item.patchTime) }}</span>
+            <span>证据：{{ mobileAttachmentSummary(item) }}</span>
+            <span>节点：{{ item.currentNodeName || '当前审批' }}</span>
+          </div>
+          <p class="mobile-approval-card__reason">{{ item.reason || '未填写原因' }}</p>
+          <div class="mobile-approval-card__actions">
+            <button type="button" class="mobile-approval-card__btn" @click="openMobileApprovalDetail(item)">查看</button>
+            <button
+              type="button"
+              class="mobile-approval-card__btn mobile-approval-card__btn--approve"
+              :disabled="state.mobileReviewingId === item.id"
+              @click="approveMobilePendingApply(item)"
+            >
+              通过
+            </button>
+            <button
+              type="button"
+              class="mobile-approval-card__btn mobile-approval-card__btn--reject"
+              :disabled="state.mobileReviewingId === item.id"
+              @click="openMobileRejectDialog(item)"
+            >
+              驳回
+            </button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section v-if="showMobileLeadershipStats" class="mobile-stat-summary-section">
+      <div class="mobile-section-heading">
+        <div>
+          <p class="mobile-section-eyebrow">部门概览</p>
+          <h3>本部门今日打卡统计</h3>
+        </div>
+      </div>
+      <div class="mobile-stat-grid">
+        <article
+          v-for="item in mobileStatCards"
+          :key="item.key"
+          class="mobile-stat-card"
+          :class="`mobile-stat-card--${item.tone}`"
+        >
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+        </article>
+      </div>
+    </section>
+
     
 
     <template v-if="hasSubordinates">
     <section class="attendance-leadership-section">
       <AttendanceLeadershipSummarySection
+        v-if="!isMobile"
         :loading="state.leadershipLoading"
         :scope-description="state.leadershipScopeDescription"
         :range-text="leadershipWorkweekRangeText"
@@ -49,6 +249,10 @@
 
       <div class="attendance-leadership-workspace">
         <div class="attendance-leadership-main">
+          <div v-if="isMobile" class="mobile-leadership-overview-heading">
+            <p class="mobile-section-eyebrow">人员一览</p>
+            <h3>本部门今日打卡一览</h3>
+          </div>
           <AttendanceLeadershipMemberCards
             :members="leadershipFilteredMembers"
             :loading="state.leadershipLoading"
@@ -90,7 +294,102 @@
       </div>
     </section>
 
-    <details class="attendance-legacy-tools">
+    <section v-if="isMobile" class="mobile-history-query-section">
+      <div class="mobile-section-heading">
+        <div>
+          <p class="mobile-section-eyebrow">记录查询</p>
+          <h3>历史 / 最近记录查询</h3>
+        </div>
+      </div>
+      <div class="mobile-history-query-form">
+        <input
+          v-model.trim="state.queryForm.keywords"
+          class="mobile-history-query-input"
+          type="text"
+          placeholder="搜索人员姓名或账号"
+          :disabled="pageBusy"
+        >
+        <div class="mobile-history-query-dates">
+          <input v-model="state.queryForm.dateFrom" class="mobile-history-query-input" type="date" :disabled="pageBusy">
+          <input v-model="state.queryForm.dateTo" class="mobile-history-query-input" type="date" :disabled="pageBusy">
+        </div>
+        <div class="mobile-history-query-actions">
+          <button type="button" class="mobile-history-query-btn mobile-history-query-btn--primary" :disabled="pageBusy" @click="handleSearch">
+            查询
+          </button>
+          <button type="button" class="mobile-history-query-btn" :disabled="pageBusy" @click="handleReset">
+            重置
+          </button>
+        </div>
+      </div>
+      <div class="mobile-history-query-meta">
+        <span>范围：{{ listRangeText }}</span>
+        <span v-if="listFilterSummary">{{ listFilterSummary }}</span>
+      </div>
+      <van-loading v-if="state.loading" class="state-block" size="22px" vertical>
+        正在加载打卡记录...
+      </van-loading>
+      <div v-else-if="!state.list.length" class="mobile-approval-empty">
+        暂无打卡记录
+      </div>
+      <div v-else class="mobile-history-list">
+        <article
+          v-for="item in state.list"
+          :key="item.id"
+          class="mobile-history-card"
+        >
+          <div class="mobile-history-card__top">
+            <div>
+              <div class="mobile-history-card__name">{{ item.realName || item.username || '未命名用户' }}</div>
+              <div class="mobile-history-card__date">
+                {{ item.attendanceDate || '-' }} {{ mobileWeekdayText(item.attendanceDate) }}
+                <span>｜{{ resolveExportDayTypeLabel(item) }}</span>
+              </div>
+            </div>
+            <van-tag :type="resultTagType(item.checkInResult)" size="small">
+              {{ resolveMobileHistoryStatusLabel(item) }}
+            </van-tag>
+          </div>
+
+          <div class="mobile-history-card__nodes">
+            <div
+              v-for="node in mobileHistoryNodeRows(item)"
+              :key="`${item.id}-${node.key}`"
+              class="mobile-history-node"
+            >
+              <span class="mobile-history-node__label">{{ node.label }}</span>
+              <div class="mobile-history-node__time-group">
+                <div class="mobile-history-node__time-line">
+                  <span class="mobile-history-node__time-caption">要求</span>
+                  <span class="mobile-history-node__time">{{ node.ruleTime }}</span>
+                </div>
+                <div v-if="node.actualTime" class="mobile-history-node__actual-line">
+                  <span class="mobile-history-node__actual-caption">实际打卡</span>
+                  <strong class="mobile-history-node__actual-time">{{ node.actualTime }}</strong>
+                </div>
+              </div>
+              <span class="mobile-history-node__status" :class="`mobile-history-node__status--${node.tone}`">
+                {{ node.status }}
+              </span>
+            </div>
+          </div>
+
+          <p v-if="mobileHistoryRemark(item)" class="mobile-history-card__remark">
+            说明：{{ mobileHistoryRemark(item) }}
+          </p>
+        </article>
+        <van-pagination
+          v-if="state.total > state.pageSize"
+          v-model="state.pageNo"
+          :total-items="state.total"
+          :items-per-page="state.pageSize"
+          mode="simple"
+          @change="handlePageChange"
+        />
+      </div>
+    </section>
+
+    <details v-if="!isMobile" class="attendance-legacy-tools">
       <summary class="attendance-legacy-tools__summary">
         <div>
           <strong>高级分析工具</strong>
@@ -267,7 +566,7 @@
     </section>
     </details>
 
-    <section class="panel">
+    <section v-if="!isMobile" class="panel">
       <div class="panel-title">异常用户趋势</div>
       <div class="panel-hint">点击上方异常用户后，按日期查看该用户的异常次数、总记录数和异常率。</div>
       <van-loading v-if="state.trendLoading" class="state-block" size="24px" vertical>趋势加载中...</van-loading>
@@ -344,7 +643,7 @@
       </template>
     </section>
 
-    <section class="panel">
+    <section v-if="!isMobile" class="panel">
       <div class="panel-title">当前打卡点</div>
       <div v-if="state.locationLoading" class="panel-hint">打卡点信息加载中...</div>
       <div v-else class="location-card">
@@ -358,7 +657,7 @@
         </div>
     </section>
 
-    <section class="panel">
+    <section v-if="!isMobile" class="panel">
       <div class="panel-title">本次打卡结果</div>
       <div class="panel-hint">当前链路已接入浏览器定位、后端距离校验与结果回显。</div>
       <div class="location-card">
@@ -392,7 +691,7 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section v-if="!isMobile" class="panel">
       <div class="panel-title">{{ state.form.id ? `编辑/补录考勤 #${state.form.id}` : '补录考勤' }}</div>
       <div class="panel-hint">统一 save 接口支持新增补录和回填修改。补录用户优先支持按姓名或手机号搜索，未选择时仍默认当前登录用户。</div>
       <van-field
@@ -474,7 +773,7 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section v-if="!isMobile" class="panel">
       <div class="panel-title">考勤列表</div>
       <div class="panel-hint">
         共 {{ state.total }} 条考勤记录
@@ -506,6 +805,62 @@
           </div>
         </template>
       </van-empty>
+
+      <div v-else-if="isMobile" class="mobile-history-list">
+        <article
+          v-for="item in state.list"
+          :key="item.id"
+          class="mobile-history-card"
+        >
+          <div class="mobile-history-card__top">
+            <div>
+              <div class="mobile-history-card__name">{{ item.realName || item.username || '未命名用户' }}</div>
+              <div class="mobile-history-card__date">
+                {{ item.attendanceDate || '-' }} {{ mobileWeekdayText(item.attendanceDate) }}
+                <span>｜{{ resolveExportDayTypeLabel(item) }}</span>
+              </div>
+            </div>
+            <van-tag :type="resultTagType(item.checkInResult)" size="small">
+              {{ resolveMobileHistoryStatusLabel(item) }}
+            </van-tag>
+          </div>
+
+          <div class="mobile-history-card__nodes">
+            <div
+              v-for="node in mobileHistoryNodeRows(item)"
+              :key="`${item.id}-${node.key}`"
+              class="mobile-history-node"
+            >
+              <span class="mobile-history-node__label">{{ node.label }}</span>
+              <div class="mobile-history-node__time-group">
+                <div class="mobile-history-node__time-line">
+                  <span class="mobile-history-node__time-caption">要求</span>
+                  <span class="mobile-history-node__time">{{ node.ruleTime }}</span>
+                </div>
+                <div v-if="node.actualTime" class="mobile-history-node__actual-line">
+                  <span class="mobile-history-node__actual-caption">实际打卡</span>
+                  <strong class="mobile-history-node__actual-time">{{ node.actualTime }}</strong>
+                </div>
+              </div>
+              <span class="mobile-history-node__status" :class="`mobile-history-node__status--${node.tone}`">
+                {{ node.status }}
+              </span>
+            </div>
+          </div>
+
+          <p v-if="mobileHistoryRemark(item)" class="mobile-history-card__remark">
+            说明：{{ mobileHistoryRemark(item) }}
+          </p>
+        </article>
+        <van-pagination
+          v-if="state.total > state.pageSize"
+          v-model="state.pageNo"
+          :total-items="state.total"
+          :items-per-page="state.pageSize"
+          mode="simple"
+          @change="handlePageChange"
+        />
+      </div>
 
       <div v-else class="list-wrap">
         <van-card v-for="item in state.list" :key="item.id" class="attendance-card">
@@ -666,6 +1021,99 @@
         </div>
       </div>
     </van-popup>
+  <van-popup v-model:show="mobileApprovalDetail.show" round position="bottom" teleport="body">
+    <div class="mobile-approval-sheet">
+      <div class="mobile-approval-sheet__title">申请详情</div>
+      <div class="mobile-approval-sheet__subtitle">
+        {{ mobileApprovalDetail.record?.realName || mobileApprovalDetail.record?.username || '-' }}
+        · {{ mobileApplyTypeLabel(mobileApprovalDetail.record?.applyType) }}
+        · {{ mobilePatchTypeLabel(mobileApprovalDetail.record?.patchType) }}
+      </div>
+      <div class="mobile-approval-sheet__info">
+        <span>考勤日期：{{ mobileApprovalDetail.record?.attendanceDate || '-' }}</span>
+        <span>申请时间：{{ formatDateTime(mobileApprovalDetail.record?.patchTime) }}</span>
+        <span>当前节点：{{ mobileApprovalDetail.record?.currentNodeName || '-' }}</span>
+      </div>
+      <p class="mobile-approval-sheet__reason">{{ mobileApprovalDetail.record?.reason || '未填写原因' }}</p>
+
+      <div class="mobile-approval-evidence">
+        <div class="mobile-approval-evidence__title">证据附件</div>
+        <template v-if="mobileApprovalDetail.record?.attachmentItems?.length">
+          <div
+            v-for="attachment in mobileApprovalDetail.record.attachmentItems"
+            :key="attachment.key"
+            class="mobile-approval-evidence__item"
+          >
+            <img
+              v-if="attachment.imageUrl"
+              class="mobile-approval-evidence__image"
+              :src="attachment.imageUrl"
+              alt="证据图片"
+            >
+            <div class="mobile-approval-evidence__meta">
+              <span>时间：{{ attachment.meta.recordedAt || '-' }}</span>
+              <span>节点：{{ attachment.meta.nodeLabel || mobilePatchTypeLabel(mobileApprovalDetail.record?.patchType) }}</span>
+              <span>定位：{{ mobileCoordinateText(attachment.meta) }}</span>
+              <span>来源：{{ attachment.meta.locationProvider || attachment.meta.locationSource || '-' }}</span>
+            </div>
+          </div>
+        </template>
+        <div v-else class="mobile-approval-empty">暂无附件</div>
+      </div>
+
+      <div class="panel-actions">
+        <van-button plain :disabled="state.mobileReviewingId !== null" @click="closeMobileApprovalDetail">关闭</van-button>
+        <van-button
+          type="success"
+          :loading="state.mobileReviewingId === mobileApprovalDetail.record?.id"
+          :disabled="state.mobileReviewingId !== null"
+          @click="approveMobilePendingApply(mobileApprovalDetail.record)"
+        >
+          审批通过
+        </van-button>
+        <van-button
+          plain
+          type="danger"
+          :disabled="state.mobileReviewingId !== null"
+          @click="openMobileRejectDialog(mobileApprovalDetail.record)"
+        >
+          驳回
+        </van-button>
+      </div>
+    </div>
+  </van-popup>
+
+  <van-popup v-model:show="mobileRejectDialog.show" round position="bottom" teleport="body">
+    <div class="mobile-approval-sheet">
+      <div class="mobile-approval-sheet__title">驳回申请</div>
+      <div class="mobile-approval-sheet__subtitle">
+        {{ mobileRejectDialog.record?.realName || mobileRejectDialog.record?.username || '-' }}
+        · {{ mobilePatchTypeLabel(mobileRejectDialog.record?.patchType) }}
+      </div>
+      <label class="field">
+        <span class="field-label">驳回原因</span>
+        <textarea
+          v-model.trim="mobileRejectDialog.comment"
+          class="field-textarea"
+          rows="4"
+          maxlength="500"
+          :disabled="state.mobileReviewingId !== null"
+          placeholder="请填写驳回原因"
+        ></textarea>
+      </label>
+      <div class="panel-actions">
+        <van-button plain :disabled="state.mobileReviewingId !== null" @click="closeMobileRejectDialog">取消</van-button>
+        <van-button
+          type="danger"
+          :loading="state.mobileReviewingId === mobileRejectDialog.record?.id"
+          :disabled="state.mobileReviewingId !== null"
+          @click="rejectMobilePendingApply"
+        >
+          确认驳回
+        </van-button>
+      </div>
+    </div>
+  </van-popup>
 </template>
 
 <script setup>
@@ -704,6 +1152,7 @@ import {
 } from '@/constants/attendance'
 import {
   checkInApi,
+  approveAttendancePatchApplyApi,
   queryAttendanceAbnormalMonitorApi,
   queryAttendanceAbnormalTrendApi,
   queryAttendanceAbnormalUserSummaryApi,
@@ -711,6 +1160,8 @@ import {
   queryAttendanceListApi,
   queryAttendanceSummaryApi,
   queryCurrentAttendanceLocationApi,
+  queryPendingAttendancePatchApplyPageApi,
+  rejectAttendancePatchApplyApi,
   saveAttendanceApi,
   submitAttendancePatchApplyApi
 } from '@/api/attendance'
@@ -828,6 +1279,7 @@ const state = reactive({
   finished: false,
   nodeStates: [],
   ruleTimes: {},
+  workdayInfo: null,
   attendanceStatusCode: '',
   evidenceNodeCode: ''
 },
@@ -882,10 +1334,25 @@ const state = reactive({
   leadershipWeekRecords: [],
   leadershipRecentAbnormalRecords: [],
   leadershipSelectedUserId: null,
+  mobileApprovalLoading: false,
+  mobileApprovalError: '',
+  mobilePendingApprovals: [],
+  mobileReviewingId: null,
   leadershipFilters: {
     keyword: '',
     status: 'ALL',
     department: 'ALL'
+  },
+  personalHistory: {
+    loading: false,
+    pageNo: 1,
+    pageSize: 5,
+    total: 0,
+    list: [],
+    query: {
+      dateFrom: '',
+      dateTo: ''
+    }
   },
   form: createEmptyForm()
 })
@@ -900,6 +1367,15 @@ const patchDialogReason = ref('')
 const patchDialogAttachments = ref([])
 const patchDialogSubmitting = ref(false)
 const patchFileInputRef = ref(null)
+const mobileApprovalDetail = reactive({
+  show: false,
+  record: null
+})
+const mobileRejectDialog = reactive({
+  show: false,
+  record: null,
+  comment: ''
+})
 
 const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth <= 960 : false)
 
@@ -1008,7 +1484,12 @@ const leadershipSubordinates = computed(() => {
 
 const hasSubordinates = computed(() => leadershipSubordinates.value.length > 0)
 const showPersonalWorkspace = computed(() => !hasSubordinates.value || isMobile.value)
+const showPersonalHistorySection = computed(() => showPersonalWorkspace.value)
 const showLeadershipHeaderActions = computed(() => hasSubordinates.value && !isMobile.value)
+const showMobilePendingApprovalSection = computed(() => {
+  return isMobile.value && (hasSubordinates.value || state.mobilePendingApprovals.length > 0)
+})
+const showMobileLeadershipStats = computed(() => isMobile.value && hasSubordinates.value)
 
 const leadershipEnabledUsers = computed(() => {
   return hasSubordinates.value ? leadershipSubordinates.value : leadershipAllEnabledUsers.value
@@ -1163,6 +1644,49 @@ const leadershipAlerts = computed(() => {
   }
 })
 
+const mobileStatCards = computed(() => {
+  const overview = leadershipOverview.value || {}
+  return [
+    {
+      key: 'expected',
+      label: '应到',
+      value: overview.expectedCount ?? 0,
+      tone: 'neutral'
+    },
+    {
+      key: 'checked',
+      label: '已打卡',
+      value: overview.checkedCount ?? 0,
+      tone: 'success'
+    },
+    {
+      key: 'abnormal',
+      label: '异常',
+      value: overview.abnormalCount ?? 0,
+      tone: 'warning'
+    },
+    {
+      key: 'missing',
+      label: '未打卡',
+      value: overview.missingCount ?? 0,
+      tone: 'danger'
+    },
+    {
+      key: 'pending',
+      label: '待审核',
+      value: state.mobilePendingApprovals.length,
+      tone: 'primary'
+    }
+  ]
+})
+
+const personalHistoryRangeText = computed(() => {
+  return formatRangeText(
+    state.personalHistory.query.dateFrom || undefined,
+    state.personalHistory.query.dateTo || undefined
+  )
+})
+
 const leadershipNonWorkdayNotice = computed(() => {
   if (!leadershipTodayIsNonWorkday.value) {
     return null
@@ -1227,6 +1751,13 @@ const personalWorkspaceStatus = computed(() => {
 })
 
 const personalWorkspaceNotice = computed(() => {
+  const workdayInfo = state.locationInfo.workdayInfo
+  if (workdayInfo?.notice) {
+    return {
+      title: resolveWorkdayInfoTitle(workdayInfo),
+      text: workdayInfo.notice
+    }
+  }
   if (isDesktopLocationEnvironment()) {
     return {
       title: '设备定位提示',
@@ -1281,27 +1812,47 @@ const personalWorkspaceTodayCard = computed(() => {
   }
 })
 
+function resolveWorkdayInfoTitle(workdayInfo) {
+  const dayType = String(workdayInfo?.dayType || '').toUpperCase()
+  if (dayType === 'HOLIDAY') {
+    return workdayInfo?.name || '法定节假日'
+  }
+  if (dayType === 'WEEKDAY_REST') {
+    return '调整休息日'
+  }
+  if (dayType === 'MAKEUP_WORKDAY') {
+    return '补班工作日'
+  }
+  if (dayType === 'WEEKEND') {
+    return '周末'
+  }
+  return '工作日'
+}
+
 const personalWorkspaceWeekStats = computed(() => {
   return createLeadershipWeekSummary(personalWeekRecords.value, leadershipWorkweekDateTexts.value)
 })
 
 const personalRecentRecords = computed(() => {
-  return state.list.slice(0, 5).map((item, index) => ({
+  return state.personalHistory.list.slice(0, 5).map((item, index) => ({
     id: item.id,
     recordKey: `${item.userId || 'self'}-${item.attendanceDate || index}`,
     dateText: item.attendanceDate || '-',
     statusLabel: resultLabel(item.checkInResult),
     timeText: [
-      `上1 ${formatTimeOnly(item.checkInTime)}`,
-      `下1 ${formatTimeOnly(item.amOffTime)}`,
-      `上2 ${formatTimeOnly(item.pmOnTime)}`,
-      `下2 ${formatTimeOnly(item.checkOutTime)}`
+      `上午上班 ${formatTimeOnly(item.checkInTime)}`,
+      `上午下班 ${formatTimeOnly(item.amOffTime)}`,
+      `下午上班 ${formatTimeOnly(item.pmOnTime)}`,
+      `下午下班 ${formatTimeOnly(item.checkOutTime)}`
     ].join(' / '),
     addressText: item.checkInAddress || item.amOffAddress || item.pmOnAddress || item.checkOutAddress || item.checkInFailReason || '暂无地点信息'
   }))
 })
 
 const personalCheckInButtonText = computed(() => {
+  if (state.locationInfo.workdayInfo?.workday === false) {
+    return '今日无需打卡'
+  }
   if (state.locationInfo.finished) {
     return '今日已完成'
   }
@@ -1312,6 +1863,9 @@ const personalCheckInButtonText = computed(() => {
 })
 
 const personalCanCheckIn = computed(() => {
+  if (state.locationInfo.workdayInfo?.workday === false) {
+    return false
+  }
   return Boolean(state.locationInfo.allowCheckIn)
     && Boolean(state.locationInfo.currentActionAvailable)
     && !state.locationLoading
@@ -1323,6 +1877,9 @@ const personalWorkspaceCheckInHint = computed(() => {
   }
   if (state.locationInfo.finished) {
     return state.locationInfo.currentActionHint || '今日四次打卡已全部完成，无需重复提交。'
+  }
+  if (state.locationInfo.workdayInfo?.workday === false) {
+    return state.locationInfo.workdayInfo.notice || '今日无需打卡；如加班/值班请走补打卡流程。'
   }
   if (!personalCanCheckIn.value) {
     return state.locationInfo.currentActionHint
@@ -1515,6 +2072,7 @@ const personalNodeCards = computed(() => {
       statusCode: raw.statusCode || '',
       statusLabel: resolvePersonalNodeStatusLabel(raw),
       statusTone: resolvePersonalNodeStatusTone(raw),
+      nonWorkday: state.locationInfo.workdayInfo?.workday === false,
       accentColor: meta.accentColor,
       accentSoft: meta.accentSoft,
       accentBorder: meta.accentBorder,
@@ -1636,6 +2194,204 @@ function formatTimeOnly(value) {
     return '-'
   }
   return String(value).slice(11, 16) || '-'
+}
+
+function mobileApplyTypeLabel(value) {
+  if (value === 'EVIDENCE') {
+    return '取证/外勤留痕'
+  }
+  if (value === 'MAKEUP') {
+    return '补打卡'
+  }
+  return value || '考勤申请'
+}
+
+function mobilePatchTypeLabel(value) {
+  if (value === 'AM_ON') return '上午上班'
+  if (value === 'AM_OFF') return '上午下班'
+  if (value === 'PM_ON') return '下午上班'
+  if (value === 'PM_OFF') return '下午下班'
+  return value || '-'
+}
+
+function parseMobileApprovalAttachments(item) {
+  const raw = item?.attachmentsJson
+  if (!raw) {
+    return []
+  }
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+    return parsed
+      .filter(Boolean)
+      .map((attachment, index) => {
+        const meta = attachment.evidenceMeta && typeof attachment.evidenceMeta === 'object'
+          ? attachment.evidenceMeta
+          : {}
+        return {
+          key: `${item?.id || 'apply'}-${index}`,
+          name: attachment.name || '现场照片',
+          imageUrl: attachment.previewDataUrl || attachment.dataUrl || '',
+          meta
+        }
+      })
+  } catch (error) {
+    return []
+  }
+}
+
+function normalizeMobileApprovalItem(item) {
+  return {
+    ...item,
+    attachmentItems: parseMobileApprovalAttachments(item)
+  }
+}
+
+function mobileAttachmentSummary(item) {
+  const attachments = item?.attachmentItems || []
+  if (!attachments.length) {
+    return '无附件'
+  }
+  const firstMeta = attachments[0]?.meta || {}
+  const parts = ['有照片']
+  if (firstMeta.latitude != null && firstMeta.longitude != null) {
+    parts.push('有定位')
+  }
+  if (attachments.some(attachment => Boolean(attachment.imageUrl))) {
+    parts.push('有预览')
+  }
+  return parts.join(' / ')
+}
+
+function mobileCoordinateText(meta) {
+  const latitude = Number(meta?.latitude)
+  const longitude = Number(meta?.longitude)
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return '-'
+  }
+  return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+}
+
+function mobileWeekdayText(value) {
+  if (!value) {
+    return ''
+  }
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+  return ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'][date.getDay()]
+}
+
+function mobileHistoryNodeRows(item) {
+  return [
+    { key: 'AM_ON', label: '上午上班', value: item?.checkInTime, punchLabel: '已签到' },
+    { key: 'AM_OFF', label: '上午下班', value: item?.amOffTime, punchLabel: '已签退' },
+    { key: 'PM_ON', label: '下午上班', value: item?.pmOnTime, punchLabel: '已签到' },
+    { key: 'PM_OFF', label: '下午下班', value: item?.checkOutTime, punchLabel: '已签退' }
+  ].map((node) => {
+    const actualTime = formatTimeOnly(node.value)
+    const ruleTime = resolveMobileHistoryRuleTime(node.key, item)
+    if (actualTime !== '-') {
+      const nodeStatus = resolveMobileHistoryNodeStatus(node.key, ruleTime, actualTime, node.punchLabel)
+      return {
+        ...node,
+        ruleTime,
+        actualTime,
+        status: nodeStatus.label,
+        tone: nodeStatus.tone
+      }
+    }
+    if (item?.workday === false) {
+      return {
+        ...node,
+        ruleTime: '--:--',
+        actualTime: '',
+        status: '无需打卡',
+        tone: 'rest'
+      }
+    }
+    const abnormal = isAbnormalStatus(item?.checkInResult)
+    return {
+      ...node,
+      ruleTime,
+      actualTime: '',
+      status: abnormal ? '未打卡' : '未记录',
+      tone: abnormal ? 'abnormal' : 'pending'
+    }
+  })
+}
+
+function resolveMobileHistoryRuleTime(nodeCode, item) {
+  if (item?.workday === false) {
+    return '--:--'
+  }
+  const ruleTimes = state.locationInfo?.ruleTimes || {}
+  const ruleTimeMap = {
+    AM_ON: ruleTimes.amOn,
+    AM_OFF: ruleTimes.amOff,
+    PM_ON: ruleTimes.pmOn,
+    PM_OFF: ruleTimes.pmOff
+  }
+  return String(ruleTimeMap[nodeCode] || '--:--')
+}
+
+function resolveMobileHistoryNodeStatus(nodeCode, ruleTime, actualTime, defaultLabel) {
+  const ruleMinutes = parseClockMinutes(ruleTime)
+  const actualMinutes = parseClockMinutes(actualTime)
+  if (ruleMinutes == null || actualMinutes == null) {
+    return {
+      label: defaultLabel,
+      tone: 'normal'
+    }
+  }
+  if ((nodeCode === 'AM_ON' || nodeCode === 'PM_ON') && actualMinutes > ruleMinutes) {
+    return {
+      label: '迟到',
+      tone: 'abnormal'
+    }
+  }
+  if ((nodeCode === 'AM_OFF' || nodeCode === 'PM_OFF') && actualMinutes < ruleMinutes) {
+    return {
+      label: '早退',
+      tone: 'abnormal'
+    }
+  }
+  return {
+    label: defaultLabel,
+    tone: 'normal'
+  }
+}
+
+function parseClockMinutes(value) {
+  const matched = String(value || '').match(/(\d{1,2}):(\d{2})/)
+  if (!matched) {
+    return null
+  }
+  return Number(matched[1]) * 60 + Number(matched[2])
+}
+
+function resolveMobileHistoryStatusLabel(item) {
+  if (item?.workday === false) {
+    return hasAnyExportPunchTime(item) ? '留痕记录' : '无需打卡'
+  }
+  return resultLabel(item?.checkInResult)
+}
+
+function mobileHistoryRemark(item) {
+  if (item?.workday === false) {
+    return item?.nonWorkdayNotice || `${resolveExportDayTypeLabel(item)}，无需正常打卡`
+  }
+  return item?.checkInFailReason || ''
+}
+
+function extractApiData(response) {
+  if (!response || Number(response.code) !== 0) {
+    throw new Error(response?.message || '请求失败')
+  }
+  return response.data || {}
 }
 
 function resolveCheckInActionLabel(action) {
@@ -2077,6 +2833,111 @@ async function fetchLeadershipWorkspace() {
     showToast(error.message || '团队考勤工作台加载失败')
   } finally {
     state.leadershipLoading = false
+  }
+}
+
+async function fetchMobilePendingApprovals() {
+  state.mobileApprovalLoading = true
+  state.mobileApprovalError = ''
+  try {
+    const response = await queryPendingAttendancePatchApplyPageApi({
+      pageNo: 1,
+      pageSize: 5,
+      status: 'PENDING'
+    })
+    const data = extractApiData(response)
+    state.mobilePendingApprovals = Array.isArray(data.list)
+      ? data.list.map(normalizeMobileApprovalItem)
+      : []
+  } catch (error) {
+    state.mobilePendingApprovals = []
+    state.mobileApprovalError = error?.message || '待审申请加载失败'
+  } finally {
+    state.mobileApprovalLoading = false
+  }
+}
+
+function openMobileApprovalDetail(record) {
+  mobileApprovalDetail.record = record || null
+  mobileApprovalDetail.show = Boolean(record)
+}
+
+function closeMobileApprovalDetail() {
+  mobileApprovalDetail.show = false
+  mobileApprovalDetail.record = null
+}
+
+function openMobileRejectDialog(record) {
+  if (!record?.id) {
+    showToast('未识别到待审申请')
+    return
+  }
+  mobileRejectDialog.record = record
+  mobileRejectDialog.comment = ''
+  mobileRejectDialog.show = true
+}
+
+function closeMobileRejectDialog() {
+  mobileRejectDialog.show = false
+  mobileRejectDialog.record = null
+  mobileRejectDialog.comment = ''
+}
+
+async function refreshAfterMobileReview() {
+  await Promise.all([
+    fetchMobilePendingApprovals(),
+    fetchLeadershipWorkspace(),
+    fetchList()
+  ])
+}
+
+async function approveMobilePendingApply(record) {
+  if (!record?.id || state.mobileReviewingId !== null) {
+    return
+  }
+  try {
+    await showConfirmDialog({
+      title: '确认通过',
+      message: `确认通过 ${record.realName || record.username || '该人员'} 的${mobileApplyTypeLabel(record.applyType)}申请？`
+    })
+  } catch (error) {
+    return
+  }
+  state.mobileReviewingId = record.id
+  try {
+    extractApiData(await approveAttendancePatchApplyApi(record.id, {}))
+    showToast('审批已通过')
+    closeMobileApprovalDetail()
+    await refreshAfterMobileReview()
+  } catch (error) {
+    showToast(error?.message || '审批通过失败')
+  } finally {
+    state.mobileReviewingId = null
+  }
+}
+
+async function rejectMobilePendingApply() {
+  const record = mobileRejectDialog.record
+  if (!record?.id || state.mobileReviewingId !== null) {
+    return
+  }
+  if (!mobileRejectDialog.comment) {
+    showToast('请填写驳回原因')
+    return
+  }
+  state.mobileReviewingId = record.id
+  try {
+    extractApiData(await rejectAttendancePatchApplyApi(record.id, {
+      approveComment: mobileRejectDialog.comment
+    }))
+    showToast('已驳回该申请')
+    closeMobileRejectDialog()
+    closeMobileApprovalDetail()
+    await refreshAfterMobileReview()
+  } catch (error) {
+    showToast(error?.message || '驳回失败')
+  } finally {
+    state.mobileReviewingId = null
   }
 }
 
@@ -2936,6 +3797,28 @@ function validateQueryDateRange() {
   return true
 }
 
+function validatePersonalHistoryDateRange() {
+  if (
+    state.personalHistory.query.dateFrom
+    && state.personalHistory.query.dateTo
+    && state.personalHistory.query.dateFrom > state.personalHistory.query.dateTo
+  ) {
+    showToast('开始日期不能晚于结束日期')
+    return false
+  }
+  return true
+}
+
+function buildPersonalHistoryPayload() {
+  return {
+    userId: currentUserId.value || undefined,
+    dateFrom: state.personalHistory.query.dateFrom || undefined,
+    dateTo: state.personalHistory.query.dateTo || undefined,
+    pageNo: state.personalHistory.pageNo,
+    pageSize: state.personalHistory.pageSize
+  }
+}
+
 function isQuickRangeActive(key) {
   const range = getQuickRangeDates(key)
   return state.queryForm.dateFrom === range.dateFrom && state.queryForm.dateTo === range.dateTo
@@ -3150,6 +4033,32 @@ async function fetchList() {
   }
 }
 
+async function fetchPersonalHistory() {
+  if (!currentUserId.value) {
+    state.personalHistory.total = 0
+    state.personalHistory.list = []
+    return
+  }
+  if (!validatePersonalHistoryDateRange()) {
+    return
+  }
+  state.personalHistory.loading = true
+  try {
+    const response = await queryAttendanceListApi(buildPersonalHistoryPayload())
+    const data = response?.data || {}
+    state.personalHistory.pageNo = Number(data.pageNo || state.personalHistory.pageNo || 1)
+    state.personalHistory.pageSize = Number(data.pageSize || state.personalHistory.pageSize || 5)
+    state.personalHistory.total = Number(data.total || 0)
+    state.personalHistory.list = Array.isArray(data.list) ? data.list : []
+  } catch (error) {
+    state.personalHistory.total = 0
+    state.personalHistory.list = []
+    showToast(error?.message || '个人打卡历史加载失败')
+  } finally {
+    state.personalHistory.loading = false
+  }
+}
+
 async function fetchCurrentLocation() {
   state.locationLoading = true
   try {
@@ -3173,6 +4082,7 @@ async function fetchCurrentLocation() {
     state.locationInfo.finished = Boolean(data.finished)
     state.locationInfo.nodeStates = Array.isArray(data.nodeStates) ? data.nodeStates : []
     state.locationInfo.ruleTimes = data.ruleTimes && typeof data.ruleTimes === 'object' ? data.ruleTimes : {}
+    state.locationInfo.workdayInfo = data.workdayInfo && typeof data.workdayInfo === 'object' ? data.workdayInfo : null
 state.locationInfo.attendanceStatusCode = data.attendanceStatusCode || ''
 state.locationInfo.evidenceNodeCode = data.evidenceNodeCode || ''
     resetCheckInVisualizationTarget()
@@ -3195,6 +4105,7 @@ state.locationInfo.evidenceNodeCode = data.evidenceNodeCode || ''
     state.locationInfo.finished = false
     state.locationInfo.nodeStates = []
     state.locationInfo.ruleTimes = {}
+    state.locationInfo.workdayInfo = null
 state.locationInfo.attendanceStatusCode = ''
 state.locationInfo.evidenceNodeCode = ''
     resetCheckInVisualizationTarget()
@@ -3232,6 +4143,23 @@ function handleReset() {
   state.trendUser = null
   clearTrendDateLinkage()
   fetchList()
+}
+
+function handlePersonalHistorySearch() {
+  state.personalHistory.pageNo = 1
+  fetchPersonalHistory()
+}
+
+function handlePersonalHistoryReset() {
+  state.personalHistory.pageNo = 1
+  state.personalHistory.query.dateFrom = ''
+  state.personalHistory.query.dateTo = ''
+  fetchPersonalHistory()
+}
+
+function handlePersonalHistoryPageChange(pageNo) {
+  state.personalHistory.pageNo = Number(pageNo || 1)
+  fetchPersonalHistory()
 }
 
 function handleSelectAbnormalUser(item) {
@@ -3582,7 +4510,7 @@ async function legacyHandleCheckInBrowserOnly() {
       } else {
         state.checkInResult.reason = result.failReason || result.reason || ''
       }
-      await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
+      await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace(), fetchPersonalHistory()])
       if (result.success) {
         showToast(resolveCheckInSuccessMessage(result.action))
       } else {
@@ -3631,7 +4559,7 @@ async function legacyHandleCheckInBrowserOnly() {
       : (inferredLocationSource ? 'BROWSER' : '')
     const environment = buildLocationEnvironmentDiagnostics()
     if (error?.response) {
-      await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
+      await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace(), fetchPersonalHistory()])
     }
     console.warn('[attendance check-in error]', {
       errorCode: error?.response?.data?.code || inferCheckInStatusFromErrorMessage(message) || 'API_EXCEPTION',
@@ -3973,7 +4901,7 @@ async function submitPatchDialog() {
 
     showToast(patchDialogMode.value === 'EVIDENCE' ? '取证申请已提交，等待审核' : '补打卡申请已提交，等待审核')
 closePatchDialog(true)
-await Promise.all([fetchCurrentLocation(), fetchList(), fetchLeadershipWorkspace()])
+await Promise.all([fetchCurrentLocation(), fetchList(), fetchLeadershipWorkspace(), fetchMobilePendingApprovals(), fetchPersonalHistory()])
   } catch (error) {
     showToast(error?.message || (patchDialogMode.value === 'EVIDENCE' ? '取证提交失败' : '补打卡提交失败'))
   } finally {
@@ -4076,7 +5004,7 @@ async function handleCheckIn() {
       state.checkInResult.reason = result.failReason || result.reason || ''
     }
 
-    await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
+    await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace(), fetchPersonalHistory()])
     if (result.success) {
   showToast(resolveCheckInSuccessMessage(result.action))
 } else {
@@ -4140,7 +5068,7 @@ async function handleCheckIn() {
       : (inferredLocationSource ? 'BROWSER' : '')
     const environment = buildLocationEnvironmentDiagnostics()
     if (error?.response) {
-      await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace()])
+      await Promise.all([fetchList(), fetchCurrentLocation(), fetchLeadershipWorkspace(), fetchPersonalHistory()])
     }
     console.warn('[attendance check-in error]', {
       errorCode: error?.response?.data?.code || inferCheckInStatusFromErrorMessage(message) || 'API_EXCEPTION',
@@ -4316,6 +5244,44 @@ function buildRangeFileSegment(dateFrom, dateTo) {
   return 'all-time'
 }
 
+function resolveExportDayTypeLabel(item) {
+  return item?.dayTypeLabel || {
+    HOLIDAY: '法定节假日',
+    WEEKDAY_REST: '调整休息日',
+    MAKEUP_WORKDAY: '补班工作日',
+    WEEKEND: '周末',
+    WEEKDAY: '工作日'
+  }[String(item?.dayType || '').toUpperCase()] || '工作日'
+}
+
+function resolveExportAttendanceRemark(item) {
+  if (item?.workday === false) {
+    return item.nonWorkdayNotice || `${resolveExportDayTypeLabel(item)}，无需正常打卡`
+  }
+  if (String(item?.dayType || '').toUpperCase() === 'MAKEUP_WORKDAY') {
+    return '今日为补班工作日，请按规则打卡'
+  }
+  return ''
+}
+
+function resolveExportStatusLabel(item) {
+  if (item?.workday === false) {
+    return hasAnyExportPunchTime(item) ? '非工作日留痕记录' : '无需打卡'
+  }
+  return resultLabel(item?.checkInResult)
+}
+
+function resolveExportFailReason(item) {
+  if (item?.workday === false) {
+    return item.nonWorkdayNotice || ''
+  }
+  return item?.checkInFailReason || ''
+}
+
+function hasAnyExportPunchTime(item) {
+  return Boolean(item?.checkInTime || item?.amOffTime || item?.pmOnTime || item?.checkOutTime)
+}
+
 async function handleExport() {
   if (!state.list.length) {
     showToast('当前没有可导出的考勤记录')
@@ -4333,6 +5299,9 @@ async function handleExport() {
   '姓名',
   '组织',
   '考勤日期',
+  '日期类型',
+  '是否工作日',
+  '考勤说明',
 
   '上午上班时间',
   '上午下班时间',
@@ -4375,6 +5344,9 @@ async function handleExport() {
   item.realName || '',
   item.unitName || '',
   item.attendanceDate || '',
+  resolveExportDayTypeLabel(item),
+  item.workday === false ? '否' : '是',
+  resolveExportAttendanceRemark(item),
 
   formatDateTime(item.checkInTime),
   formatDateTime(item.amOffTime),
@@ -4382,8 +5354,8 @@ async function handleExport() {
   formatDateTime(item.checkOutTime),
 
   item.checkInResult || '',
-  resultLabel(item.checkInResult),
-  item.checkInFailReason || '',
+  resolveExportStatusLabel(item),
+  resolveExportFailReason(item),
 
   item.checkInDistanceMeters ?? '',
   item.amOffDistanceMeters ?? '',
@@ -4482,9 +5454,19 @@ onMounted(() => {
   fetchCurrentLocation()
   fetchList()
   fetchLeadershipWorkspace()
+  fetchMobilePendingApprovals()
+  fetchPersonalHistory()
   nextTick(() => {
     syncCheckInMap()
   })
+})
+
+watch(currentUserId, (userId, previousUserId) => {
+  if (!userId || userId === previousUserId) {
+    return
+  }
+  state.personalHistory.pageNo = 1
+  fetchPersonalHistory()
 })
 
 watch(
@@ -5035,7 +6017,586 @@ onBeforeUnmount(() => {
   padding: 20px 0;
 }
 
+.personal-history-section {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(248, 113, 113, 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.06);
+}
+
+.personal-history-section__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.personal-history-section__eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.personal-history-section__header h3 {
+  margin: 0;
+  font-size: 20px;
+  color: #0f172a;
+}
+
+.personal-history-section__range {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(79, 125, 243, 0.08);
+  color: #315fd3;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.personal-history-query {
+  display: grid;
+  gap: 10px;
+}
+
+.personal-history-query__dates,
+.personal-history-query__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.personal-history-query__input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 14px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.personal-history-query__button {
+  min-height: 40px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.personal-history-query__button--primary {
+  border-color: rgba(79, 125, 243, 0.24);
+  background: rgba(79, 125, 243, 0.1);
+  color: #315fd3;
+}
+
+.personal-history-card {
+  border-color: rgba(79, 125, 243, 0.12);
+}
+
+.mobile-pending-approvals {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+}
+
+.mobile-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobile-section-eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.mobile-section-heading h3 {
+  margin: 0;
+  font-size: 17px;
+  color: #0f172a;
+}
+
+.mobile-leadership-overview-heading {
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.05);
+}
+
+.mobile-leadership-overview-heading h3 {
+  margin: 0;
+  font-size: 17px;
+  color: #0f172a;
+}
+
+.mobile-section-refresh {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(79, 125, 243, 0.2);
+  border-radius: 999px;
+  background: rgba(79, 125, 243, 0.08);
+  color: #315fd3;
+  font-size: 12px;
+}
+
+.mobile-approval-empty {
+  padding: 14px 12px;
+  border-radius: 16px;
+  background: rgba(241, 245, 249, 0.78);
+  color: #64748b;
+  font-size: 13px;
+  text-align: center;
+}
+
+.mobile-approval-empty--warn {
+  color: #b45309;
+  background: rgba(254, 243, 199, 0.62);
+}
+
+.mobile-approval-list {
+  display: grid;
+  gap: 10px;
+}
+
+.mobile-approval-card {
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+  border-radius: 18px;
+  border: 1px solid rgba(79, 125, 243, 0.14);
+  background: #fff;
+}
+
+.mobile-approval-card__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.mobile-approval-card__name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.mobile-approval-card__meta,
+.mobile-approval-card__grid {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.mobile-approval-card__status {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(79, 125, 243, 0.12);
+  color: #315fd3;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mobile-approval-card__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 10px;
+}
+
+.mobile-approval-card__reason {
+  display: -webkit-box;
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mobile-approval-card__actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mobile-approval-card__btn {
+  min-height: 38px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+}
+
+.mobile-approval-card__btn--approve {
+  border-color: rgba(16, 185, 129, 0.22);
+  background: rgba(16, 185, 129, 0.1);
+  color: #047857;
+}
+
+.mobile-approval-card__btn--reject {
+  border-color: rgba(248, 113, 113, 0.24);
+  background: rgba(248, 113, 113, 0.1);
+  color: #b91c1c;
+}
+
+.mobile-approval-sheet {
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+  background: #fff;
+}
+
+.mobile-approval-sheet__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  text-align: center;
+}
+
+.mobile-approval-sheet__subtitle,
+.mobile-approval-sheet__info {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.mobile-approval-sheet__info {
+  display: grid;
+  text-align: left;
+}
+
+.mobile-approval-sheet__reason {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.mobile-approval-evidence {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  background: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.mobile-approval-evidence__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.mobile-approval-evidence__item {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.mobile-approval-evidence__image {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.mobile-approval-evidence__meta {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.mobile-stat-summary-section,
+.mobile-history-query-section {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.05);
+}
+
+.mobile-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mobile-stat-card {
+  display: grid;
+  gap: 5px;
+  min-height: 58px;
+  padding: 9px 6px;
+  border-radius: 14px;
+  background: rgba(241, 245, 249, 0.9);
+  text-align: center;
+}
+
+.mobile-stat-card span {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.mobile-stat-card strong {
+  color: #0f172a;
+  font-size: 19px;
+  line-height: 1;
+}
+
+.mobile-stat-card--success {
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.mobile-stat-card--warning {
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.mobile-stat-card--danger {
+  background: rgba(248, 113, 113, 0.14);
+}
+
+.mobile-stat-card--primary {
+  background: rgba(79, 125, 243, 0.12);
+}
+
+.mobile-history-query-form {
+  display: grid;
+  gap: 10px;
+}
+
+.mobile-history-query-dates,
+.mobile-history-query-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mobile-history-query-input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 13px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.mobile-history-query-btn {
+  min-height: 40px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  font-size: 13px;
+}
+
+.mobile-history-query-btn--primary {
+  border-color: rgba(79, 125, 243, 0.24);
+  background: rgba(79, 125, 243, 0.1);
+  color: #315fd3;
+}
+
+.mobile-history-query-meta {
+  display: grid;
+  gap: 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mobile-history-list {
+  display: grid;
+  gap: 12px;
+}
+
+.mobile-history-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.05);
+}
+
+.mobile-history-card__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.mobile-history-card__name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.mobile-history-card__date {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.mobile-history-card__nodes {
+  display: grid;
+  gap: 8px;
+}
+
+.mobile-history-node {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  padding: 7px 8px;
+  border-radius: 12px;
+  background: rgba(241, 245, 249, 0.82);
+}
+
+.mobile-history-node__label {
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mobile-history-node__time {
+  color: #334155;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.mobile-history-node__time-group {
+  display: grid;
+  gap: 4px;
+}
+
+.mobile-history-node__time-line,
+.mobile-history-node__actual-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.mobile-history-node__time-caption,
+.mobile-history-node__actual-caption {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mobile-history-node__time-caption {
+  color: #94a3b8;
+}
+
+.mobile-history-node__actual-line {
+  padding: 4px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.14);
+}
+
+.mobile-history-node__actual-caption {
+  color: #0f766e;
+}
+
+.mobile-history-node__actual-time {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.mobile-history-node__status {
+  justify-self: end;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-history-node__status--normal {
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+}
+
+.mobile-history-node__status--rest,
+.mobile-history-node__status--pending {
+  background: rgba(148, 163, 184, 0.16);
+  color: #475569;
+}
+
+.mobile-history-node__status--abnormal {
+  background: rgba(248, 113, 113, 0.14);
+  color: #b91c1c;
+  animation: mobileAttendanceAlertPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes mobileAttendanceAlertPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.14);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 6px rgba(248, 113, 113, 0);
+  }
+}
+
+.mobile-history-card__remark {
+  margin: 0;
+  padding: 9px 10px;
+  border-radius: 12px;
+  background: rgba(239, 246, 255, 0.78);
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 @media (max-width: 960px) {
+  .personal-history-section__header {
+    align-items: stretch;
+  }
+
   .attendance-leadership-workspace {
     grid-template-columns: 1fr;
   }
@@ -5054,6 +6615,24 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 640px) {
+  .personal-history-section {
+    padding: 14px;
+    border-radius: 20px;
+  }
+
+  .personal-history-section__header {
+    display: grid;
+  }
+
+  .personal-history-section__range {
+    justify-self: start;
+  }
+
+  .personal-history-query__dates,
+  .personal-history-query__actions {
+    grid-template-columns: 1fr;
+  }
+
   :deep(.page-shell) {
     padding: 10px 12px 112px;
     border-radius: 0;
@@ -5214,3 +6793,4 @@ onBeforeUnmount(() => {
   display: none;
 }
 </style>
+

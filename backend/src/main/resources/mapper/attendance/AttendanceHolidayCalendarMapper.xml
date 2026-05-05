@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.lecturesystem.modules.attendance.mapper.AttendanceHolidayCalendarMapper">
+
+    <resultMap id="AttendanceHolidayCalendarEntityMap" type="com.example.lecturesystem.modules.attendance.entity.AttendanceHolidayCalendarEntity">
+        <id property="id" column="id"/>
+        <result property="calendarDate" column="calendar_date"/>
+        <result property="calendarYear" column="calendar_year"/>
+        <result property="dayType" column="day_type"/>
+        <result property="name" column="name"/>
+        <result property="enabled" column="enabled"/>
+        <result property="source" column="source"/>
+        <result property="status" column="status"/>
+        <result property="remark" column="remark"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <select id="selectEnabledByDate" resultMap="AttendanceHolidayCalendarEntityMap">
+        SELECT id,
+               calendar_date,
+               calendar_year,
+               day_type,
+               name,
+               enabled,
+               source,
+               status,
+               remark,
+               create_time,
+               update_time
+        FROM attendance_holiday_calendar
+        WHERE calendar_date = #{calendarDate}
+          AND enabled = TRUE
+          AND status = 'CONFIRMED'
+        LIMIT 1
+    </select>
+
+    <select id="selectById" resultMap="AttendanceHolidayCalendarEntityMap">
+        SELECT id, calendar_date, calendar_year, day_type, name, enabled, source, status,
+               remark, create_time, update_time
+        FROM attendance_holiday_calendar
+        WHERE id = #{id}
+    </select>
+
+    <select id="selectByDate" resultMap="AttendanceHolidayCalendarEntityMap">
+        SELECT id, calendar_date, calendar_year, day_type, name, enabled, source, status,
+               remark, create_time, update_time
+        FROM attendance_holiday_calendar
+        WHERE calendar_date = #{calendarDate}
+        LIMIT 1
+    </select>
+
+    <select id="selectByYear" resultMap="AttendanceHolidayCalendarEntityMap">
+        SELECT id, calendar_date, calendar_year, day_type, name, enabled, source, status,
+               remark, create_time, update_time
+        FROM attendance_holiday_calendar
+        WHERE calendar_year = #{calendarYear}
+        ORDER BY calendar_date ASC, id ASC
+    </select>
+
+    <select id="countConfirmedByYear" resultType="int">
+        SELECT COUNT(1)
+        FROM attendance_holiday_calendar
+        WHERE calendar_year = #{calendarYear}
+          AND (enabled = TRUE OR status = 'CONFIRMED')
+    </select>
+
+    <select id="countEnabledDuplicateByYear" resultType="int">
+        SELECT COUNT(1)
+        FROM (
+            SELECT calendar_date
+            FROM attendance_holiday_calendar
+            WHERE calendar_year = #{calendarYear}
+              AND enabled = TRUE
+            GROUP BY calendar_date
+            HAVING COUNT(1) &gt; 1
+        ) duplicated
+    </select>
+
+    <insert id="insert" parameterType="com.example.lecturesystem.modules.attendance.entity.AttendanceHolidayCalendarEntity" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO attendance_holiday_calendar (
+            calendar_date, calendar_year, day_type, name, enabled, source, status,
+            remark, create_time, update_time
+        ) VALUES (
+            #{calendarDate}, #{calendarYear}, #{dayType}, #{name}, #{enabled}, #{source}, #{status},
+            #{remark}, #{createTime}, #{updateTime}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.example.lecturesystem.modules.attendance.entity.AttendanceHolidayCalendarEntity">
+        UPDATE attendance_holiday_calendar
+        SET calendar_date = #{calendarDate},
+            calendar_year = #{calendarYear},
+            day_type = #{dayType},
+            name = #{name},
+            enabled = #{enabled},
+            source = #{source},
+            status = #{status},
+            remark = #{remark},
+            update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM attendance_holiday_calendar
+        WHERE id = #{id}
+    </delete>
+
+    <update id="confirmYear">
+        UPDATE attendance_holiday_calendar
+        SET enabled = TRUE,
+            status = 'CONFIRMED',
+            update_time = #{updateTime}
+        WHERE calendar_year = #{calendarYear}
+    </update>
+</mapper>

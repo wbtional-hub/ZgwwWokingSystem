@@ -10,6 +10,7 @@ import com.example.lecturesystem.modules.attendance.mapper.AttendancePatchApplyM
 import com.example.lecturesystem.modules.attendance.support.AttendanceCheckInStatus;
 import com.example.lecturesystem.modules.attendance.support.AttendanceNodeStateResolver;
 import com.example.lecturesystem.modules.attendance.service.AttendanceService;
+import com.example.lecturesystem.modules.attendance.service.AttendanceWorkdayService;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalMonitorVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalReasonDistributionVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalTrendComparisonVO;
@@ -19,8 +20,10 @@ import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserBeh
 import com.example.lecturesystem.modules.attendance.vo.AttendanceAbnormalUserSummaryVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceNodeStatusVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendancePageVO;
+import com.example.lecturesystem.modules.attendance.vo.AttendanceRecordListItemVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceStatusCountVO;
 import com.example.lecturesystem.modules.attendance.vo.AttendanceSummaryVO;
+import com.example.lecturesystem.modules.attendance.vo.WorkdayInfoVO;
 import com.example.lecturesystem.modules.auth.security.LoginUser;
 import com.example.lecturesystem.modules.operationlog.service.OperationLogService;
 import com.example.lecturesystem.modules.param.service.ParamService;
@@ -41,6 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.example.lecturesystem.modules.attendance.entity.AttendanceRuleEntity;
 import com.example.lecturesystem.modules.attendance.mapper.AttendanceRuleMapper;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -94,6 +98,8 @@ private final OperationLogService operationLogService;
 private final CurrentUserFacade currentUserFacade;
 private final DataScopeService dataScopeService;
 private final ParamService paramService;
+@Autowired(required = false)
+private AttendanceWorkdayService attendanceWorkdayService;
 
     public AttendanceServiceImpl(AttendanceMapper attendanceMapper,
                              PermissionService permissionService,
@@ -194,6 +200,7 @@ public Object queryCurrentAttendanceLocation() {
     result.put("accuracyGoodThreshold", resolveGoodAccuracyThreshold());
     result.put("accuracyMaxThreshold", resolveMaxAccuracyThreshold());
     result.put("ruleTimes", buildRuleTimes(findActiveAttendanceRule(currentUser.getUnitId())));
+    result.put("workdayInfo", resolveWorkdayInfo(today));
 
     if (scope.location != null) {
         result.put("locationName", scope.location.getLocationName());
@@ -239,6 +246,26 @@ private String formatRuleTime(LocalTime value) {
     return value == null ? "" : TIME_FORMATTER.format(value);
 }
 
+private WorkdayInfoVO resolveWorkdayInfo(LocalDate date) {
+    if (attendanceWorkdayService != null) {
+        try {
+            return attendanceWorkdayService.resolveWorkdayInfo(date);
+        } catch (RuntimeException ex) {
+            log.warn("resolve attendance workday info failed date={}, fallback to weekday/weekend rule", date, ex);
+        }
+    }
+    return fallbackWorkdayInfo(date);
+}
+
+private WorkdayInfoVO fallbackWorkdayInfo(LocalDate date) {
+    LocalDate targetDate = date == null ? LocalDate.now() : date;
+    DayOfWeek dayOfWeek = targetDate.getDayOfWeek();
+    if (DayOfWeek.SATURDAY.equals(dayOfWeek) || DayOfWeek.SUNDAY.equals(dayOfWeek)) {
+        return WorkdayInfoVO.weekend();
+    }
+    return WorkdayInfoVO.weekday();
+}
+
     @Override
     @Transactional
     public Object checkIn(CheckInRequest request) {
@@ -249,6 +276,35 @@ private String formatRuleTime(LocalTime value) {
         CheckInScope scope = resolveCheckInScope(currentUser);
         if (scope.reason != null) {
             return buildCheckInResult(false, null, scope, null, scope.reason, scope.status);
+        }
+        WorkdayInfoVO workdayInfo = resolveWorkdayInfo(today);
+        if (workdayInfo != null && Boolean.FALSE.equals(workdayInfo.getWorkday())) {
+            AttendanceRecordEntity todayRecord = attendanceMapper.findByUserIdAndDate(loginUser.getUserId(), today);
+            String evidenceNodeCode = resolveEvidenceNodeCode(
+                    currentUser.getUnitId(),
+                    loginUser.getUserId(),
+                    today,
+                    todayRecord,
+                    now.toLocalTime(),
+                    resolveRequestedCheckAction(request)
+            );
+            String nonWorkdayReason = "今日无需正常打卡，如加班/值班请提交补打卡申请";
+            log.info("attendance check-in redirected to patch flow userId={} date={} dayType={} evidenceNodeCode={}",
+                    loginUser.getUserId(), today, workdayInfo.getDayType(), evidenceNodeCode);
+            return buildCheckInResult(
+                    false,
+                    evidenceNodeCode,
+                    scope,
+                    null,
+                    nonWorkdayReason,
+                    AttendanceCheckInStatus.EVIDENCE_REQUIRED,
+                    todayRecord,
+                    null,
+                    "NON_WORKDAY_PATCH_REQUIRED",
+                    false,
+                    0,
+                    evidenceNodeCode
+            );
         }
         if (request == null || request.getLatitude() == null || request.getLongitude() == null) {
             logCheckInFailureDiagnostic(
@@ -375,8 +431,47 @@ private String formatRuleTime(LocalTime value) {
         page.setPageNo(normalizedRequest.getPageNo());
         page.setPageSize(normalizedRequest.getPageSize());
         page.setTotal(attendanceMapper.countByQuery(normalizedRequest));
-        page.setList(attendanceMapper.queryList(normalizedRequest));
+        List<AttendanceRecordListItemVO> list = attendanceMapper.queryList(normalizedRequest);
+        enrichWorkdayInfo(list);
+        page.setList(list);
         return page;
+    }
+
+    private void enrichWorkdayInfo(List<AttendanceRecordListItemVO> list) {
+        if (list == null || list.isEmpty()) {
+            return;
+        }
+        Map<LocalDate, WorkdayInfoVO> workdayInfoMap = new HashMap<>();
+        for (AttendanceRecordListItemVO item : list) {
+            LocalDate attendanceDate = item.getAttendanceDate();
+            if (attendanceDate == null) {
+                continue;
+            }
+            WorkdayInfoVO workdayInfo = workdayInfoMap.computeIfAbsent(attendanceDate, this::resolveWorkdayInfo);
+            item.setWorkday(workdayInfo.getWorkday());
+            item.setDayType(workdayInfo.getDayType());
+            item.setDayTypeLabel(resolveWorkdayDayTypeLabel(workdayInfo));
+            if (Boolean.FALSE.equals(workdayInfo.getWorkday())) {
+                item.setNonWorkdayNotice(workdayInfo.getNotice());
+            }
+        }
+    }
+
+    private String resolveWorkdayDayTypeLabel(WorkdayInfoVO workdayInfo) {
+        String dayType = workdayInfo == null ? "" : String.valueOf(workdayInfo.getDayType());
+        if ("HOLIDAY".equals(dayType)) {
+            return workdayInfo.getName() == null || workdayInfo.getName().isBlank() ? "法定节假日" : workdayInfo.getName();
+        }
+        if ("WEEKDAY_REST".equals(dayType)) {
+            return "调整休息日";
+        }
+        if ("MAKEUP_WORKDAY".equals(dayType)) {
+            return "补班工作日";
+        }
+        if ("WEEKEND".equals(dayType)) {
+            return "周末";
+        }
+        return "工作日";
     }
 
     @Override

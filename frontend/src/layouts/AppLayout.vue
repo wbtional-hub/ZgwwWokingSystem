@@ -2,7 +2,6 @@
   <div class="app-layout" :class="{ 'app-layout--mobile': isMobile }">
     <aside v-if="!isMobile" class="layout-sidebar">
       <div class="layout-brand">
-      
         <div class="layout-brand-title">智慧OA系统</div>
         <div class="layout-brand-subtitle">AI Workbench & Skills Center</div>
       </div>
@@ -17,8 +16,8 @@
         >
           <component :is="resolveMenuIcon(item.path)" class="layout-menu-icon" />
           <div class="layout-menu-copy">
-          <span class="layout-menu-title">{{ item.title }}</span>
-          <span class="layout-menu-desc">{{ item.description }}</span>
+            <span class="layout-menu-title">{{ item.title }}</span>
+            <span class="layout-menu-desc">{{ item.description }}</span>
           </div>
         </router-link>
       </nav>
@@ -33,14 +32,6 @@
         </div>
 
         <div class="layout-header-actions">
-          <button
-            v-if="isMobile && route.path !== '/mobile-workspace'"
-            type="button"
-            class="layout-mobile-home"
-            @click="router.push('/mobile-workspace')"
-          >
-            工作台
-          </button>
           <div class="layout-user-badge">
             <UserRound class="header-icon" />
             <span>{{ welcomeText }}</span>
@@ -87,7 +78,7 @@ import { showConfirmDialog, showToast } from 'vant'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { APP_MENU_ITEMS, buildAccessContext, filterMenuItems, findMenuItemByPath } from '@/constants/modules'
-import { resolveMobileWorkspaceItems } from '@/constants/mobile-workspace'
+import { resolveMobileNavigationItems } from '@/constants/mobile-workspace'
 import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 import { isMobileClient } from '@/utils/device'
 
@@ -100,7 +91,7 @@ const accessContext = computed(() => buildAccessContext(userStore.userInfo))
 const isAdmin = computed(() => accessContext.value.isAdmin)
 
 const menuItems = computed(() => filterMenuItems(APP_MENU_ITEMS, accessContext.value))
-const mobileNavItems = computed(() => resolveMobileWorkspaceItems(accessContext.value))
+const mobileNavItems = computed(() => resolveMobileNavigationItems(accessContext.value))
 const currentPageTitle = computed(() => route.meta?.title || findMenuItemByPath(route.path)?.title || '后台管理')
 const welcomeText = computed(() => {
   const name = userStore.userInfo?.realName || userStore.userInfo?.username || '用户'
@@ -321,16 +312,6 @@ async function handleLogout() {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.layout-mobile-home {
-  border: none;
-  border-radius: 999px;
-  padding: 8px 12px;
-  background: rgba(15, 108, 99, 0.08);
-  color: #0f6c63;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .layout-user-badge {
